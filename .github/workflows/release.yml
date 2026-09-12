@@ -78,7 +78,7 @@ jobs:
           NOOAGRAM_RUN="${{ github.run_number }}"
           APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
           BASE_VERSION_CODE=$(sed -n 's/^def verCode = //p' TMessagesProj/build.gradle | head -n1)
-          NOOAGRAM_VERSION_CODE=$((BASE_VERSION_CODE * 10000 + NOOAGRAM_RUN))
+          NOOAGRAM_VERSION_CODE=$((BASE_VERSION_CODE * 100000 + NOOAGRAM_RUN))
           NOOAGRAM_VERSION="${APP_VERSION_NAME}-nooagram.${NOOAGRAM_RUN}"
           sed -i "s#^def verName = .*#def verName = APP_VERSION_NAME + \"-nooagram.${NOOAGRAM_RUN}\"#" TMessagesProj/build.gradle
           sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
