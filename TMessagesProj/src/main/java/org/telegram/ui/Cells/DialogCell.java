@@ -910,6 +910,29 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return currentDialogId;
     }
 
+    int getCurrentAccount() {
+        return currentAccount;
+    }
+
+    void applyFilteredPreviewReplacement(MessageObject replacement) {
+        if (replacement == null || replacement.messageOwner == null) {
+            return;
+        }
+        message = replacement;
+        groupMessages = null;
+        currentEditDate = replacement.messageOwner.edit_date;
+        lastMessageDate = replacement.messageOwner.date;
+        lastSendState = replacement.messageOwner.send_state;
+        lastUnreadState = replacement.isUnread();
+        updateHelper.lastDrawnMessageId = Long.MIN_VALUE;
+        if (isAttachedToWindow()) {
+            buildLayout();
+        } else {
+            updateLayout = true;
+        }
+        invalidate();
+    }
+
     public int getMessageId() {
         return messageId;
     }
@@ -3298,7 +3321,16 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                             }
                             boolean filteredByRegex = AyuFilter.shouldHideFilteredMessages() && AyuFilter.isFiltered(message, null);
                             if (blocked || filteredByRegex) {
-                                message = filteredDummyMessages[currentAccount];
+                                MessageObject replacement = NooagramDialogPreviewFilter.getReplacement(currentAccount, dialog.id, message);
+                                if (replacement == null) {
+                                    if (NooagramDialogPreviewFilter.prepare(this, currentAccount, dialog.id, message)) {
+                                        replacement = NooagramDialogPreviewFilter.getReplacement(currentAccount, dialog.id, message);
+                                    }
+                                }
+                                if (replacement == null) {
+                                    replacement = filteredDummyMessages[currentAccount];
+                                }
+                                message = replacement;
                                 groupMessages = null;
                             }
                         }
