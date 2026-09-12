@@ -1,0 +1,80 @@
+name: Sync Nagram upstream
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: nooagram-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream main into ayu
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout Nooagram
+        uses: actions/checkout@v4
+        with:
+          ref: ayu
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "Nooagram Bot"
+          git config user.email "actions@github.com"
+          git remote add upstream https://github.com/nextalone/nagram.git
+          git fetch upstream main
+
+      - name: Check for upstream changes
+        id: check
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream
+        id: merge
+        if: steps.check.outputs.updated == 'true'
+        continue-on-error: true
+        run: git merge --no-edit upstream/main
+
+      - name: Report merge conflict
+        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'failure'
+        run: |
+          git diff --name-only --diff-filter=U > conflicts.txt
+          {
+            echo "Automatic merge of nextalone/nagram main into Nooagram ayu failed."
+            echo
+            echo "Conflicted files:"
+            echo
+            echo '```'
+            cat conflicts.txt
+            echo '```'
+            echo
+            echo "Upstream commit: $(git rev-parse upstream/main)"
+          } > issue-body.md
+          if ! gh issue list --state open --search "Upstream sync failed" | grep -q "Upstream sync failed"; then
+            gh issue create \
+              --title "Upstream sync failed" \
+              --body-file issue-body.md \
+              --label upstream-sync
+          fi
+          exit 1
+
+      - name: Push ayu
+        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'success'
+        run: git push origin ayu
+
+      - name: Start Nooagram release build
+        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'success'
+        run: gh workflow run release.yml --ref ayu
