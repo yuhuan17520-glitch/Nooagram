@@ -8,6 +8,7 @@ param(
     [switch]$Install,
     [string]$Device,
     [switch]$SkipSubmodules,
+    [int]$LocalVersionCode = 125000000,
 
     [string]$LocalPropertiesPath
 )
@@ -69,6 +70,7 @@ $env:BUILD_TIMESTAMP = [string][System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds
 $env:COMMIT_ID = (git -C $repo rev-parse HEAD).Trim()
 $env:NATIVE_TARGET = $Abi
 $env:NOOAGRAM_KEYSTORE = (Resolve-Path $localKeystore).Path
+$env:NOOAGRAM_LOCAL_VERSION_CODE = [string]$LocalVersionCode
 
 $task = "TMessagesProj:assembleNormal$BuildType"
 Write-Host "Building $task for $Abi..." -ForegroundColor Cyan

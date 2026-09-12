@@ -24,7 +24,8 @@ idea {
 def buildTimestamp = System.getenv('BUILD_TIMESTAMP') ?: '0'
 def commitId = System.getenv('COMMIT_ID')
 def verName = "${APP_VERSION_NAME}${commitId?.take(7) ? "-${commitId.take(7)}" : ''}"
-def verCode = 1250
+def localVersionCode = System.getenv('NOOAGRAM_LOCAL_VERSION_CODE')
+def verCode = localVersionCode ? Integer.parseInt(localVersionCode) : 1250
 
 def officialVer = APP_VERSION_NAME
 def officialCode = APP_VERSION_CODE
