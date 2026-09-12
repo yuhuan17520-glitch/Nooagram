@@ -2,6 +2,7 @@
 .idea
 .kotlin
 .vscode
+build-local/
 *.aar
 *.so
 *.iml
