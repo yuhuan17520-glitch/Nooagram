@@ -133,6 +133,7 @@ jobs:
             echo
             echo "- NagramXF upstream: ${UPSTREAM_SUMMARY}"
             echo "- 新增一键屏蔽消息和指定群置顶隐藏。"
+            echo "- 使用独立包名 fork.yuhuan.nooagram，可与 NagramXF 并存。"
             echo "- 自动生成 arm64 / arm32 APK，并同步了应用内更新清单。"
           } > release-notes.md
           ASSETS=("${{ env.APK64 }}")
