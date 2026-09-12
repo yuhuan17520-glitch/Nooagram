@@ -210,12 +210,12 @@ public class UpdateHelper extends BaseRemoteHelper {
     }
 
     public void checkNewVersionAvailable(Delegate delegate) {
-        checkNewVersionAvailable(delegate, false);
+        NooagramUpdateHelper.check(delegate);
     }
 
     public void checkNewVersionAvailable(Delegate delegate, boolean updateAlways) {
         this.updateAlways = updateAlways;
-        load(delegate);
+        NooagramUpdateHelper.check(delegate, updateAlways);
     }
 
     private static final class InstanceHolder {

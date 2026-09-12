@@ -1,0 +1,396 @@
+name: Release Build
+on:
+  push:
+    branches:
+      - main
+      - ayu
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - '!.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload: If want ignore'
+        required: false
+permissions:
+  contents: write
+jobs:
+  ffmpeg:
+    name: Native Build (FFmpeg)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch Status
+        run: |
+          sed -i 's/\/\///g' settings.gradle
+          git submodule status TMessagesProj/jni/third_party/ffmpeg > ffmpeg_status
+          git submodule status TMessagesProj/jni/third_party/dav1d > dav1d_status
+          git submodule status TMessagesProj/jni/third_party/libvpx > libvpx_status
+      - name: FFmpeg Cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/jni/ffmpeg/build
+          key: ${{ hashFiles('ffmpeg_status', 'dav1d_status', 'libvpx_status', 'TMessagesProj/jni/third_party/build_*.sh') }}
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.12'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install NDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" --sdk_root=${ANDROID_SDK_ROOT} &> /dev/null
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "ndk.dir=${ANDROID_HOME}/ndk/27.2.12479018" >> local.properties
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ./run init action ffmpeg
+          ./run init libs libvpx
+          ./run init libs dav1d
+          ./run init libs ffmpeg
+  boringssl:
+    name: Native Build (BoringSSL)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch Status
+        run: |
+          sed -i 's/\/\///g' settings.gradle
+          git submodule status TMessagesProj/jni/boringssl > boringssl_status
+      - name: BoringSSL Cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/jni/boringssl/build
+          key: ${{ hashFiles('boringssl_status') }}
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install NDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" --sdk_root=${ANDROID_SDK_ROOT} &> /dev/null
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "ndk.dir=${ANDROID_HOME}/ndk/27.2.12479018" >> local.properties
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ./run init action boringssl
+          ./run init libs boringssl
+  native:
+    name: Native Build (Telegram)
+    runs-on: ubuntu-latest
+    needs:
+      - ffmpeg
+      - boringssl
+    strategy:
+      matrix:
+        flavor:
+          - armeabi-v7a
+          - arm64-v8a
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Fetch Status
+        run: |
+          sed -i 's/\/\///g' settings.gradle
+          git submodule status TMessagesProj/jni/third_party/ffmpeg > ffmpeg_status
+          git submodule status TMessagesProj/jni/third_party/dav1d > dav1d_status
+          git submodule status TMessagesProj/jni/third_party/libvpx > libvpx_status
+          git submodule status TMessagesProj/jni/boringssl > boringssl_status
+      - name: Native Cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/src/main/libs
+          key: ${{ hashFiles('TMessagesProj/jni/**', 'ffmpeg_status', 'boringssl_status') }}-${{ matrix.flavor }}
+      - name: Checkout Library
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git submodule update --init
+      - name: FFmpeg Cache
+        uses: actions/cache@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            TMessagesProj/jni/ffmpeg/build
+          key: ${{ hashFiles('ffmpeg_status', 'dav1d_status', 'libvpx_status', 'TMessagesProj/jni/third_party/build_*.sh') }}
+      - name: BoringSSL Cache
+        uses: actions/cache@v4
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            TMessagesProj/jni/boringssl/build
+          key: ${{ hashFiles('boringssl_status') }}
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install NDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" --sdk_root=${ANDROID_SDK_ROOT} &> /dev/null
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "ndk.dir=${ANDROID_HOME}/ndk/27.2.12479018" >> local.properties
+      - name: Fix BoringSSL
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd TMessagesProj/jni
+          ./patch_boringssl.sh
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          export NATIVE_TARGET="${{ matrix.flavor }}"
+          ./run libs native
+  build:
+    name: Gradle Build
+    runs-on: ubuntu-latest
+    needs:
+      - native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
+      - name: Install NDK
+        run: |
+          echo "y" | sdkmanager --install "ndk;27.2.12479018" --sdk_root=${ANDROID_SDK_ROOT} &> /dev/null
+          echo "sdk.dir=${ANDROID_HOME}" > local.properties
+          echo "ndk.dir=${ANDROID_HOME}/ndk/27.2.12479018" >> local.properties
+      - name: Checkout Library
+        run: |
+          git submodule update --init 'TMessagesProj/lib/*'
+      - name: Fetch Status
+        run: |
+          sed -i 's/\/\///g' settings.gradle
+          git submodule status TMessagesProj/jni/third_party/ffmpeg > ffmpeg_status
+          git submodule status TMessagesProj/jni/boringssl > boringssl_status
+      - name: Prepare Nooagram signing
+        env:
+          NOOAGRAM_KEYSTORE_BASE64: ${{ secrets.NOOAGRAM_KEYSTORE_BASE64 }}
+        run: printf '%s' "$NOOAGRAM_KEYSTORE_BASE64" | base64 -d > TMessagesProj/release.keystore
+      - name: Native Cache (armeabi-v7a)
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/src/main/libs
+          key: ${{ hashFiles('TMessagesProj/jni/**', 'ffmpeg_status', 'boringssl_status') }}-armeabi-v7a
+      - name: Native Cache (arm64-v8a)
+        uses: actions/cache@v4
+        with:
+          path: |
+            TMessagesProj/src/main/libs
+          key: ${{ hashFiles('TMessagesProj/jni/**', 'ffmpeg_status', 'boringssl_status') }}-arm64-v8a
+      - name: Configure Gradle
+        run: |
+          sed -i "s/2000000000000/$(date +%s%N | cut -c1-13)/g" gradle.properties
+          echo "sdk.dir=${ANDROID_HOME}" >> local.properties
+          NOOAGRAM_RUN=${{ github.run_number }}
+          BASE_VERSION_CODE=$(sed -n 's/^def verCode = //p' TMessagesProj/build.gradle | head -n1)
+          NOOAGRAM_VERSION_CODE=$((BASE_VERSION_CODE * 10000 + NOOAGRAM_RUN))
+          sed -i "s#^def verName = APP_VERSION_NAME.*#def verName = APP_VERSION_NAME + \"-nooagram.${NOOAGRAM_RUN}\"#" TMessagesProj/build.gradle
+          sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
+          echo "NOOAGRAM_RUN=${NOOAGRAM_RUN}" >> "$GITHUB_ENV"
+          echo "NOOAGRAM_VERSION_CODE=${NOOAGRAM_VERSION_CODE}" >> "$GITHUB_ENV"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Release Build
+        run: |
+          export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
+          export SENTRY_AUTH_TOKEN="${{ secrets.SENTRY_AUTH_TOKEN }}"
+          ./gradlew TMessagesProj:assembleRelease --build-cache --no-configuration-cache
+
+          APK=$(find TMessagesProj/build/outputs/apk -name '*arm64-v8a*.apk')
+          APK=$(dirname $APK)
+          echo "APK=$APK" >> $GITHUB_ENV
+      - name: Upload gradle.properties
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-properties
+          path: gradle.properties
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Release
+          path: ${{ env.APK }}
+  upload:
+    name: Upload release
+    if: github.event_name == 'push' && github.ref_name == 'main' && github.event.inputs.upload != 'y'
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Remove gradle.properties
+        run: |
+          rm -f gradle.properties
+      - name: Download gradle.properties
+        uses: actions/download-artifact@v4
+        with:
+          name: gradle-properties
+          path: .
+      - name: Donwload Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Send to Telegram
+        run: |
+          # send release via telegram bot api
+          export mini64=$(find artifacts -name "*arm64-v8a.apk")
+          export mini32=$(find artifacts -name "*armeabi-v7a.apk")
+
+          echo $mini64
+          echo $mini32
+
+          python -m pip install -r bin/scripts/requirements.txt
+          git log -1 --pretty=format:"%s%n%n%b" > artifacts/caption.txt
+          python bin/scripts/upload.py ${{ secrets.HELPER_BOT_TOKEN }} ${{ secrets.HELPER_BOT_TARGET }} release
+
+  nooagram-release:
+    name: Publish Nooagram GitHub release
+    if: github.ref_name == 'ayu' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout Nooagram
+        uses: actions/checkout@v4
+        with:
+          ref: ayu
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release metadata
+        run: |
+          NOOAGRAM_RUN=${{ github.run_number }}
+          BASE_VERSION_CODE=$(sed -n 's/^def verCode = //p' TMessagesProj/build.gradle | head -n1)
+          APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
+          NOOAGRAM_VERSION_CODE=$((BASE_VERSION_CODE * 10000 + NOOAGRAM_RUN))
+          NOOAGRAM_VERSION="${APP_VERSION_NAME}-nooagram.${NOOAGRAM_RUN}"
+          TAG="v${NOOAGRAM_VERSION}"
+          TIMESTAMP=$(date +%s%3N)
+          APK64=$(find artifacts -name '*arm64-v8a*.apk' -print -quit)
+          APK32=$(find artifacts -name '*armeabi-v7a*.apk' -print -quit)
+          if [ -z "$APK64" ]; then
+            echo "No arm64 APK found" >&2
+            exit 1
+          fi
+          FILE64=$(basename "$APK64")
+          FILE32=""
+          if [ -n "$APK32" ]; then
+            FILE32=$(basename "$APK32")
+          fi
+          SHA256_64=$(sha256sum "$APK64" | awk '{print $1}')
+          CHANGELOG=$(git log -1 --pretty=format:"%s%n%n%b")
+          export NOOAGRAM_VERSION NOOAGRAM_VERSION_CODE TIMESTAMP FILE64 FILE32 SHA256_64 CHANGELOG
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.parse
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          tag = "v" + os.environ["NOOAGRAM_VERSION"]
+          file64 = os.environ["FILE64"]
+          file32 = os.environ.get("FILE32", "")
+          base_url = f"https://github.com/{repository}/releases/download/{tag}/"
+
+          manifest = {
+              "version": os.environ["NOOAGRAM_VERSION"],
+              "version_code": int(os.environ["NOOAGRAM_VERSION_CODE"]),
+              "timestamp": int(os.environ["TIMESTAMP"]),
+              "can_not_skip": False,
+              "changelog": os.environ["CHANGELOG"].strip(),
+              "download_url": base_url + urllib.parse.quote(file64),
+              "sha256": os.environ["SHA256_64"],
+          }
+          if file32:
+              manifest["download_url_32"] = base_url + urllib.parse.quote(file32)
+
+          with open("update.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=2)
+          PY
+          {
+            echo "## Nooagram ${NOOAGRAM_VERSION}"
+            echo
+            echo "### Upstream update"
+            echo
+            echo '```text'
+            git log -1 --pretty=format:"%h %s"
+            echo
+            echo '```'
+            echo
+            echo "### Changelog"
+            echo
+            echo "${CHANGELOG}"
+          } > release-notes.md
+          {
+            echo "arm64-v8a:"
+            echo "  file: ${FILE64}"
+            echo "  sha256: ${SHA256_64}"
+            if [ -n "$FILE32" ]; then
+              echo "armeabi-v7a:"
+              echo "  file: ${FILE32}"
+            fi
+          } > SHA256SUMS.txt
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "APK64=$APK64" >> "$GITHUB_ENV"
+          echo "APK32=$APK32" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        run: |
+          ASSETS=("$APK64")
+          if [ -n "$APK32" ]; then
+            ASSETS+=("$APK32")
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${ASSETS[@]}" update.json SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" \
+              --target "$GITHUB_SHA" \
+              --title "Nooagram ${TAG#v}" \
+              --notes-file release-notes.md \
+              "${ASSETS[@]}" update.json SHA256SUMS.txt
+          fi
