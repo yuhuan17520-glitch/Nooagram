@@ -32,6 +32,7 @@ import org.telegram.messenger.SvgHelper;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.messenger.browser.Browser;
 
 import tw.nekomimi.nekogram.TextViewEffects;
 
@@ -262,7 +263,12 @@ public class UpdateAppAlertDialog extends BottomSheet {
         messageTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         messageTextView.setMovementMethod(new AndroidUtilities.LinkMovementMethodMy());
         messageTextView.setLinkTextColor(Theme.getColor(Theme.key_dialogTextLink));
-        messageTextView.setText(LocaleController.formatString(R.string.AppUpdateVersionAndSize, appUpdate.version, AndroidUtilities.formatFileSize(appUpdate.document.size)));
+        if (appUpdate.document != null) {
+            messageTextView.setText(LocaleController.formatString(R.string.AppUpdateVersionAndSize,
+                    appUpdate.version, AndroidUtilities.formatFileSize(appUpdate.document.size)));
+        } else {
+            messageTextView.setText(appUpdate.version);
+        }
         messageTextView.setGravity(Gravity.CENTER_HORIZONTAL | Gravity.TOP);
         linearLayout.addView(messageTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 0, 23, 5));
 
@@ -293,7 +299,12 @@ public class UpdateAppAlertDialog extends BottomSheet {
         BottomSheetCell doneButton = new BottomSheetCell(context, false);
         doneButton.setText(LocaleController.formatString(R.string.AppUpdateDownloadNow), false);
         doneButton.background.setOnClickListener(v -> {
-            FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update", FileLoader.PRIORITY_NORMAL, 1);
+            if (appUpdate.document != null) {
+                FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update",
+                        FileLoader.PRIORITY_NORMAL, 1);
+            } else if (appUpdate.url != null) {
+                Browser.openUrl(getContext(), appUpdate.url);
+            }
             dismiss();
         });
         container.addView(doneButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.LEFT | Gravity.BOTTOM, 0, 0, 0, 50));
