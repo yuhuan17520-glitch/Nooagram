@@ -1,4 +1,4 @@
-name: Sync Nagram upstream
+name: Sync Nagram upstream dev
 
 on:
   schedule:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   sync:
-    name: Merge upstream main into ayu
+    name: Merge upstream dev into ayu
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -31,12 +31,12 @@ jobs:
           git config user.name "Nooagram Bot"
           git config user.email "actions@github.com"
           git remote add upstream https://github.com/nextalone/nagram.git
-          git fetch upstream main
+          git fetch upstream dev
 
       - name: Check for upstream changes
         id: check
         run: |
-          if git merge-base --is-ancestor upstream/main HEAD; then
+          if git merge-base --is-ancestor upstream/dev HEAD; then
             echo "updated=false" >> "$GITHUB_OUTPUT"
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
@@ -46,14 +46,14 @@ jobs:
         id: merge
         if: steps.check.outputs.updated == 'true'
         continue-on-error: true
-        run: git merge --no-edit upstream/main
+        run: git merge --no-edit upstream/dev
 
       - name: Report merge conflict
         if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'failure'
         run: |
           git diff --name-only --diff-filter=U > conflicts.txt
           {
-            echo "Automatic merge of nextalone/nagram main into Nooagram ayu failed."
+            echo "Automatic merge of nextalone/nagram dev into Nooagram ayu failed."
             echo
             echo "Conflicted files:"
             echo
@@ -61,7 +61,7 @@ jobs:
             cat conflicts.txt
             echo '```'
             echo
-            echo "Upstream commit: $(git rev-parse upstream/main)"
+            echo "Upstream commit: $(git rev-parse upstream/dev)"
           } > issue-body.md
           if ! gh issue list --state open --search "Upstream sync failed" | grep -q "Upstream sync failed"; then
             gh issue create \
