@@ -498,4 +498,19 @@
     <string name="LoadingUpdate">正在下载更新…</string>
     <string name="UpdateAvailable">发现新版本</string>
     <string name="PluginsRestartEngine">重启插件引擎</string>
-    <string name="ForceFontWeightFallback">强制字体粗细回退</string></resources>
+    <string name="ForceFontWeightFallback">强制字体粗细回退</string>
+    <string name="NooagramQuickFilter">屏蔽这条消息</string>
+    <string name="NooagramQuickFilterAdded">已添加全局过滤规则：\n%1$s</string>
+    <string name="NooagramQuickFilterDuplicate">规则已存在，已启用消息过滤</string>
+    <string name="NooagramQuickFilterNoText">这条消息没有可提取的文本</string>
+    <string name="NooagramQuickFilterFailed">添加过滤规则失败</string>
+    <string name="NooagramQuickFilterSelectOne">请只选择一条消息或一个媒体组</string>
+    <string name="NooagramPinnedHider">置顶隐藏</string>
+    <string name="NooagramPinnedHiddenHeader">已隐藏置顶的会话</string>
+    <string name="NooagramPinnedEmpty">在会话列表选择一个或多个会话，打开更多选项后选择隐藏置顶。</string>
+    <string name="NooagramPinnedRestored">已恢复置顶</string>
+    <string name="NooagramPinnedRestoredAll">已恢复置顶</string>
+    <string name="NooagramPinnedHiddenAll">已隐藏置顶</string>
+    <string name="NooagramPinnedClearTitle">清空置顶隐藏清单？</string>
+    <string name="NooagramPinnedClearMessage">所有已隐藏的置顶消息都会恢复显示。</string>
+</resources>
