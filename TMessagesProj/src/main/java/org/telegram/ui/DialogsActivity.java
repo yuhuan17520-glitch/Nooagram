@@ -298,6 +298,7 @@ import me.vkryl.android.util.ClickHelper;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.MainTabsHelper;
 import tw.nekomimi.nekogram.helpers.JoinOfficialChannelHelper;
+import tw.nekomimi.nekogram.helpers.NooagramPinnedHider;
 import tw.nekomimi.nekogram.ChatHistoryActivity;
 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
 import tw.nekomimi.nekogram.helpers.TypefaceHelper;
@@ -749,6 +750,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private final static int community_ungroup = 111;
 
     private final static int select_all = 1000;
+    private final static int nooagram_hide_pinned = 1001;
 
     private final static int ARCHIVE_ITEM_STATE_PINNED = 0;
     private final static int ARCHIVE_ITEM_STATE_SHOWED = 1;
@@ -4227,6 +4229,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     hideActionMode(false);
                 } else if (id == pin || id == read || id == delete || id == clear || id == mute || id == archive || id == block || id == archive2 || id == pin2) {
                     performSelectedDialogsAction(selectedDialogs, id, true, false);
+                } else if (id == nooagram_hide_pinned) {
+                    ArrayList<Long> dialogs = new ArrayList<>(selectedDialogs);
+                    boolean restore = NooagramPinnedHider.getHiddenDialogs(currentAccount).containsAll(dialogs);
+                    NooagramPinnedHider.toggleSelected(currentAccount, dialogs);
+                    hideActionMode(true);
+                    if (BulletinFactory.canShowBulletin(DialogsActivity.this)) {
+                        BulletinFactory.of(DialogsActivity.this).createSimpleBulletin(
+                                R.drawable.msg_pin,
+                                getString(restore ? R.string.NooagramPinnedRestoredAll : R.string.NooagramPinnedHiddenAll)
+                        ).show();
+                    }
                 } else if (id == select_all) {
                     final int initialSelectedCount = selectedDialogs.size();
                     Runnable selectAllAction = () -> {
@@ -7047,6 +7060,21 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         clearItem = otherItem.addSubItem(clear, R.drawable.msg_clear, LocaleController.getString(R.string.ClearHistory));
         blockItem = otherItem.addSubItem(block, R.drawable.msg_block, LocaleController.getString(R.string.BlockUser));
         otherItem.addSubItem(select_all, R.drawable.ic_select_between, LocaleController.getString(R.string.SelectAll));
+        ActionBarMenuSubItem nooagramPinnedItem = otherItem.addSubItem(
+                nooagram_hide_pinned,
+                R.drawable.msg_pin,
+                NooagramPinnedHider.getMenuLabel(currentAccount, selectedDialogs)
+        );
+        otherItem.setSubMenuDelegate(new ActionBarMenuItem.ActionBarSubMenuItemDelegate() {
+            @Override
+            public void onShowSubMenu() {
+                nooagramPinnedItem.setText(NooagramPinnedHider.getMenuLabel(currentAccount, selectedDialogs));
+            }
+
+            @Override
+            public void onHideSubMenu() {
+            }
+        });
 
         muteItem.setOnLongClickListener(e -> {
             performSelectedDialogsAction(selectedDialogs, mute, true, true);

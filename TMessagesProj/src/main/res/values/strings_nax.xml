@@ -524,4 +524,18 @@
     <string name="RestoreSdkFromApk">Restore SDK from APK</string>
     <string name="PluginsRestartEngine">Restart Plugin Engine</string>
     <string name="ForceFontWeightFallback">Force Font Weight Fallback</string>
+    <string name="NooagramQuickFilter">Block this message</string>
+    <string name="NooagramQuickFilterAdded">Global filter added:\n%1$s</string>
+    <string name="NooagramQuickFilterDuplicate">The filter already exists and was enabled</string>
+    <string name="NooagramQuickFilterNoText">This message has no extractable text</string>
+    <string name="NooagramQuickFilterFailed">Failed to add the filter</string>
+    <string name="NooagramQuickFilterSelectOne">Select one message or one media group</string>
+    <string name="NooagramPinnedHider">Pinned Hider</string>
+    <string name="NooagramPinnedHiddenHeader">Hidden pinned messages</string>
+    <string name="NooagramPinnedEmpty">Select chats in the chat list, open More, and choose Hide pinned.</string>
+    <string name="NooagramPinnedRestored">Pinned message restored</string>
+    <string name="NooagramPinnedRestoredAll">Pinned messages restored</string>
+    <string name="NooagramPinnedHiddenAll">Pinned messages hidden</string>
+    <string name="NooagramPinnedClearTitle">Clear pinned hider list?</string>
+    <string name="NooagramPinnedClearMessage">All hidden pinned messages will be restored.</string>
 </resources>
