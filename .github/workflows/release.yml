@@ -325,33 +325,6 @@ jobs:
           fi
           SHA256_64=$(sha256sum "$APK64" | awk '{print $1}')
           CHANGELOG=$(git log -1 --pretty=format:"%s%n%n%b")
-          export NOOAGRAM_VERSION NOOAGRAM_VERSION_CODE TIMESTAMP FILE64 FILE32 SHA256_64 CHANGELOG
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.parse
-
-          repository = os.environ["GITHUB_REPOSITORY"]
-          tag = "v" + os.environ["NOOAGRAM_VERSION"]
-          file64 = os.environ["FILE64"]
-          file32 = os.environ.get("FILE32", "")
-          base_url = f"https://github.com/{repository}/releases/download/{tag}/"
-
-          manifest = {
-              "version": os.environ["NOOAGRAM_VERSION"],
-              "version_code": int(os.environ["NOOAGRAM_VERSION_CODE"]),
-              "timestamp": int(os.environ["TIMESTAMP"]),
-              "can_not_skip": False,
-              "changelog": os.environ["CHANGELOG"].strip(),
-              "download_url": base_url + urllib.parse.quote(file64),
-              "sha256": os.environ["SHA256_64"],
-          }
-          if file32:
-              manifest["download_url_32"] = base_url + urllib.parse.quote(file32)
-
-          with open("update.json", "w", encoding="utf-8") as f:
-              json.dump(manifest, f, ensure_ascii=False, indent=2)
-          PY
           {
             echo "## Nooagram ${NOOAGRAM_VERSION}"
             echo
@@ -386,11 +359,53 @@ jobs:
             ASSETS+=("$APK32")
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" update.json SHA256SUMS.txt --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" SHA256SUMS.txt --clobber
           else
             gh release create "$TAG" \
               --target "$GITHUB_SHA" \
               --title "Nooagram ${TAG#v}" \
               --notes-file release-notes.md \
-              "${ASSETS[@]}" update.json SHA256SUMS.txt
+              "${ASSETS[@]}" SHA256SUMS.txt
           fi
+
+      - name: Publish update manifest
+        run: |
+          NOOAGRAM_RUN=${{ github.run_number }}
+          BASE_VERSION_CODE=$(sed -n 's/^def verCode = //p' TMessagesProj/build.gradle | head -n1)
+          APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
+          NOOAGRAM_VERSION_CODE=$((BASE_VERSION_CODE * 10000 + NOOAGRAM_RUN))
+          NOOAGRAM_VERSION="${APP_VERSION_NAME}-nooagram.${NOOAGRAM_RUN}"
+          TIMESTAMP=$(date +%s%3N)
+          SHA256_64=$(sha256sum "$APK64" | awk '{print $1}')
+          CHANGELOG=$(git log -1 --pretty=format:"%s%n%n%b")
+          URL64=$(gh release view "$TAG" --json assets \
+            --jq '.assets[] | select(.name | endswith("arm64-v8a.apk")) | .url' \
+            | head -n1)
+          URL32=$(gh release view "$TAG" --json assets \
+            --jq '.assets[] | select(.name | endswith("armeabi-v7a.apk")) | .url' \
+            | head -n1)
+          if [ -z "$URL64" ]; then
+            echo "No uploaded arm64 asset URL found" >&2
+            exit 1
+          fi
+          export NOOAGRAM_VERSION NOOAGRAM_VERSION_CODE TIMESTAMP SHA256_64 CHANGELOG URL64 URL32
+          python3 - <<'PY'
+          import json
+          import os
+
+          manifest = {
+              "version": os.environ["NOOAGRAM_VERSION"],
+              "version_code": int(os.environ["NOOAGRAM_VERSION_CODE"]),
+              "timestamp": int(os.environ["TIMESTAMP"]),
+              "can_not_skip": False,
+              "changelog": os.environ["CHANGELOG"].strip(),
+              "download_url": os.environ["URL64"],
+              "sha256": os.environ["SHA256_64"],
+          }
+          if os.environ.get("URL32"):
+              manifest["download_url_32"] = os.environ["URL32"]
+
+          with open("update.json", "w", encoding="utf-8") as stream:
+              json.dump(manifest, stream, ensure_ascii=False, indent=2)
+          PY
+          gh release upload "$TAG" update.json --clobber
