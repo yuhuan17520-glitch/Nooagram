@@ -195,7 +195,7 @@ object NaConfig {
         addConfig(
             "CustomTitle",
             ConfigItem.configTypeString,
-            "Nagram XF"
+            "Nooagram"
         )
     val dateOfForwardedMsg =
         addConfig(
@@ -1946,6 +1946,11 @@ object NaConfig {
     private fun fixConfig() {
         if (ApplicationLoader.applicationContext == null) {
             return
+        }
+        if (getPreferences().contains(customTitle.key) &&
+            customTitle.String() == "Nagram XF"
+        ) {
+            customTitle.setConfigString("Nooagram")
         }
         if (!getPreferences().contains(disableTrendingFlags.key) && getPreferences().contains("DisableTrending")) {
             val legacy = getPreferences().getBoolean("DisableTrending", true)
