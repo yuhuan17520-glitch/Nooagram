@@ -214,7 +214,7 @@ android {
 
     signingConfigs {
         release {
-            storeFile project.file('release.keystore')
+            storeFile project.file(System.getenv('NOOAGRAM_KEYSTORE') ?: 'release.keystore')
             storePassword keystorePwd
             keyAlias alias
             keyPassword pwd
