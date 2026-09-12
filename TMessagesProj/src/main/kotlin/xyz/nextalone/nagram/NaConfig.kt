@@ -189,6 +189,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val showForwardCount =
+        addConfig(
+            "ShowForwardCount",
+            ConfigItem.configTypeBool,
+            true
+        )
     val showMessageID =
         addConfig(
             "ShowMessageID",
@@ -586,7 +592,7 @@ object NaConfig {
         addConfig(
             "DisableFlagSecure",
             ConfigItem.configTypeBool,
-            true
+            false
         )
     val centerActionBarTitle =
         addConfig(
@@ -1346,6 +1352,38 @@ object NaConfig {
     val disableGooeyAvatarAnimation =
         addConfig(
             "DisableGooeyAvatarAnimation",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val inputTextAnimations = addConfig("InputTextAnimations", ConfigItem.configTypeBool, false)
+    val inputAnimationStrength = addConfig("InputAnimationStrength", ConfigItem.configTypeInt, 2)
+    val forceVideoNewRewindMethod =
+        addConfig(
+            "ForceVideoNewRewindMethod",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val tabStyleStroke =
+        addConfig(
+            "TabStyleStroke",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val addCommaAfterMention =
+        addConfig(
+            "AddCommaAfterMention",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val useSystemFontInTitle =
+        addConfig(
+            "UseSystemFontInTitle",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val materialDesign3ChatHeader =
+        addConfig(
+            "MaterialDesign3ChatHeader",
             ConfigItem.configTypeBool,
             false
         )
