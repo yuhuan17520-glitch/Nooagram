@@ -60,6 +60,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell ghostModeRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "GhostMode", null, R.drawable.ayu_ghost, true, () -> presentFragment(new GhostModeActivity())));
     private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "RegexFilters", null, R.drawable.menu_tag_filter, true, () -> presentFragment(new RegexFiltersSettingActivity())));
     private final AbstractConfigCell spySettingsRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "AyuSpySettings", null, R.drawable.msg_bot, true, () -> presentFragment(new NekoAyuSpySettingsActivity())));
+    private final AbstractConfigCell pinnedHiderRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "NooagramPinnedHider", null, R.drawable.msg_pin, true, () -> presentFragment(new NooagramPinnedHiderActivity())));
     private final AbstractConfigCell customSectionDividerRow = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell customHeaderRow = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AyuMomentsCustomHeader)));
     private final AbstractConfigCell deletedMessagesPreviewRow = cellGroup.appendCell(new ConfigCellCustom("DeletedMessagesAppearancePreviewRow", ConfigCellCustom.CUSTOM_ITEM_DeletedMessagesAppearanceCard, false));
