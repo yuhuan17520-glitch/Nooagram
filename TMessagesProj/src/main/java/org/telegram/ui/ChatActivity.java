@@ -30051,7 +30051,7 @@ public class ChatActivity extends BaseFragment implements
             chatInputViewsContainer.setVisibility(View.VISIBLE);
             chatInputViewsContainer.setBackgroundWithFadeDrawable(fadeDrawable);
         } else {
-            if (botUser != null && currentUser != null && currentUser.bot || currentUser != null && currentUser.id == UserObject.VERIFY || chatMode == MODE_SAVED && getSavedDialogId() != getUserConfig().getClientUserId()) {
+            if (!sentBotStart && botUser != null && currentUser != null && currentUser.bot || currentUser != null && currentUser.id == UserObject.VERIFY || chatMode == MODE_SAVED && getSavedDialogId() != getUserConfig().getClientUserId()) {
                 bottomChannelButtonsLayout.setVisibility(View.VISIBLE);
                 chatActivityEnterView.setVisibility(View.INVISIBLE);
             } else {
