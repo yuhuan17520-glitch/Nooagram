@@ -1,4 +1,4 @@
-name: Sync Nagram upstream dev
+name: Sync NagramXF upstream dev
 
 on:
   schedule:
@@ -30,7 +30,7 @@ jobs:
         run: |
           git config user.name "Nooagram Bot"
           git config user.email "actions@github.com"
-          git remote add upstream https://github.com/nextalone/nagram.git
+          git remote add upstream https://github.com/Keeperorowner/NagramXF.git
           git fetch upstream dev
 
       - name: Check for upstream changes
@@ -53,7 +53,7 @@ jobs:
         run: |
           git diff --name-only --diff-filter=U > conflicts.txt
           {
-            echo "Automatic merge of nextalone/nagram dev into Nooagram ayu failed."
+            echo "Automatic merge of Keeperorowner/NagramXF dev into Nooagram ayu failed."
             echo
             echo "Conflicted files:"
             echo

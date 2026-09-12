@@ -1,11 +1,11 @@
 # Nooagram
 
-Nooagram is a fork of [nextalone/nagram](https://github.com/nextalone/nagram).
+Nooagram follows [Keeperorowner/NagramXF](https://github.com/Keeperorowner/NagramXF) `dev`.
 
 ## Automation
 
 - `ayu` is the release branch and the repository default branch.
-- `Sync Nagram upstream dev` runs every 15 minutes and tracks the official `dev` branch, where Nagram publishes frequent updates.
+- `Sync NagramXF upstream dev` runs every 15 minutes and tracks upstream `dev`, where NagramXF publishes frequent updates.
 - If upstream changes merge cleanly, the workflow pushes `ayu` and starts `Release Build`.
 - If an upstream merge conflicts, it opens a GitHub issue with the conflicted files and does not publish a broken APK.
 - `Release Build` publishes arm32 and arm64 APKs, `SHA256SUMS.txt`, and `update.json` to GitHub Releases.
