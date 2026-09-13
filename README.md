@@ -62,7 +62,21 @@ GitHub Actions uses an external signing key and does not commit private credenti
 
 ## Upstream
 
-Nooagram automatically merges the `dev` branch of [Nagram XF](https://github.com/Keeperorowner/NagramXF). If the merge conflicts, GitHub opens an issue instead of silently overwriting changes.
+Nooagram automatically rebases onto the latest release tag of [Nagram XF](https://github.com/Keeperorowner/NagramXF). If the rebase conflicts, GitHub opens an issue instead of using unstable/unpublished commits.
+
+## Versioning
+
+Nooagram follows Semantic Versioning 2.0.0. The version name uses the format:
+
+```text
+1.0.0-<NagramXF version>.<NagramXF release tag>
+```
+
+For example:
+
+```text
+1.0.0-12.10.1.1450
+```
 
 ## Acknowledgments
 

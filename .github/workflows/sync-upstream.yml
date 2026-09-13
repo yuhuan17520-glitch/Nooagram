@@ -1,4 +1,4 @@
-name: Sync NagramXF upstream dev
+name: Sync NagramXF upstream release
 
 on:
   schedule:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   sync:
-    name: Merge upstream dev into ayu
+    name: Rebase onto upstream release tag
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -31,29 +31,36 @@ jobs:
           git config user.name "Nooagram Bot"
           git config user.email "actions@github.com"
           git remote add upstream https://github.com/Keeperorowner/NagramXF.git
-          git fetch upstream dev
+          git fetch upstream --tags
 
-      - name: Check for upstream changes
+      - name: Resolve upstream release tag
+        id: tag
+        run: |
+          UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
+          echo "tag=${UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "resolved tag: ${UPSTREAM_TAG}"
+
+      - name: Check upstream release tag
         id: check
         run: |
-          if git merge-base --is-ancestor upstream/dev HEAD; then
+          if git merge-base --is-ancestor "${{ steps.tag.outputs.tag }}" HEAD; then
             echo "updated=false" >> "$GITHUB_OUTPUT"
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Merge upstream
-        id: merge
+      - name: Rebase Nooagram
+        id: rebase
         if: steps.check.outputs.updated == 'true'
         continue-on-error: true
-        run: git merge --no-edit upstream/dev
+        run: git rebase "${{ steps.tag.outputs.tag }}"
 
-      - name: Report merge conflict
-        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'failure'
+      - name: Report rebase conflict
+        if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'failure'
         run: |
           git diff --name-only --diff-filter=U > conflicts.txt
           {
-            echo "Automatic merge of Keeperorowner/NagramXF dev into Nooagram ayu failed."
+            echo "Automatic rebase of Nooagram onto Keeperorowner/NagramXF release ${{ steps.tag.outputs.tag }} failed."
             echo
             echo "Conflicted files:"
             echo
@@ -61,20 +68,20 @@ jobs:
             cat conflicts.txt
             echo '```'
             echo
-            echo "Upstream commit: $(git rev-parse upstream/dev)"
+            echo "Upstream release tag: ${{ steps.tag.outputs.tag }}"
           } > issue-body.md
-          if ! gh issue list --state open --search "Upstream sync failed" | grep -q "Upstream sync failed"; then
+          if ! gh issue list --state open --search "Upstream rebase failed" | grep -q "Upstream rebase failed"; then
             gh issue create \
-              --title "Upstream sync failed" \
+              --title "Upstream rebase failed" \
               --body-file issue-body.md \
               --label upstream-sync
           fi
           exit 1
 
       - name: Push ayu
-        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'success'
+        if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'success'
         run: git push origin ayu
 
       - name: Start Nooagram release build
-        if: steps.check.outputs.updated == 'true' && steps.merge.outcome == 'success'
+        if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'success'
         run: gh workflow run release.yml --ref ayu
