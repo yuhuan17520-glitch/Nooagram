@@ -79,7 +79,7 @@ jobs:
           UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
           APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
           NOOAGRAM_VERSION_CODE=$((125000000 + NOOAGRAM_RUN))
-          NOOAGRAM_VERSION="1.0.1-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
+          NOOAGRAM_VERSION="1.0.2-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
           sed -i "s#^def verName = .*#def verName = \"${NOOAGRAM_VERSION}\"#" TMessagesProj/build.gradle
           sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
           {
@@ -127,18 +127,15 @@ jobs:
           VERSION="${{ env.NOOAGRAM_VERSION }}"
           TAG="v${VERSION}"
           PARENTS=($(git rev-list --parents -n 1 HEAD))
-          UPSTREAM_SHA="${PARENTS[2]:-${PARENTS[1]:-HEAD}}"
-          UPSTREAM_SUMMARY=$(git show -s --format='%h %s' "$UPSTREAM_SHA")
-          {
-            echo "## Nooagram ${VERSION}"
-            echo
-            echo "- NagramXF release tag: ${{ env.UPSTREAM_TAG }}"
-            echo "- 新增一键屏蔽消息和指定群置顶隐藏。"
-            echo "- 会话列表被过滤时会回退显示上一条正常消息。"
-            echo "- 使用独立包名 fork.yuhuan.nooagram，可与 NagramXF 并存。"
-            echo "- 桌面与应用显示名改为 Nooagram。"
-            echo "- 自动生成 arm64 / arm32 APK，并同步了应用内更新清单。"
-          } > release-notes.md
+        UPSTREAM_SHA="${PARENTS[2]:-${PARENTS[1]:-HEAD}}"
+        UPSTREAM_SUMMARY=$(git show -s --format='%h %s' "$UPSTREAM_SHA")
+        CHANGELOG_SUBJECT=$(git log -1 --format='%s')
+        {
+          echo "## Nooagram ${VERSION}"
+          echo
+          echo "- NagramXF release tag: ${{ env.UPSTREAM_TAG }}"
+          echo "- ${CHANGELOG_SUBJECT}"
+        } > release-notes.md
           ASSETS=("${{ env.APK64 }}")
           if [ -n "${{ env.APK32 }}" ]; then
             ASSETS+=("${{ env.APK32 }}")
@@ -176,7 +173,7 @@ jobs:
           APK64="${{ env.APK64 }}"
           APK32="${{ env.APK32 }}"
           SHA256=$(sha256sum "$APK64" | awk '{print $1}')
-          CHANGELOG=$(awk 'NR==3 {sub(/^- NagramXF upstream: /, ""); print}' release-notes.md)
+          CHANGELOG=$(git log -1 --format='%s')
           BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/"
           export VERSION NOOAGRAM_VERSION_CODE SHA256 CHANGELOG BASE_URL APK64 APK32
           python3 - <<'PY'

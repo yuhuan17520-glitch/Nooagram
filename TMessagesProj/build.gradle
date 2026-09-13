@@ -270,6 +270,10 @@ android {
     sourceSets.plugin.assets.srcDirs += "$buildDir/generated/chaquopyBuildJson"
 
     namespace = 'org.telegram.messenger'
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 configurations {

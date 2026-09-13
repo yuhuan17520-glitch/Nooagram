@@ -6,7 +6,11 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Locale;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +35,14 @@ public final class NooagramQuickFilter {
                     + "\\.(?:apk|apks|xapk|exe|zip|rar|7z|ipa|dmg|pkg)(?![\\p{L}\\p{N}])");
     private static final Pattern HANDLE_PATTERN = Pattern.compile(
             "(?<![\\p{L}\\p{N}])@[\\p{L}\\p{N}_]{2,}");
+    private static final Set<String> GENERIC_LINK_DOMAINS = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
+            "t.me", "telegram.me", "telegram.dog", "telegram.link", "telegram.zone", "tg.dev",
+            "bit.ly", "is.gd", "tinyurl.com", "goo.gl",
+            "google.com", "play.google.com", "youtube.com", "youtu.be", "github.com",
+            "x.com", "twitter.com", "instagram.com", "facebook.com", "tiktok.com",
+            "qq.com", "weixin.qq.com", "wechat.com", "wa.me", "whatsapp.com",
+            "apps.apple.com", "apple.com"
+    )));
 
     private NooagramQuickFilter() {}
 
@@ -70,17 +82,18 @@ public final class NooagramQuickFilter {
         source = source.replace('\u200B', ' ');
         String text = source.replace('\n', ' ').trim();
         String candidateText = HANDLE_PATTERN.matcher(text).replaceAll(" ");
+        String extractableText = removeGenericLinks(candidateText);
         ArrayList<Candidate> candidates = new ArrayList<>();
         collectFilenameCandidates(source, candidates);
-        collectFileTokenCandidates(candidateText, candidates);
-        collectProductCandidates(candidateText, candidates);
+        collectFileTokenCandidates(extractableText, candidates);
+        collectProductCandidates(extractableText, candidates);
         if (candidates.size() < 2) {
-            collectPatternCandidates(candidateText, DOMAIN_PATTERN, 65, candidates);
-            collectPatternCandidates(candidateText, CONTACT_PATTERN, 60, candidates);
-            collectPatternCandidates(candidateText, URL_PATTERN, 55, candidates);
+            collectPatternCandidates(extractableText, DOMAIN_PATTERN, 65, candidates);
+            collectPatternCandidates(extractableText, CONTACT_PATTERN, 60, candidates);
+            collectPatternCandidates(extractableText, URL_PATTERN, 55, candidates);
         }
         if (candidates.size() < 2) {
-            collectFallbackCandidates(candidateText, candidates);
+            collectFallbackCandidates(extractableText, candidates);
         }
         removeRedundantCandidates(candidates);
         candidates.sort((left, right) -> {
@@ -285,7 +298,10 @@ public final class NooagramQuickFilter {
     }
 
     private static boolean isGenericCandidate(String value) {
-        String normalized = value.toLowerCase(Locale.ROOT).replaceAll("[\\s_-]", "");
+        if (findGenericLinkDomain(value) != null) {
+            return true;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT).replaceAll("[\\s_\\-.]", "");
         switch (normalized) {
             case "http":
             case "https":
@@ -347,8 +363,45 @@ public final class NooagramQuickFilter {
             case "官方交流群":
                 return true;
             default:
-                return false;
+            return false;
         }
+    }
+
+    private static String removeGenericLinks(String text) {
+        String withoutUrls = removeGenericMatches(text, URL_PATTERN);
+        return removeGenericMatches(withoutUrls, CONTACT_PATTERN);
+    }
+
+    private static String removeGenericMatches(String text, Pattern pattern) {
+        Matcher matcher = pattern.matcher(text);
+        StringBuilder result = new StringBuilder(text.length());
+        int lastEnd = 0;
+        while (matcher.find()) {
+            result.append(text, lastEnd, matcher.start());
+            if (findGenericLinkDomain(matcher.group()) == null) {
+                result.append(matcher.group());
+            }
+            lastEnd = matcher.end();
+        }
+        result.append(text, lastEnd, text.length());
+        return result.toString();
+    }
+
+    private static String findGenericLinkDomain(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        Matcher matcher = DOMAIN_PATTERN.matcher(value.toLowerCase(Locale.ROOT));
+        while (matcher.find()) {
+            String domain = matcher.group();
+            if (domain.startsWith("www.")) {
+                domain = domain.substring(4);
+            }
+            if (GENERIC_LINK_DOMAINS.contains(domain)) {
+                return domain;
+            }
+        }
+        return null;
     }
 
     private static String truncate(String value) {

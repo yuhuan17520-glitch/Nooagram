@@ -31,7 +31,7 @@ jobs:
           git config user.name "Nooagram Bot"
           git config user.email "actions@github.com"
           git remote add upstream https://github.com/Keeperorowner/NagramXF.git
-          git fetch upstream --tags
+          git fetch --force upstream --tags
 
       - name: Resolve upstream release tag
         id: tag
