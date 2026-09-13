@@ -1,6 +1,7 @@
 package org.telegram.ui.Cells;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -31,6 +32,13 @@ final class NooagramDialogPreviewFilter {
 
     static boolean prepare(DialogCell cell, int account, long dialogId, MessageObject source) {
         State state = getState(account, dialogId, source.getId());
+        if (BuildConfig.DEBUG) {
+            FileLog.d("Nooagram preview prepare account=" + account
+                    + " dialog=" + dialogId
+                    + " source=" + source.getId()
+                    + " replacement=" + (state.replacement == null ? null : state.replacement.getId())
+                    + " loading=" + state.loading);
+        }
         if (state.replacement != null
                 && !isSameMessage(state.replacement, source)
                 && !AyuFilter.isFiltered(state.replacement, null)) {
@@ -44,6 +52,11 @@ final class NooagramDialogPreviewFilter {
             state.lastQueryMessageId = source.getId();
             state.lastQueryAt = System.currentTimeMillis();
             state.token++;
+            if (BuildConfig.DEBUG) {
+                FileLog.d("Nooagram preview query account=" + account
+                        + " dialog=" + dialogId
+                        + " source=" + source.getId());
+            }
             loadAsync(cell, account, dialogId, source.getId(), state.token);
         }
         return false;
@@ -51,6 +64,12 @@ final class NooagramDialogPreviewFilter {
 
     static MessageObject getReplacement(int account, long dialogId, MessageObject source) {
         State state = getState(account, dialogId, source.getId());
+        if (BuildConfig.DEBUG) {
+            FileLog.d("Nooagram preview get account=" + account
+                    + " dialog=" + dialogId
+                    + " source=" + source.getId()
+                    + " replacement=" + (state.replacement == null ? null : state.replacement.getId()));
+        }
         if (state.replacement != null
                 && !isSameMessage(state.replacement, source)
                 && !AyuFilter.isFiltered(state.replacement, null)) {
@@ -96,10 +115,21 @@ final class NooagramDialogPreviewFilter {
                 synchronized (STATES) {
                     state = STATES.get(stateKey(account, dialogId));
                     if (state == null || state.sourceMessageId != sourceMessageId || state.token != token) {
+                        if (BuildConfig.DEBUG) {
+                            FileLog.d("Nooagram preview stale callback account=" + account
+                                    + " dialog=" + dialogId
+                                    + " source=" + sourceMessageId);
+                        }
                         return;
                     }
                     state.loading = false;
                     state.replacement = result;
+                }
+                if (BuildConfig.DEBUG) {
+                    FileLog.d("Nooagram preview callback account=" + account
+                            + " dialog=" + dialogId
+                            + " source=" + sourceMessageId
+                            + " result=" + (result == null ? null : result.getId()));
                 }
                 if (result != null) {
                     target.applyFilteredPreviewReplacement(result);
@@ -140,6 +170,12 @@ final class NooagramDialogPreviewFilter {
 
                 MessageObject result = new MessageObject(account, raw, false, false);
                 if (!AyuFilter.isFiltered(result, null)) {
+                    if (BuildConfig.DEBUG) {
+                        FileLog.d("Nooagram preview found account=" + account
+                                + " dialog=" + dialogId
+                                + " message=" + result.getId()
+                                + " date=" + raw.date);
+                    }
                     MessagesController controller = MessagesController.getInstance(account);
                     if (controller.getUser(result.getSenderId()) == null) {
                         TLRPC.User user = storage.getUser(result.getSenderId());
@@ -165,6 +201,10 @@ final class NooagramDialogPreviewFilter {
                 } catch (Throwable ignored) {
                 }
             }
+        }
+        if (BuildConfig.DEBUG) {
+            FileLog.d("Nooagram preview no-result account=" + account
+                    + " dialog=" + dialogId);
         }
         return null;
     }
