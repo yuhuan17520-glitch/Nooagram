@@ -145,15 +145,30 @@ jobs:
           if [ -n "${{ env.APK32 }}" ]; then
             ASSETS+=("${{ env.APK32 }}")
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${ASSETS[@]}" SHA256SUMS.txt --clobber
-            gh release edit "$TAG" --notes-file release-notes.md
-          else
-            gh release create "$TAG" \
-              --target "$GITHUB_SHA" \
-              --title "Nooagram ${VERSION}" \
-              --notes-file release-notes.md \
-              "${ASSETS[@]}" SHA256SUMS.txt
+          publish_release() {
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "${ASSETS[@]}" SHA256SUMS.txt --clobber
+              gh release edit "$TAG" --notes-file release-notes.md
+            else
+              gh release create "$TAG" \
+                --target "$GITHUB_SHA" \
+                --title "Nooagram ${VERSION}" \
+                --notes-file release-notes.md \
+                "${ASSETS[@]}" SHA256SUMS.txt
+            fi
+          }
+          published=0
+          for attempt in 1 2 3 4 5; do
+            if publish_release; then
+              published=1
+              break
+            fi
+            echo "GitHub release publish failed (attempt ${attempt}); retrying after server error."
+            sleep "$((attempt * 15))"
+          done
+          if [ "$published" -ne 1 ]; then
+            echo "GitHub release publish failed after 5 attempts." >&2
+            exit 1
           fi
 
       - name: Publish update manifest
@@ -186,4 +201,19 @@ jobs:
           with open("update.json", "w", encoding="utf-8") as stream:
               json.dump(manifest, stream, ensure_ascii=False, indent=2)
           PY
-          gh release upload "$TAG" update.json --clobber
+          upload_manifest() {
+            gh release upload "$TAG" update.json --clobber
+          }
+          manifest_uploaded=0
+          for attempt in 1 2 3 4 5; do
+            if upload_manifest; then
+              manifest_uploaded=1
+              break
+            fi
+            echo "Update manifest upload failed (attempt ${attempt}); retrying after server error."
+            sleep "$((attempt * 15))"
+          done
+          if [ "$manifest_uploaded" -ne 1 ]; then
+            echo "Update manifest upload failed after 5 attempts." >&2
+            exit 1
+          fi
