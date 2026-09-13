@@ -21,6 +21,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
+import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.Cells.RadioColorCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextCheckCell;
@@ -72,6 +73,10 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell localPremiumRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.localPremium));
     private final AbstractConfigCell disableAdsRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableAds));
     private final AbstractConfigCell showGhostModeStatusRow = cellGroup.appendCell(new ConfigCellCustom("GhostModeStatusIndicator", CellGroup.ITEM_TYPE_TEXT_CHECK, true));
+    private final AbstractConfigCell highRefreshRateRow = cellGroup.appendCell(new ConfigCellTextCheck(
+            NekoConfig.nooagramHighRefreshRate,
+            getString(R.string.NooagramHighRefreshRateInfo),
+            getString(R.string.NooagramHighRefreshRate)));
     private final AbstractConfigCell dividerCustomExperimentalBottomRow = cellGroup.appendCell(new ConfigCellDivider());
 
     public NekoAyuMomentsSettingsActivity() {
@@ -133,6 +138,10 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
                 }
             } else if (key.equals(NekoConfig.showGhostModeStatus.getKey())) {
                 NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.mainUserInfoChanged);
+            } else if (key.equals(NekoConfig.nooagramHighRefreshRate.getKey())) {
+                if (getParentActivity() instanceof LaunchActivity) {
+                    ((LaunchActivity) getParentActivity()).applyNooagramHighRefreshRate();
+                }
             }
         };
 

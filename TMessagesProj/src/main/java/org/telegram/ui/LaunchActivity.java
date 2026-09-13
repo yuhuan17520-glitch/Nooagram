@@ -522,6 +522,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         frameLayout.setClipToPadding(false);
         frameLayout.setClipChildren(false);
         setContentView(frameLayout);
+        applyNooagramHighRefreshRate();
         rootAnimatedInsetsListener = new WindowAnimatedInsetsProvider(frameLayout);
         pipActivityController.addPipListener(new IPipActivityListener() {
             final ActivityVisibilityController activityVisibilityController = createActivityVisibilityController(false);
@@ -7782,6 +7783,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onResume() {
         super.onResume();
         isResumed = true;
+        applyNooagramHighRefreshRate();
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {
             onResumeStaticCallback.run();
@@ -7943,7 +7945,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         AndroidUtilities.checkDisplaySize(this, newConfig);
-        AndroidUtilities.setPreferredMaxRefreshRate(getWindow());
+        applyNooagramHighRefreshRate();
         super.onConfigurationChanged(newConfig);
         pipActivityHandler.onConfigurationChanged(newConfig);
         AndroidUtilities.resetTabletFlag();
@@ -7971,6 +7973,25 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
         if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SYSTEM) {
             Theme.checkAutoNightThemeConditions();
+        }
+    }
+
+    public void applyNooagramHighRefreshRate() {
+        Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+        WindowManager.LayoutParams params = window.getAttributes();
+        float targetRate = NekoConfig.nooagramHighRefreshRate.Bool()
+                ? AndroidUtilities.screenMaxRefreshRate
+                : 0.0f;
+        if (Math.abs(params.preferredRefreshRate - targetRate) > 0.2f) {
+            params.preferredRefreshRate = targetRate;
+            try {
+                window.setAttributes(params);
+            } catch (Exception exception) {
+                FileLog.e(exception);
+            }
         }
     }
 

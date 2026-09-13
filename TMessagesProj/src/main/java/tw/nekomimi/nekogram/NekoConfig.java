@@ -207,6 +207,7 @@ public class NekoConfig {
     public static ConfigItem showGhostInDrawer = addConfig("showGhostInDrawer", configTypeBool, false);
     public static ConfigItem showGhostModeStatus = addConfig("showGhostModeStatus", configTypeBool, false);
     public static ConfigItem navigationDrawerEnabled = addConfig("navigationDrawerEnabled", configTypeBool, false);
+    public static ConfigItem nooagramHighRefreshRate = addConfig("NooagramHighRefreshRate", configTypeBool, false);
 
     // --- Locked Status ---
     public static ConfigItem sendReadMessagePacketsLocked = ghostDelegate("sendReadMessagePacketsLocked", false,
