@@ -75,7 +75,7 @@ Nooagram follows Semantic Versioning 2.0.0. The version name uses the format:
 For example:
 
 ```text
-1.0.0-12.10.1.1450
+1.0.1-12.10.1.1450
 ```
 
 ## Acknowledgments
