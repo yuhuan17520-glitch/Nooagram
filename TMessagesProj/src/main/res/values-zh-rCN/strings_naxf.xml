@@ -135,6 +135,8 @@
     <string name="HideProxySponsorChannel">隐藏代理赞助商频道</string>
     <string name="hideSponsoredMessage">隐藏赞助消息</string>
     <string name="DisableAds">禁用广告</string>
+    <string name="NooagramHighRefreshRate">高刷新率列表</string>
+    <string name="NooagramHighRefreshRateInfo">为主页请求最高屏幕刷新率，可能增加耗电。</string>
     <string name="StickerSizeLeft">小</string>
     <string name="StickerSizeRight">大</string>
     <string name="UseScheduledMessages">定时发送消息</string>

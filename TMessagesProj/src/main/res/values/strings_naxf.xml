@@ -144,6 +144,8 @@
     <string name="HideProxySponsorChannel">Hide proxy sponsor channel</string>
     <string name="hideSponsoredMessage">Hide sponsored messages</string>
     <string name="DisableAds">Disable ads</string>
+    <string name="NooagramHighRefreshRate">High refresh rate list</string>
+    <string name="NooagramHighRefreshRateInfo">Request the highest display rate for the main list. May use more battery.</string>
     <string name="StickerSizeLeft">Small</string>
     <string name="StickerSizeRight">Large</string>
     <string name="UseScheduledMessages">Schedule Messages</string>
