@@ -61,6 +61,7 @@ import androidx.core.math.MathUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.ChatThemeController;
 import org.telegram.messenger.CodeHighlighting;
@@ -925,6 +926,12 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         lastSendState = replacement.messageOwner.send_state;
         lastUnreadState = replacement.isUnread();
         updateHelper.lastDrawnMessageId = Long.MIN_VALUE;
+        if (BuildConfig.DEBUG) {
+            FileLog.d("Nooagram preview apply dialog=" + currentDialogId
+                    + " account=" + currentAccount
+                    + " message=" + replacement.getId()
+                    + " attached=" + isAttachedToWindow());
+        }
         if (isAttachedToWindow()) {
             buildLayout();
         } else {
