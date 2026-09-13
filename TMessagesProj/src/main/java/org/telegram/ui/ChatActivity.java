@@ -3900,7 +3900,7 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
         }
-        return !TextUtils.isEmpty(AyuFilter.getMessageText(primary, group));
+        return canNooagramQuickFilterMessage(primary, group);
     }
 
     private boolean canNooagramQuickFilterMessage(MessageObject primary, MessageObject.GroupedMessages group) {
