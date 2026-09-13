@@ -76,13 +76,15 @@ jobs:
       - name: Prepare version
         run: |
           NOOAGRAM_RUN="${{ github.run_number }}"
+          UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
           APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
           NOOAGRAM_VERSION_CODE=$((125000000 + NOOAGRAM_RUN))
-          NOOAGRAM_VERSION="${APP_VERSION_NAME}.${NOOAGRAM_RUN}"
-          sed -i "s#^def verName = .*#def verName = APP_VERSION_NAME + \".${NOOAGRAM_RUN}\"#" TMessagesProj/build.gradle
+          NOOAGRAM_VERSION="1.0.0-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
+          sed -i "s#^def verName = .*#def verName = \"${NOOAGRAM_VERSION}\"#" TMessagesProj/build.gradle
           sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
           {
             echo "APP_VERSION_NAME=${APP_VERSION_NAME}"
+            echo "UPSTREAM_TAG=${UPSTREAM_TAG}"
             echo "NOOAGRAM_RUN=${NOOAGRAM_RUN}"
             echo "NOOAGRAM_VERSION_CODE=${NOOAGRAM_VERSION_CODE}"
             echo "NOOAGRAM_VERSION=${NOOAGRAM_VERSION}"
@@ -130,7 +132,7 @@ jobs:
           {
             echo "## Nooagram ${VERSION}"
             echo
-            echo "- NagramXF upstream: ${UPSTREAM_SUMMARY}"
+            echo "- NagramXF release tag: ${{ env.UPSTREAM_TAG }}"
             echo "- 新增一键屏蔽消息和指定群置顶隐藏。"
             echo "- 会话列表被过滤时会回退显示上一条正常消息。"
             echo "- 使用独立包名 fork.yuhuan.nooagram，可与 NagramXF 并存。"
