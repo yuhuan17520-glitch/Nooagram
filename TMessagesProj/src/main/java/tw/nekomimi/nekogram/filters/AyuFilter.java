@@ -150,7 +150,10 @@ public class AyuFilter {
         }
         try {
             dao.deleteAllShared();
-            for (FilterModel m : filterModels1) {
+            // The DAO reads rows by descending rowid. Insert in reverse so the
+            // loaded list keeps the exact save-order instead of flipping on each edit.
+            for (int i = filterModels1.size() - 1; i >= 0; i--) {
+                FilterModel m = filterModels1.get(i);
                 m.ensureId();
                 m.buildPattern();
                 dao.insert(toRow(m, null));
@@ -631,18 +634,24 @@ public class AyuFilter {
             return;
         }
         try {
+            // Build all rows in the expected load order, then persist them in reverse.
+            // This keeps shared and per-chat filters stable when rowid DESC is used for loading.
+            ArrayList<RegexFilter> rows = new ArrayList<>();
             List<RegexFilter> shared = dao.getShared();
             dao.deleteAllFilters();
-            for (RegexFilter s : shared) {
-                dao.insert(s);
-            }
+            rows.addAll(shared);
             for (ChatFilterEntry entry : entries) {
                 if (entry == null || entry.filters == null) continue;
                 for (FilterModel m : entry.filters) {
-                    m.ensureId();
-                    m.buildPattern();
-                    dao.insert(toRow(m, entry.dialogId));
+                    if (m != null) {
+                        m.ensureId();
+                        m.buildPattern();
+                        rows.add(toRow(m, entry.dialogId));
+                    }
                 }
+            }
+            for (int i = rows.size() - 1; i >= 0; i--) {
+                dao.insert(rows.get(i));
             }
         } catch (Exception e) {
             FileLog.e("AyuFilter.saveChatFilterEntries", e);
