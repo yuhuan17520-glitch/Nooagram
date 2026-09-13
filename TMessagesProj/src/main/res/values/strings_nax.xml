@@ -541,8 +541,8 @@
     <string name="NooagramPinnedRestored">Pinned message restored</string>
     <string name="NooagramPinnedRestoredAll">Pinned messages restored</string>
     <string name="NooagramPinnedHiddenAll">Pinned messages hidden</string>
-    <string name="NooagramHideThisGroupPinned">Hide this group pinned</string>
-    <string name="NooagramRestoreThisGroupPinned">Restore this group pinned</string>
+    <string name="NooagramHideThisGroupPinned">Hide this group’s pinned</string>
+    <string name="NooagramRestoreThisGroupPinned">Restore this group’s pinned</string>
     <string name="NooagramPinnedClearTitle">Clear pinned hider list?</string>
     <string name="NooagramPinnedClearMessage">All hidden pinned messages will be restored.</string>
 </resources>
