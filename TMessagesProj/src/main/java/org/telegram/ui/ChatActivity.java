@@ -516,6 +516,8 @@ public class ChatActivity extends BaseFragment implements
     private final static int nkbtn_report = 2041;
     private final static int nkbtn_ai_chat = 2042;
     private final static int nkbtn_nooagram_quick_filter = 2043;
+    private final static int nkbtn_nooagram_quick_filter_message = 2044;
+    private final static int nkheaderbtn_nooagram_hide_pinned = 2045;
     private final static int nkbtn_clearDeleted = 2100;
     private final static int nkbtn_viewDeleted = 2101;
 
@@ -3901,6 +3903,38 @@ public class ChatActivity extends BaseFragment implements
         return !TextUtils.isEmpty(AyuFilter.getMessageText(primary, group));
     }
 
+    private boolean canNooagramQuickFilterMessage(MessageObject primary, MessageObject.GroupedMessages group) {
+        if (primary == null || currentEncryptedChat != null || chatMode != MODE_DEFAULT) {
+            return false;
+        }
+        return primary.getId() > 0
+                && !primary.isOut()
+                && !primary.isSponsored()
+                && !primary.isAyuDeleted()
+                && !primary.isEphemeral()
+                && !TextUtils.isEmpty(AyuFilter.getMessageText(primary, group));
+    }
+
+    private NooagramQuickFilter.Result nooagramQuickFilterMessage(MessageObject primary, MessageObject.GroupedMessages group) {
+        NooagramQuickFilter.Result result = NooagramQuickFilter.block(primary, group);
+        if (result.error != null) {
+            int textRes = "NO_TEXT".equals(result.error)
+                    ? R.string.NooagramQuickFilterNoText
+                    : R.string.NooagramQuickFilterFailed;
+            showNooagramBulletin(R.raw.error, getString(textRes), 2);
+            return result;
+        }
+        clearSelectionMode();
+        if (chatAdapter != null) {
+            chatAdapter.notifyDataSetChanged(false);
+        }
+        CharSequence message = result.duplicate
+                ? getString(R.string.NooagramQuickFilterDuplicate)
+                : formatString(R.string.NooagramQuickFilterAdded, result.regex);
+        showNooagramBulletin(R.raw.done, message, 3);
+        return result;
+    }
+
     private void nooagramQuickFilterSelectedMessages() {
         ArrayList<MessageObject> selected = getSelectedMessages1();
         if (selected.isEmpty()) {
@@ -3911,36 +3945,21 @@ public class ChatActivity extends BaseFragment implements
         if (selected.size() > 1) {
             long groupId = primary.getGroupId();
             if (groupId == 0 || group == null || group.messages == null) {
-                showNooagramQuickFilterBulletin(R.raw.error, getString(R.string.NooagramQuickFilterSelectOne), 2);
+                showNooagramBulletin(R.raw.error, getString(R.string.NooagramQuickFilterSelectOne), 2);
                 return;
             }
             for (MessageObject message : selected) {
                 if (message == null || message.getGroupId() != groupId) {
-                    showNooagramQuickFilterBulletin(R.raw.error, getString(R.string.NooagramQuickFilterSelectOne), 2);
+                    showNooagramBulletin(R.raw.error, getString(R.string.NooagramQuickFilterSelectOne), 2);
                     return;
                 }
             }
         }
 
-        NooagramQuickFilter.Result result = NooagramQuickFilter.block(primary, group);
-        if (result.error != null) {
-            int textRes = "NO_TEXT".equals(result.error)
-                    ? R.string.NooagramQuickFilterNoText
-                    : R.string.NooagramQuickFilterFailed;
-            showNooagramQuickFilterBulletin(R.raw.error, getString(textRes), 2);
-            return;
-        }
-        clearSelectionMode();
-        if (chatAdapter != null) {
-            chatAdapter.notifyDataSetChanged(false);
-        }
-        CharSequence message = result.duplicate
-                ? getString(R.string.NooagramQuickFilterDuplicate)
-                : formatString(R.string.NooagramQuickFilterAdded, result.regex);
-        showNooagramQuickFilterBulletin(R.raw.done, message, 3);
+        nooagramQuickFilterMessage(primary, group);
     }
 
-    private void showNooagramQuickFilterBulletin(int icon, CharSequence message, int maxLines) {
+    private void showNooagramBulletin(int icon, CharSequence message, int maxLines) {
         try {
             if (BulletinFactory.canShowBulletin(this)) {
                 BulletinFactory.of(this).createSimpleBulletin(icon, message, maxLines).show();
@@ -3948,6 +3967,32 @@ public class ChatActivity extends BaseFragment implements
         } catch (Exception exception) {
             FileLog.e(exception);
         }
+    }
+
+    private void updateNooagramPinnedHiderMenuItem() {
+        if (headerItem == null) {
+            return;
+        }
+        ActionBarMenuSubItem item = headerItem.getSubItem(nkheaderbtn_nooagram_hide_pinned);
+        if (item == null) {
+            return;
+        }
+        item.setTextAndIcon(
+                getString(NooagramPinnedHider.isHidden(currentAccount, dialog_id)
+                        ? R.string.NooagramRestoreThisGroupPinned
+                        : R.string.NooagramHideThisGroupPinned),
+                R.drawable.msg_pin);
+    }
+
+    private void toggleNooagramPinnedHider() {
+        boolean wasHidden = NooagramPinnedHider.isHidden(currentAccount, dialog_id);
+        NooagramPinnedHider.setHidden(currentAccount, dialog_id, !wasHidden);
+        updatePinnedMessageView(true);
+        updateNooagramPinnedHiderMenuItem();
+        showNooagramBulletin(
+                R.raw.done,
+                getString(wasHidden ? R.string.NooagramPinnedRestored : R.string.NooagramPinnedHiddenAll),
+                1);
     }
 
     private static class ChatActivityTextSelectionHelper extends TextSelectionHelper.ChatListTextSelectionHelper {
@@ -5059,6 +5104,14 @@ public class ChatActivity extends BaseFragment implements
             }
             if (allowShowPinned) {
                 headerItem.lazilyAddSubItem(nkheaderbtn_show_pinned, R.drawable.msg_pin, LocaleController.getString("PinnedMessage", R.string.PinnedMessage));
+            }
+            if (currentChat != null && currentEncryptedChat == null && chatMode == 0 && !isThreadChat()) {
+                headerItem.lazilyAddSubItem(
+                        nkheaderbtn_nooagram_hide_pinned,
+                        R.drawable.msg_pin,
+                        getString(NooagramPinnedHider.isHidden(currentAccount, dialog_id)
+                                ? R.string.NooagramRestoreThisGroupPinned
+                                : R.string.NooagramHideThisGroupPinned));
             }
             if (ChatObject.isBoostSupported(currentChat) && (getUserConfig().isPremium() || ChatObject.isBoosted(chatInfo) || ChatObject.hasAdminRights(currentChat))) {
                 RLottieDrawable drawable = new RLottieDrawable(R.raw.boosts, "" + R.raw.boosts, dp(24), dp(24));
@@ -11401,6 +11454,7 @@ public class ChatActivity extends BaseFragment implements
         actionModeViews.add(actionMode.addItemWithWidth(nkactionbarbtn_selectBetween, R.drawable.ic_select_between, AndroidUtilities.dp(54), LocaleController.getString(R.string.SelectBetween)));
         actionModeViews.add(actionMode.addItemWithWidth(star, R.drawable.msg_fave, AndroidUtilities.dp(54), LocaleController.getString(R.string.AddToFavorites)));
         actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, AndroidUtilities.dp(54), LocaleController.getString(R.string.Copy)));
+        actionModeViews.add(actionMode.addItemWithWidth(nkbtn_nooagram_quick_filter, R.drawable.msg_block2, AndroidUtilities.dp(54), LocaleController.getString(R.string.NooagramQuickFilter)));
         actionModeViews.add(actionMode.addItemWithWidth(combine_message, R.drawable.msg_replace, AndroidUtilities.dp(54), LocaleController.getString(R.string.CombineMessage)));
         if (currentEncryptedChat == null && getDialogId() != UserObject.VERIFY && NaConfig.INSTANCE.getActionBarButtonForward().Bool()) {
             actionModeViews.add(actionMode.addItemWithWidth(forward, R.drawable.msg_forward_noquote, AndroidUtilities.dp(54), LocaleController.getString(R.string.Forward)));
@@ -11450,6 +11504,7 @@ public class ChatActivity extends BaseFragment implements
         actionMode.setItemVisibility(share, View.GONE);
 
         actionModeOtherItem.setSubItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0);
+        actionMode.setItemVisibility(nkbtn_nooagram_quick_filter, canNooagramQuickFilterSelection() ? View.VISIBLE : View.GONE);
         boolean doShrinkActionBarItems = isActionBarTooNarrow && actionMode.getItem(edit).getVisibility() == View.VISIBLE && actionMode.getItem(copy).getVisibility() == View.VISIBLE && actionMode.getItem(delete).getVisibility() == View.VISIBLE;
         if (doShrinkActionBarItems) {
             actionMode.getItem(nkactionbarbtn_reply).setVisibility(View.GONE);
@@ -20985,6 +21040,10 @@ public class ChatActivity extends BaseFragment implements
                 if (actionModeOtherItem != null) {
                     actionModeOtherItem.setSubItemVisibility(nkbtn_sharemessage, selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() > 0);
                     actionModeOtherItem.setSubItemVisibility(nkbtn_nooagram_quick_filter, canNooagramQuickFilterSelection());
+                    ActionBarMenu actionModeMenu = actionBar.getActionMode();
+                    if (actionModeMenu != null) {
+                        actionModeMenu.setItemVisibility(nkbtn_nooagram_quick_filter, canNooagramQuickFilterSelection() ? View.VISIBLE : View.GONE);
+                    }
                 }
 
                 boolean allowPin = false;
@@ -30475,6 +30534,7 @@ public class ChatActivity extends BaseFragment implements
         if (currentEncryptedChat != null || chatMode != 0) {
             return;
         }
+        updateNooagramPinnedHiderMenuItem();
         if (NooagramPinnedHider.isHidden(currentAccount, dialog_id)) {
             hidePinnedMessageView(animated);
             if (headerItem != null) {
@@ -35759,6 +35819,12 @@ public class ChatActivity extends BaseFragment implements
                 AyuGhostUtils.markReadOnServer(selectedObject, false);
                 BotWebViewVibrationEffect.SELECTION_CHANGE.vibrate();
                 break;
+            case nkbtn_nooagram_quick_filter_message: {
+                MessageObject primary = selectedObject;
+                MessageObject.GroupedMessages group = selectedObjectGroup;
+                nooagramQuickFilterMessage(primary, group);
+                break;
+            }
             case OPTION_RETRY: {
                 final MessageObject object = selectedObject;
                 final MessageObject.GroupedMessages group = selectedObjectGroup;
@@ -48187,6 +48253,8 @@ public class ChatActivity extends BaseFragment implements
             SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
             preferences.edit().remove("pin_" + dialog_id).apply();
             updatePinnedMessageView(true);
+        } else if (id == nkheaderbtn_nooagram_hide_pinned) {
+            toggleNooagramPinnedHider();
         } else if (id == nkheaderbtn_linked_chat) {
             if (chatInfo == null) {
                 return;
@@ -50258,6 +50326,12 @@ public class ChatActivity extends BaseFragment implements
             deleteIconRes = R.drawable.msg_delete_auto;
         } else {
             deleteIconRes = R.drawable.msg_delete;
+        }
+
+        if (canNooagramQuickFilterMessage(message, groupedMessages)) {
+            items.add(getString(R.string.NooagramQuickFilter));
+            options.add(nkbtn_nooagram_quick_filter_message);
+            icons.add(R.drawable.msg_block2);
         }
 
         if (type == -1) {

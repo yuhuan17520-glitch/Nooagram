@@ -506,6 +506,8 @@
     <string name="NooagramPinnedRestored">已恢复置顶</string>
     <string name="NooagramPinnedRestoredAll">已恢复置顶</string>
     <string name="NooagramPinnedHiddenAll">已隐藏置顶</string>
+    <string name="NooagramHideThisGroupPinned">隐藏此群置顶</string>
+    <string name="NooagramRestoreThisGroupPinned">恢复此群置顶</string>
     <string name="NooagramPinnedClearTitle">清空置顶隐藏清单？</string>
     <string name="NooagramPinnedClearMessage">所有已隐藏的置顶消息都会恢复显示。</string>
 </resources>
