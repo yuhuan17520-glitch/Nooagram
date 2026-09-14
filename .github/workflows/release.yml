@@ -78,7 +78,7 @@ jobs:
           UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
           APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
           NOOAGRAM_VERSION_CODE=$((125000000 + NOOAGRAM_RUN))
-          NOOAGRAM_VERSION="1.0.4-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
+          NOOAGRAM_VERSION="1.0.5-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
           sed -i "s#^def verName = .*#def verName = \"${NOOAGRAM_VERSION}\"#" TMessagesProj/build.gradle
           sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
           {
@@ -185,9 +185,11 @@ jobs:
               "changelog": os.environ["CHANGELOG"],
               "download_url": os.environ["BASE_URL"] + urllib.parse.quote(os.environ["APK64"]),
               "sha256": os.environ["SHA256"],
+              "size": os.path.getsize(os.environ["APK64"]),
           }
           if os.environ.get("APK32"):
               manifest["download_url_32"] = os.environ["BASE_URL"] + urllib.parse.quote(os.environ["APK32"])
+              manifest["size_32"] = os.path.getsize(os.environ["APK32"])
 
           with open("update.json", "w", encoding="utf-8") as stream:
               json.dump(manifest, stream, ensure_ascii=False, indent=2)

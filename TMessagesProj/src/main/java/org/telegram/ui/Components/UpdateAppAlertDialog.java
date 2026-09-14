@@ -34,6 +34,7 @@ import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.messenger.browser.Browser;
 
+import tw.nekomimi.nekogram.helpers.remote.NooagramUpdateHelper;
 import tw.nekomimi.nekogram.TextViewEffects;
 
 public class UpdateAppAlertDialog extends BottomSheet {
@@ -247,6 +248,11 @@ public class UpdateAppAlertDialog extends BottomSheet {
                 imageView.setImage(ImageLocation.getForDocument(appUpdate.sticker), "250_250", imageLocation, null, 0, "update");
             }
             linearLayout.addView(imageView, LayoutHelper.createLinear(160, 160, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 17, 8, 17, 0));
+        } else {
+            RLottieImageView imageView = new RLottieImageView(context);
+            imageView.setAnimation(R.raw.utyan_schedule, 160, 160);
+            imageView.playAnimation();
+            linearLayout.addView(imageView, LayoutHelper.createLinear(160, 160, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 17, 8, 17, 0));
         }
 
         TextView textView = new TextView(context);
@@ -255,7 +261,7 @@ public class UpdateAppAlertDialog extends BottomSheet {
         textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         textView.setSingleLine(true);
         textView.setEllipsize(TextUtils.TruncateAt.END);
-        textView.setText(LocaleController.getString(R.string.UpdateTelegram).replace("Telegram", LocaleController.getString(R.string.NagramX)));
+        textView.setText(LocaleController.getString(R.string.UpdateTelegram).replace("Telegram", "Nooagram"));
         linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 23, 16, 23, 0));
 
         TextView messageTextView = new TextView(getContext());
@@ -300,8 +306,12 @@ public class UpdateAppAlertDialog extends BottomSheet {
         doneButton.setText(LocaleController.formatString("AppUpdateDownloadNow", R.string.AppUpdateDownloadNow), false);
         doneButton.background.setOnClickListener(v -> {
             if (appUpdate.document != null) {
-                FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update",
-                        FileLoader.PRIORITY_NORMAL, 1);
+                if (NooagramUpdateHelper.isNooagramUpdate(appUpdate)) {
+                    NooagramUpdateHelper.startDownload(accountNum, appUpdate);
+                } else {
+                    FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update",
+                            FileLoader.PRIORITY_NORMAL, 1);
+                }
             } else if (appUpdate.url != null) {
                 Browser.openUrl(getContext(), appUpdate.url);
             }
