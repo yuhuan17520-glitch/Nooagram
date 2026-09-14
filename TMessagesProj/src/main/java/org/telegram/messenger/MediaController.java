@@ -5174,10 +5174,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         }
                     } else {
                         File dir;
-                        String folderName = NekoConfig.customSavePath.String();
+                        String folderName = NekoConfig.getCustomSavePath();
                         if (messageObjects.get(0) != null && NaConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
                             String chatFolderName = ChatsHelper.getChatFolderName(messageObjects.get(0));
-                            folderName = folderName + File.separator + chatFolderName;
+                            folderName = TextUtils.isEmpty(folderName) ? chatFolderName : folderName + File.separator + chatFolderName;
                         }
                         if (isMusic) {
                             dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
@@ -5536,7 +5536,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
 
             int notificationId = SaveToDownloadReceiver.createNotificationId();
             final boolean[] finished = new boolean[1];
-            if (context != null && type != 0) {
+            if (showProgress && context != null && type != 0) {
                 try {
                     final AlertDialog dialog = new AlertDialog(context, AlertDialog.ALERT_TYPE_LOADING);
                     dialog.setMessage(LocaleController.getString(R.string.Loading));
@@ -5557,10 +5557,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 try {
                     Uri uri;
                     boolean result = true;
-                    String folderName = NekoConfig.customSavePath.String();
+                    String folderName = NekoConfig.getCustomSavePath();
                     if (selectedObject != null && NaConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
                         String chatFolderName = ChatsHelper.getChatFolderName(selectedObject);
-                        folderName = folderName + File.separator + chatFolderName;
+                        folderName = TextUtils.isEmpty(folderName) ? chatFolderName : folderName + File.separator + chatFolderName;
                     }
                     if (Build.VERSION.SDK_INT >= 29) {
                         uri = saveFileInternal(type, sourceFile, name, selectedObject);
@@ -5871,32 +5871,32 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     filename = AndroidUtilities.generateFileName(0, extension);
                 }
                 uriToInsert = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                File dirDest = new File(Environment.DIRECTORY_PICTURES, folderName);
-                contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
+                        File dirDest = TextUtils.isEmpty(folderName) ? new File(Environment.DIRECTORY_PICTURES) : new File(Environment.DIRECTORY_PICTURES, folderName);
+                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 contentValues.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
                 contentValues.put(MediaStore.Images.Media.MIME_TYPE, mimeType);
             } else if (selectedType == 1) {
                 if (filename == null) {
                     filename = AndroidUtilities.generateFileName(1, extension);
                 }
-                File dirDest = new File(Environment.DIRECTORY_MOVIES, folderName);
-                contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
+                        File dirDest = TextUtils.isEmpty(folderName) ? new File(Environment.DIRECTORY_MOVIES) : new File(Environment.DIRECTORY_MOVIES, folderName);
+                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 uriToInsert = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Video.Media.DISPLAY_NAME, filename);
             } else if (selectedType == 2) {
                 if (filename == null) {
                     filename = sourceFile.getName();
                 }
-                File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, folderName);
-                contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
-                uriToInsert = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                        File dirDest = TextUtils.isEmpty(folderName) ? new File(Environment.DIRECTORY_DOWNLOADS) : new File(Environment.DIRECTORY_DOWNLOADS, folderName);
+                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
+                        uriToInsert = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Downloads.DISPLAY_NAME, filename);
             } else {
                 if (filename == null) {
                     filename = sourceFile.getName();
                 }
-                File dirDest = new File(Environment.DIRECTORY_MUSIC, folderName);
-                contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
+                        File dirDest = TextUtils.isEmpty(folderName) ? new File(Environment.DIRECTORY_MUSIC) : new File(Environment.DIRECTORY_MUSIC, folderName);
+                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 uriToInsert = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
                 contentValues.put(MediaStore.Audio.Media.DISPLAY_NAME, filename);
             }

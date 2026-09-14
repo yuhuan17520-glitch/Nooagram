@@ -215,8 +215,11 @@ public class AyuMessagesController {
     private static void initializeAttachmentsFolder() {
         try {
             syncAttachmentsPathWithConfig();
+            if (!attachmentsPath.exists()) {
+                return;
+            }
             File nomediaFile = new File(attachmentsPath, ".nomedia");
-            if (attachmentsPath.exists() || attachmentsPath.mkdirs()) {
+            if (attachmentsPath.exists()) {
                 AndroidUtilities.createEmptyFile(nomediaFile);
             }
             if (!nomediaFile.exists()) {

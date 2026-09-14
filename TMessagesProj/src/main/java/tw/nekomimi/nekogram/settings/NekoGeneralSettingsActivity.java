@@ -84,6 +84,10 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
 
     // Storage
     private final AbstractConfigCell headerStorage = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.StorageSettings)));
+    private final AbstractConfigCell enableCustomSavePathRow = cellGroup.appendCell(new ConfigCellTextCheck(
+            NekoConfig.enableCustomSavePath,
+            getString(R.string.enableCustomSavePathAbout),
+            getString(R.string.enableCustomSavePath)));
     private final AbstractConfigCell saveToChatSubfolderRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSaveToChatSubfolder()));
     private final AbstractConfigCell customSavePathRow = cellGroup.appendCell(new ConfigCellTextDetail(
             NekoConfig.customSavePath,
@@ -212,7 +216,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
             } else if (key.equals(NekoConfig.dnsType.getKey())) {
                 checkCustomDoHRows();
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
-            } else if (key.equals(NaConfig.INSTANCE.getSaveToChatSubfolder().getKey())) {
+            } else if (key.equals(NaConfig.INSTANCE.getSaveToChatSubfolder().getKey()) || key.equals(NekoConfig.enableCustomSavePath.getKey())) {
                 listAdapter.notifyItemChanged(cellGroup.rows.indexOf(customSavePathRow));
             }
         };
@@ -351,7 +355,13 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
     }
 
     private String formatCustomSavePathDetail(String rawValue) {
+        if (!NekoConfig.enableCustomSavePath.Bool()) {
+            return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).getAbsolutePath();
+        }
         String folderName = rawValue == null ? "" : rawValue.trim();
+        if ("Nagram".equalsIgnoreCase(folderName)) {
+            folderName = "Nooagram";
+        }
         if (NaConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
             folderName = TextUtils.isEmpty(folderName) ? "<chat_name>" : folderName + File.separator + "<chat_name>";
         }
@@ -384,6 +394,9 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         String normalized = input.trim();
         if (normalized.isEmpty()) {
             return "";
+        }
+        if ("Nagram".equalsIgnoreCase(normalized)) {
+            return "Nooagram";
         }
         if (normalized.matches("^(?!\\.{1,2}$)[A-Za-z0-9._ -]{1,255}$")) {
             return normalized;

@@ -102,6 +102,8 @@
     <string name="SaveToDownloadCount_many">Saving %1$d files to downloads</string>
     <string name="SaveToDownloadCount_other">Saving %1$d files to downloads</string>
     <string name="disableNotificationBubbles">Disable Notification Bubbles</string>
+    <string name="enableCustomSavePath">Custom Storage Path</string>
+    <string name="enableCustomSavePathAbout">Automatically save downloaded documents and files directly to the public Downloads directory instead of internal app storage.</string>
     <string name="customSavePath">Custom Storage Path</string>
     <string name="customSavePathHint">Leave blank to save directly</string>
     <string name="channelLabel">channel</string>

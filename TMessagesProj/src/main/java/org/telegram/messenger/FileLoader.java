@@ -1016,6 +1016,9 @@ public class FileLoader extends BaseController {
                     MessageObject messageObject = (MessageObject) parentObject;
                     if (document != null && messageObject.putInDownloadsStore) {
                         getDownloadController().onDownloadComplete(messageObject);
+                        if (tw.nekomimi.nekogram.NekoConfig.enableCustomSavePath.Bool() && canSaveAsFile(messageObject)) {
+                            autoSaveDocumentToCustomPath(messageObject, finalFile);
+                        }
                     }
                 }
 
@@ -1095,6 +1098,22 @@ public class FileLoader extends BaseController {
             return true;
         }
         return false;
+    }
+
+    private void autoSaveDocumentToCustomPath(MessageObject messageObject, File sourceFile) {
+        if (sourceFile == null || !sourceFile.exists() || messageObject == null || messageObject.getDocument() == null) {
+            return;
+        }
+        Utilities.globalQueue.postRunnable(() -> {
+            try {
+                boolean isMusic = messageObject.isMusic();
+                int type = isMusic ? 3 : 2;
+                String fileName = getDocumentFileName(messageObject.getDocument());
+                MediaController.saveFile(messageObject, sourceFile.getAbsolutePath(), ApplicationLoader.applicationContext, type, fileName, messageObject.getDocument().mime_type, null, false);
+            } catch (Throwable t) {
+                FileLog.e("autoSaveDocumentToCustomPath", t);
+            }
+        });
     }
 
     private boolean canSaveToPublicStorage(Object parentObject) {

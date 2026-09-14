@@ -11,6 +11,7 @@ import static tw.nekomimi.nekogram.config.ConfigItem.configTypeString;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Pair;
 
@@ -126,7 +127,19 @@ public class NekoConfig {
     public static ConfigItem showIdAndDc = addConfig("ShowIdAndDc", configTypeBool, true);
 
     public static ConfigItem cachePath = addConfig("cache_path", configTypeString, "");
-    public static ConfigItem customSavePath = addConfig("customSavePath", configTypeString, "Nagram");
+    public static ConfigItem enableCustomSavePath = addConfig("enableCustomSavePath", configTypeBool, false);
+    public static ConfigItem customSavePath = addConfig("customSavePath", configTypeString, "Nooagram");
+
+    public static String getCustomSavePath() {
+        if (!enableCustomSavePath.Bool()) {
+            return "";
+        }
+        String path = customSavePath.String();
+        if (TextUtils.isEmpty(path) || "Nagram".equalsIgnoreCase(path.trim())) {
+            return "Nooagram";
+        }
+        return path.trim();
+    }
 
     public static ConfigItem translationProvider = addConfig("translationProvider", configTypeInt, 1);
     public static ConfigItem translateToLang = addConfig("TransToLang", configTypeString, ""); // "" -> translate to current language (MessageTrans.kt & Translator.kt)

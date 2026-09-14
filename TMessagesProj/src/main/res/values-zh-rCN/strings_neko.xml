@@ -102,6 +102,8 @@
     <string name="SaveToDownloadCount_many">正在保存%1$d个文件到下载</string>
     <string name="SaveToDownloadCount_other">正在保存%1$d个文件到下载</string>
     <string name="disableNotificationBubbles">禁用通知气泡</string>
+    <string name="enableCustomSavePath">自定义存储路径</string>
+    <string name="enableCustomSavePathAbout">开启后，下载的文档和文件将自动保存至公共“下载”目录，无需手动另存。</string>
     <string name="customSavePath">自定义存储路径</string>
     <string name="customSavePathHint">留空以直接保存</string>
     <string name="channelLabel">频道</string>
