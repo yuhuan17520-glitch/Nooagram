@@ -3691,7 +3691,12 @@ public class AndroidUtilities {
         }
         File storageDir = null;
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Nagram");
+            String folderName = tw.nekomimi.nekogram.NekoConfig.getCustomSavePath();
+            if (TextUtils.isEmpty(folderName)) {
+                storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+            } else {
+                storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), folderName);
+            }
             if (!storageDir.mkdirs()) {
                 if (!storageDir.exists()) {
                     if (BuildVars.LOGS_ENABLED) {

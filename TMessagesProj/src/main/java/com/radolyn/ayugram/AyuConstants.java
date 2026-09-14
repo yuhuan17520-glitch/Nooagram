@@ -36,5 +36,5 @@ public class AyuConstants {
 
     public static String AYU_DATABASE = "ayu-data";
 
-    public static String APP_NAME = NekoConfig.customSavePath.String();
+    public static String APP_NAME = "Nooagram";
 }

@@ -75,7 +75,7 @@ $env:NOOAGRAM_LOCAL_VERSION_CODE = [string]$LocalVersionCode
 $task = "TMessagesProj:assembleNormal$BuildType"
 Write-Host "Building $task for $Abi..." -ForegroundColor Cyan
 
-& $gradlew $task --build-cache
+& $gradlew $task -x uploadCrashlyticsMappingFileNormalRelease --build-cache
 if ($LASTEXITCODE -ne 0) {
     throw "Gradle build failed."
 }
