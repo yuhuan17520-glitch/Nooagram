@@ -22,6 +22,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.IUpdateLayout;
+import tw.nekomimi.nekogram.helpers.remote.NooagramUpdateHelper;
 
 import java.io.File;
 
@@ -70,10 +71,19 @@ public class UpdateLayout extends IUpdateLayout {
                 return;
             }
             if (updateLayoutIcon.getIcon() == MediaActionDrawable.ICON_DOWNLOAD) {
-                FileLoader.getInstance(currentAccount).loadFile(SharedConfig.pendingAppUpdate.document, "update", FileLoader.PRIORITY_NORMAL, 1);
+                if (NooagramUpdateHelper.isNooagramUpdate(SharedConfig.pendingAppUpdate)) {
+                    NooagramUpdateHelper.startDownload(currentAccount, SharedConfig.pendingAppUpdate);
+                } else {
+                    FileLoader.getInstance(currentAccount).loadFile(SharedConfig.pendingAppUpdate.document, "update", FileLoader.PRIORITY_NORMAL, 1);
+                }
                 updateAppUpdateViews(currentAccount,  true);
             } else if (updateLayoutIcon.getIcon() == MediaActionDrawable.ICON_CANCEL) {
-                FileLoader.getInstance(currentAccount).cancelLoadFile(SharedConfig.pendingAppUpdate.document);
+                if (NooagramUpdateHelper.isNooagramUpdate(SharedConfig.pendingAppUpdate)) {
+                    String fileName = FileLoader.getAttachFileName(SharedConfig.pendingAppUpdate.document);
+                    NooagramUpdateHelper.cancelDownload(fileName);
+                } else {
+                    FileLoader.getInstance(currentAccount).cancelLoadFile(SharedConfig.pendingAppUpdate.document);
+                }
                 updateAppUpdateViews(currentAccount, true);
             } else {
                 AndroidUtilities.openForView(SharedConfig.pendingAppUpdate.document, true, activity);
@@ -135,15 +145,15 @@ public class UpdateLayout extends IUpdateLayout {
                 setUpdateText(LocaleController.getString(R.string.AppUpdateNow), animated);
                 showSize = false;
             } else {
-                if (FileLoader.getInstance(currentAccount).isLoadingFile(fileName)) {
+                if (FileLoader.getInstance(currentAccount).isLoadingFile(fileName) || NooagramUpdateHelper.isDownloading(fileName)) {
                     updateLayoutIcon.setIcon(MediaActionDrawable.ICON_CANCEL, true, animated);
                     updateLayoutIcon.setProgress(0, false);
-                    Float p = ImageLoader.getInstance().getFileProgress(fileName);
+                    Float p = NooagramUpdateHelper.isDownloading(fileName) ? NooagramUpdateHelper.getProgress(fileName) : ImageLoader.getInstance().getFileProgress(fileName);
                     setUpdateText(LocaleController.formatString(R.string.AppUpdateDownloading, (int) ((p != null ? p : 0.0f) * 100)), animated);
                     showSize = false;
                 } else {
                     updateLayoutIcon.setIcon(MediaActionDrawable.ICON_DOWNLOAD, true, animated);
-                    setUpdateText(LocaleController.getString(R.string.AppUpdate).replace("Telegram", LocaleController.getString(R.string.NagramX)), animated);
+                    setUpdateText(LocaleController.getString(R.string.AppUpdate).replace("Telegram", "Nooagram").replace("Nagram", "Nooagram"), animated);
                     showSize = true;
                 }
             }
