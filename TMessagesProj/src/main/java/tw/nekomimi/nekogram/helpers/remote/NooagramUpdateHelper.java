@@ -192,13 +192,10 @@ public final class NooagramUpdateHelper {
             try {
                 JSONObject manifest = fetchManifest();
                 long versionCode = manifest.getLong("version_code");
-                long timestamp = manifest.getLong("timestamp");
-                if (force
-                        || versionCode > BuildConfig.VERSION_CODE
-                        || versionCode == BuildConfig.VERSION_CODE
-                        && timestamp > BuildConfig.BUILD_TIMESTAMP) {
+                String version = manifest.getString("version");
+                if (isNewVersionAvailable(version, versionCode, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)) {
                     update = new TLRPC.TL_help_appUpdate();
-                    update.version = manifest.getString("version");
+                    update.version = version;
                     update.can_not_skip = manifest.optBoolean("can_not_skip", false);
 
                     String downloadUrl = manifest.getString("download_url");
@@ -268,6 +265,76 @@ public final class NooagramUpdateHelper {
             if (connection != null) {
                 connection.disconnect();
             }
+        }
+    }
+
+    public static boolean isNewVersionAvailable(String remoteVersion, long remoteVersionCode, String currentVersion, long currentVersionCode) {
+        if (remoteVersion == null || currentVersion == null) {
+            return false;
+        }
+        String remote = remoteVersion.trim();
+        String current = currentVersion.trim();
+        if (remote.isEmpty() || remote.equalsIgnoreCase(current)) {
+            return false;
+        }
+        if (remoteVersionCode > currentVersionCode) {
+            return true;
+        }
+        if (remoteVersionCode < currentVersionCode) {
+            return false;
+        }
+        return compareSemVer(remote, current) > 0;
+    }
+
+    public static int compareSemVer(String v1, String v2) {
+        if (v1 == null && v2 == null) return 0;
+        if (v1 == null) return -1;
+        if (v2 == null) return 1;
+        if (v1.equalsIgnoreCase(v2)) {
+            return 0;
+        }
+        String[] parts1 = v1.split("-", 2);
+        String[] parts2 = v2.split("-", 2);
+
+        int cmp = compareDotSegments(parts1[0], parts2[0]);
+        if (cmp != 0) {
+            return cmp;
+        }
+
+        String suffix1 = parts1.length > 1 ? parts1[1] : "";
+        String suffix2 = parts2.length > 1 ? parts2[1] : "";
+        if (suffix1.isEmpty() && suffix2.isEmpty()) {
+            return 0;
+        }
+        if (suffix1.isEmpty()) {
+            return 1;
+        }
+        if (suffix2.isEmpty()) {
+            return -1;
+        }
+        return compareDotSegments(suffix1, suffix2);
+    }
+
+    private static int compareDotSegments(String s1, String s2) {
+        String[] nums1 = s1.split("\\.");
+        String[] nums2 = s2.split("\\.");
+        int max = Math.max(nums1.length, nums2.length);
+        for (int i = 0; i < max; i++) {
+            long n1 = i < nums1.length ? parseSafeLong(nums1[i]) : 0;
+            long n2 = i < nums2.length ? parseSafeLong(nums2[i]) : 0;
+            if (n1 != n2) {
+                return Long.compare(n1, n2);
+            }
+        }
+        return 0;
+    }
+
+    private static long parseSafeLong(String s) {
+        try {
+            String digits = s.replaceAll("[^0-9]", "");
+            return digits.isEmpty() ? 0 : Long.parseLong(digits);
+        } catch (Exception ignore) {
+            return 0;
         }
     }
 }
