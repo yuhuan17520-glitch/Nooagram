@@ -886,6 +886,9 @@ public class ApplicationLoader extends Application {
 
     public boolean showUpdateAppPopup(Context context, TLRPC.TL_help_appUpdate update, int account) {
         try {
+            if (UpdateAppAlertDialog.isVisible()) {
+                return false;
+            }
             (new UpdateAppAlertDialog(context, update, account)).show();
         } catch (Exception e) {
             FileLog.e(e);

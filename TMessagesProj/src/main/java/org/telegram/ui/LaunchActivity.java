@@ -200,6 +200,7 @@ import org.telegram.ui.Components.AttachBotIntroTopView;
 import org.telegram.ui.Components.AudioPlayerAlert;
 import org.telegram.ui.Components.BatteryDrawable;
 import org.telegram.ui.Components.BlockingUpdateView;
+import org.telegram.ui.Components.UpdateAppAlertDialog;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -6767,6 +6768,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         return foundContacts;
     }
 
+    private boolean isCheckingAppUpdate = false;
     private boolean firstAppUpdateCheck = true;
     public void checkAppUpdate(boolean force, Browser.Progress progress) {
         checkAppUpdate(force, progress, false);
@@ -6804,6 +6806,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < minInterval) {
             return;
         }
+        if (isCheckingAppUpdate) {
+            return;
+        }
+        isCheckingAppUpdate = true;
+        SharedConfig.lastUpdateCheckTime = System.currentTimeMillis();
+        SharedConfig.saveConfig();
+
         final TLRPC.TL_help_getAppUpdate req = new TLRPC.TL_help_getAppUpdate();
         try {
             req.source = ApplicationLoader.applicationContext.getPackageManager().getInstallerPackageName(ApplicationLoader.applicationContext.getPackageName());
@@ -6816,16 +6825,16 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         final int accountNum = currentAccount;
         if (progress != null) progress.init();
         UpdateHelper.getInstance().checkNewVersionAvailable((res, error) -> {
-            SharedConfig.lastUpdateCheckTime = System.currentTimeMillis();
-            SharedConfig.saveConfig();
+            isCheckingAppUpdate = false;
             AndroidUtilities.runOnUIThread(() -> {
                 if (res != null) {
                     SharedConfig.setNewAppVersionAvailable(res);
                     if (res.can_not_skip) {
                         showUpdateActivity(accountNum, res, false);
                     } else {
-
-                        ApplicationLoader.applicationLoaderInstance.showUpdateAppPopup(LaunchActivity.this, res, accountNum);
+                        if (force || !TextUtils.equals(res.version, UpdateAppAlertDialog.getDismissedVersion())) {
+                            ApplicationLoader.applicationLoaderInstance.showUpdateAppPopup(LaunchActivity.this, res, accountNum);
+                        }
                     }
                 } else {
                     if (force) {

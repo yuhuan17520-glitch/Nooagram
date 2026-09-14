@@ -39,6 +39,17 @@ import tw.nekomimi.nekogram.TextViewEffects;
 
 public class UpdateAppAlertDialog extends BottomSheet {
 
+    private static UpdateAppAlertDialog visibleDialog = null;
+    private static String dismissedVersion = null;
+
+    public static boolean isVisible() {
+        return visibleDialog != null && visibleDialog.isShowing();
+    }
+
+    public static String getDismissedVersion() {
+        return dismissedVersion;
+    }
+
     private TLRPC.TL_help_appUpdate appUpdate;
     private int accountNum;
     private RadialProgress radialProgress;
@@ -321,8 +332,35 @@ public class UpdateAppAlertDialog extends BottomSheet {
 
         BottomSheetCell scheduleButton = new BottomSheetCell(context, true);
         scheduleButton.setText(LocaleController.getString(R.string.AppUpdateRemindMeLater), false);
-        scheduleButton.background.setOnClickListener(v -> dismiss());
+        scheduleButton.background.setOnClickListener(v -> {
+            if (appUpdate != null) {
+                dismissedVersion = appUpdate.version;
+            }
+            dismiss();
+        });
         container.addView(scheduleButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.LEFT | Gravity.BOTTOM, 0, 0, 0, 0));
+    }
+
+    @Override
+    public void show() {
+        if (visibleDialog != null) {
+            try {
+                if (visibleDialog.isShowing()) {
+                    return;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        visibleDialog = this;
+        super.show();
+    }
+
+    @Override
+    public void dismiss() {
+        if (visibleDialog == this) {
+            visibleDialog = null;
+        }
+        super.dismiss();
     }
 
     private void runShadowAnimation(final int num, final boolean show) {
