@@ -13,6 +13,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import xyz.nextalone.nagram.NaConfig;
 
 public final class NooagramUpdateHelper {
     private static final String UPDATE_MANIFEST_URL =
@@ -25,6 +26,10 @@ public final class NooagramUpdateHelper {
     }
 
     public static void check(BaseRemoteHelper.Delegate delegate, boolean force) {
+        if (!force && NaConfig.INSTANCE.getAutoUpdateChannel().Int() == UpdateHelper.UPDATE_OFF) {
+            delegate.onTLResponse(null, null);
+            return;
+        }
         Utilities.globalQueue.postRunnable(() -> {
             TLRPC.TL_help_appUpdate update = null;
             String error = null;

@@ -225,6 +225,7 @@
     <string name="NaxAboutInfo">信息</string>
     <string name="NaxLinks">链接</string>
     <string name="NaxAboutDesc">Nagram X 的一个分支，包含额外功能。融合了 exteraGram 和 AyuGram 的大部分特性。</string>
+    <string name="NooagramAboutDesc">基于 Nagram XF 的 Telegram 客户端，支持独立应用内更新、一键屏蔽消息与隐藏指定群置顶。</string>
     <string name="CheckUpdate">检查更新</string>
     <string name="AutoCheckUpdateOFF">禁用</string>
     <string name="AutoCheckUpdateSwitch">更新通道</string>

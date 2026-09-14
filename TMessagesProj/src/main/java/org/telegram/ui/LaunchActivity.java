@@ -6800,7 +6800,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             });
             return;
         }
-        if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < MessagesController.getInstance(0).updateCheckDelay * 1000) {
+        long minInterval = 30 * 60 * 1000L;
+        if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < minInterval) {
             return;
         }
         final TLRPC.TL_help_getAppUpdate req = new TLRPC.TL_help_getAppUpdate();
