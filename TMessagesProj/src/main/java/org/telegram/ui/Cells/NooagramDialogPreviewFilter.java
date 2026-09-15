@@ -2,11 +2,13 @@ package org.telegram.ui.Cells;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildConfig;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.tgnet.ConnectionsManager;
+import android.util.Log;
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.tgnet.NativeByteBuffer;
@@ -33,7 +35,7 @@ final class NooagramDialogPreviewFilter {
     static boolean prepare(DialogCell cell, int account, long dialogId, MessageObject source) {
         State state = getState(account, dialogId, source.getId());
         if (BuildConfig.DEBUG) {
-            FileLog.d("Nooagram preview prepare account=" + account
+            Log.d("NooagramPreview", "prepare account=" + account
                     + " dialog=" + dialogId
                     + " source=" + source.getId()
                     + " replacement=" + (state.replacement == null ? null : state.replacement.getId())
@@ -53,7 +55,7 @@ final class NooagramDialogPreviewFilter {
             state.lastQueryAt = System.currentTimeMillis();
             state.token++;
             if (BuildConfig.DEBUG) {
-                FileLog.d("Nooagram preview query account=" + account
+                Log.d("NooagramPreview", "query account=" + account
                         + " dialog=" + dialogId
                         + " source=" + source.getId());
             }
@@ -65,7 +67,7 @@ final class NooagramDialogPreviewFilter {
     static MessageObject getReplacement(int account, long dialogId, MessageObject source) {
         State state = getState(account, dialogId, source.getId());
         if (BuildConfig.DEBUG) {
-            FileLog.d("Nooagram preview get account=" + account
+            Log.d("NooagramPreview", "get account=" + account
                     + " dialog=" + dialogId
                     + " source=" + source.getId()
                     + " replacement=" + (state.replacement == null ? null : state.replacement.getId()));
@@ -106,17 +108,20 @@ final class NooagramDialogPreviewFilter {
             AndroidUtilities.runOnUIThread(() -> {
                 DialogCell target = cellRef.get();
                 if (target == null) {
+                    notifyRegexFiltersUpdated(account);
                     return;
                 }
                 if (target.getDialogId() != dialogId || target.getCurrentAccount() != account) {
+                    notifyRegexFiltersUpdated(account);
                     return;
                 }
                 State state;
+                boolean requestBackfill = false;
                 synchronized (STATES) {
                     state = STATES.get(stateKey(account, dialogId));
                     if (state == null || state.sourceMessageId != sourceMessageId || state.token != token) {
                         if (BuildConfig.DEBUG) {
-                            FileLog.d("Nooagram preview stale callback account=" + account
+                            Log.d("NooagramPreview", "stale callback account=" + account
                                     + " dialog=" + dialogId
                                     + " source=" + sourceMessageId);
                         }
@@ -124,9 +129,16 @@ final class NooagramDialogPreviewFilter {
                     }
                     state.loading = false;
                     state.replacement = result;
+                    requestBackfill = result == null && !state.backfillRequested;
+                    if (requestBackfill) {
+                        state.backfillRequested = true;
+                    }
+                }
+                if (requestBackfill) {
+                    requestHistoryBackfill(account, dialogId);
                 }
                 if (BuildConfig.DEBUG) {
-                    FileLog.d("Nooagram preview callback account=" + account
+                    Log.d("NooagramPreview", "callback account=" + account
                             + " dialog=" + dialogId
                             + " source=" + sourceMessageId
                             + " result=" + (result == null ? null : result.getId()));
@@ -136,6 +148,39 @@ final class NooagramDialogPreviewFilter {
                 }
             });
         });
+    }
+
+    private static void notifyRegexFiltersUpdated(int account) {
+        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.regexFiltersUpdated);
+    }
+
+    private static void requestHistoryBackfill(int account, long dialogId) {
+        int classGuid = ConnectionsManager.generateClassGuid();
+        MessagesController.getInstance(account).loadMessages(
+                dialogId,
+                0,
+                false,
+                80,
+                0,
+                0,
+                false,
+                0,
+                classGuid,
+                MessagesController.LOAD_BACKWARD,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                true,
+                0,
+                false
+        );
+        if (BuildConfig.DEBUG) {
+            Log.d("NooagramPreview", "backfill requested account=" + account + " dialog=" + dialogId);
+        }
     }
 
     private static MessageObject findLastUnfilteredMessage(int account, long dialogId) {
@@ -171,7 +216,7 @@ final class NooagramDialogPreviewFilter {
                 MessageObject result = new MessageObject(account, raw, false, false);
                 if (!AyuFilter.isFiltered(result, null)) {
                     if (BuildConfig.DEBUG) {
-                        FileLog.d("Nooagram preview found account=" + account
+                        Log.d("NooagramPreview", "found account=" + account
                                 + " dialog=" + dialogId
                                 + " message=" + result.getId()
                                 + " date=" + raw.date);
@@ -187,7 +232,7 @@ final class NooagramDialogPreviewFilter {
                 }
             }
         } catch (Throwable throwable) {
-            FileLog.e("Nooagram cannot load unfiltered dialog preview", throwable);
+            Log.e("NooagramPreview", "cannot load unfiltered dialog preview", throwable);
         } finally {
             if (data != null) {
                 try {
@@ -203,7 +248,7 @@ final class NooagramDialogPreviewFilter {
             }
         }
         if (BuildConfig.DEBUG) {
-            FileLog.d("Nooagram preview no-result account=" + account
+            Log.d("NooagramPreview", "no-result account=" + account
                     + " dialog=" + dialogId);
         }
         return null;
@@ -213,6 +258,7 @@ final class NooagramDialogPreviewFilter {
         final int sourceMessageId;
         MessageObject replacement;
         boolean loading;
+        boolean backfillRequested;
         long token;
         int lastQueryMessageId;
         long lastQueryAt;
