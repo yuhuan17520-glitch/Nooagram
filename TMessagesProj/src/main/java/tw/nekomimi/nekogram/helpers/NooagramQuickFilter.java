@@ -68,7 +68,6 @@ public final class NooagramQuickFilter {
                 AyuFilter.addFilter(regex, true);
             }
             NaConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(true);
-            NaConfig.INSTANCE.getRegexFiltersEnableInChats().setConfigBool(true);
             NaConfig.INSTANCE.getRegexFiltersMaskMessages().setConfigBool(false);
             return new Result(regex, duplicate, null);
         } catch (Throwable throwable) {
