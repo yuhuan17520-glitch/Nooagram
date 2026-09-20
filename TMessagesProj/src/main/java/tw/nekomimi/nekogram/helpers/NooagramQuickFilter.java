@@ -18,7 +18,7 @@ import tw.nekomimi.nekogram.filters.AyuFilter;
 import xyz.nextalone.nagram.NaConfig;
 
 public final class NooagramQuickFilter {
-    private static final int MAX_CANDIDATES = 4;
+    private static final int MAX_CANDIDATES = 1;
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)\\b(?:https?://|www\\.)[^\\s]+");
     private static final Pattern DOMAIN_PATTERN = Pattern.compile(
             "(?i)(?<![A-Za-z0-9.-])(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}(?![A-Za-z0-9.-])");

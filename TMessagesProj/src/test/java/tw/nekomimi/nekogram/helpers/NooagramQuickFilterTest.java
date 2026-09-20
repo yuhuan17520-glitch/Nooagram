@@ -16,8 +16,9 @@ public class NooagramQuickFilterTest {
         String regex = buildRegex(source);
 
         assertTrue(regex.contains("\\QMGC88.cc\\E"));
-        assertTrue(regex.contains("\\Q30.magic88.cc\\E"));
+        assertFalse(regex.contains("\\Q30.magic88.cc\\E"));
         assertFalse(regex.contains("t.me"));
+        assertFalse(regex.contains("|"));
         assertTrue(Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(source).find());
     }
 
@@ -37,7 +38,7 @@ public class NooagramQuickFilterTest {
         String regex = buildRegex(source);
 
         assertTrue(regex.contains("\\QMGC88.cc\\E"));
-        assertTrue(regex.contains("\\Q30.magic88.cc\\E"));
+        assertFalse(regex.contains("\\Q30.magic88.cc\\E"));
         assertFalse(regex.contains("MGC88.cc 30.magic88.cc"));
     }
 

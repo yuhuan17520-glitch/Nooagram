@@ -1,7 +1,10 @@
 package org.telegram.ui.Cells;
 
+import android.content.SharedPreferences;
+
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildConfig;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
@@ -21,6 +24,7 @@ import java.util.Map;
 import tw.nekomimi.nekogram.filters.AyuFilter;
 
 final class NooagramDialogPreviewFilter {
+    private static final String PREFERENCES_NAME = "nooagram_dialog_preview_filter";
     private static final long EMPTY_RETRY_COOLDOWN_MS = 3000L;
     private static final int MAX_STATES = 256;
     private static final Map<Long, State> STATES = new LinkedHashMap<>(64, 0.75f, true) {
@@ -185,61 +189,43 @@ final class NooagramDialogPreviewFilter {
 
     private static MessageObject findLastUnfilteredMessage(int account, long dialogId) {
         MessagesStorage storage = MessagesStorage.getInstance(account);
+        int savedMessageId = getSavedReplacementMessageId(account, dialogId);
+        if (savedMessageId != 0) {
+            MessageObject saved = findMessageById(account, dialogId, savedMessageId);
+            if (saved != null && !AyuFilter.isFiltered(saved, null)) {
+                if (BuildConfig.DEBUG) {
+                    Log.d("NooagramPreview", "restored account=" + account
+                            + " dialog=" + dialogId
+                            + " message=" + saved.getId());
+                }
+                ensureSenderAvailable(account, saved);
+                return saved;
+            }
+        }
+
         SQLiteCursor cursor = null;
-        NativeByteBuffer data = null;
         try {
             SQLiteDatabase database = storage.getDatabase();
             cursor = database.queryFinalized(
                     "SELECT data, send_state, mid, date FROM messages_v2 "
                             + "WHERE uid = ? ORDER BY date DESC, mid DESC", dialogId);
             while (cursor.next()) {
-                data = cursor.byteBufferValue(0);
-                if (data == null) {
-                    continue;
-                }
-
-                TLRPC.Message raw = TLRPC.Message.TLdeserialize(
-                        data, data.readInt32(false), false);
-                if (raw == null) {
-                    data.reuse();
-                    data = null;
-                    continue;
-                }
-
-                raw.send_state = cursor.intValue(1);
-                raw.id = cursor.intValue(2);
-                raw.date = cursor.intValue(3);
-                raw.dialog_id = dialogId;
-                data.reuse();
-                data = null;
-
-                MessageObject result = new MessageObject(account, raw, false, false);
+                MessageObject result = readMessage(account, dialogId, cursor);
                 if (!AyuFilter.isFiltered(result, null)) {
                     if (BuildConfig.DEBUG) {
                         Log.d("NooagramPreview", "found account=" + account
                                 + " dialog=" + dialogId
                                 + " message=" + result.getId()
-                                + " date=" + raw.date);
+                                + " date=" + result.messageOwner.date);
                     }
-                    MessagesController controller = MessagesController.getInstance(account);
-                    if (controller.getUser(result.getSenderId()) == null) {
-                        TLRPC.User user = storage.getUser(result.getSenderId());
-                        if (user != null) {
-                            controller.putUser(user, true, false);
-                        }
-                    }
+                    saveReplacementMessageId(account, dialogId, result.getId());
+                    ensureSenderAvailable(account, result);
                     return result;
                 }
             }
         } catch (Throwable throwable) {
             Log.e("NooagramPreview", "cannot load unfiltered dialog preview", throwable);
         } finally {
-            if (data != null) {
-                try {
-                    data.reuse();
-                } catch (Throwable ignored) {
-                }
-            }
             if (cursor != null) {
                 try {
                     cursor.dispose();
@@ -252,6 +238,84 @@ final class NooagramDialogPreviewFilter {
                     + " dialog=" + dialogId);
         }
         return null;
+    }
+
+    private static MessageObject findMessageById(int account, long dialogId, int messageId) {
+        MessagesStorage storage = MessagesStorage.getInstance(account);
+        SQLiteCursor cursor = null;
+        try {
+            cursor = storage.getDatabase().queryFinalized(
+                    "SELECT data, send_state, mid, date FROM messages_v2 "
+                            + "WHERE uid = ? AND mid = ? LIMIT 1", dialogId, messageId);
+            if (cursor.next()) {
+                return readMessage(account, dialogId, cursor);
+            }
+        } catch (Throwable throwable) {
+            Log.e("NooagramPreview", "cannot restore dialog preview by id", throwable);
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.dispose();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private static MessageObject readMessage(int account, long dialogId, SQLiteCursor cursor) {
+        NativeByteBuffer data = null;
+        try {
+            data = cursor.byteBufferValue(0);
+            if (data == null) {
+                return null;
+            }
+            TLRPC.Message raw = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+            if (raw == null) {
+                return null;
+            }
+            raw.send_state = cursor.intValue(1);
+            raw.id = cursor.intValue(2);
+            raw.date = cursor.intValue(3);
+            raw.dialog_id = dialogId;
+            return new MessageObject(account, raw, false, false);
+        } catch (Throwable throwable) {
+            Log.e("NooagramPreview", "cannot read dialog preview message", throwable);
+            return null;
+        } finally {
+            if (data != null) {
+                try {
+                    data.reuse();
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+    }
+
+    private static void ensureSenderAvailable(int account, MessageObject message) {
+        MessagesController controller = MessagesController.getInstance(account);
+        if (controller.getUser(message.getSenderId()) == null) {
+            TLRPC.User user = MessagesStorage.getInstance(account).getUser(message.getSenderId());
+            if (user != null) {
+                controller.putUser(user, true, false);
+            }
+        }
+    }
+
+    private static int getSavedReplacementMessageId(int account, long dialogId) {
+        return preferences().getInt(preferenceKey(account, dialogId), 0);
+    }
+
+    private static void saveReplacementMessageId(int account, long dialogId, int messageId) {
+        preferences().edit().putInt(preferenceKey(account, dialogId), messageId).apply();
+    }
+
+    private static SharedPreferences preferences() {
+        return ApplicationLoader.applicationContext.getSharedPreferences(PREFERENCES_NAME, 0);
+    }
+
+    private static String preferenceKey(int account, long dialogId) {
+        return account + "_" + dialogId;
     }
 
     private static final class State {
