@@ -18373,7 +18373,14 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (scrollY != 0) {
                             scrollByTouch = false;
-                            chatListView.smoothScrollBy(0, scrollY);
+                            if (forcePinnedMessageId != 0) {
+                                // Pinned jumps must land in one layout pass. Animating this short
+                                // distance lets the list settle and visually rebound afterwards.
+                                chatScrollHelperCallback.scrollTo = null;
+                                chatScrollHelper.scrollToPosition(chatLayoutManager.getPosition(view), getScrollOffsetForMessage(view.getHeight()) - offsetY, false, false);
+                            } else {
+                                chatListView.smoothScrollBy(0, scrollY);
+                            }
                             chatListView.setOverScrollMode(RecyclerListView.OVER_SCROLL_NEVER);
                         }
                         break;
@@ -18381,12 +18388,17 @@ public class ChatActivity extends BaseFragment implements
                 }
                 if (!found) {
                     int yOffset = getScrollOffsetForMessage(object);
-                    chatScrollHelperCallback.scrollTo = object;
-                    chatScrollHelperCallback.lastBottom = false;
-                    chatScrollHelperCallback.lastItemOffset = yOffset;
-                    chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
-                    chatScrollHelper.setScrollDirection(scrollDirection);
-                    chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = position, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, true);
+                    boolean smoothPinnedScroll = forcePinnedMessageId == 0;
+                    if (smoothPinnedScroll) {
+                        chatScrollHelperCallback.scrollTo = object;
+                        chatScrollHelperCallback.lastBottom = false;
+                        chatScrollHelperCallback.lastItemOffset = yOffset;
+                        chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
+                        chatScrollHelper.setScrollDirection(scrollDirection);
+                    } else {
+                        chatScrollHelperCallback.scrollTo = null;
+                    }
+                    chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = position, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, smoothPinnedScroll);
                     canShowPagedownButton = true;
                     updatePagedownButtonVisibility(true);
                 }
@@ -23430,11 +23442,16 @@ public class ChatActivity extends BaseFragment implements
                         }
 
                         int yOffset = getScrollOffsetForMessage(object);
-                        chatScrollHelperCallback.scrollTo = object;
-                        chatScrollHelperCallback.lastBottom = false;
-                        chatScrollHelperCallback.lastItemOffset = yOffset;
-                        chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
-                        chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = chatAdapter.messagesStartRow + k, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, true);
+                        boolean smoothPinnedScroll = forceNextPinnedMessageId == 0;
+                        if (smoothPinnedScroll) {
+                            chatScrollHelperCallback.scrollTo = object;
+                            chatScrollHelperCallback.lastBottom = false;
+                            chatScrollHelperCallback.lastItemOffset = yOffset;
+                            chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
+                        } else {
+                            chatScrollHelperCallback.scrollTo = null;
+                        }
+                        chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = chatAdapter.messagesStartRow + k, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, smoothPinnedScroll);
                     }
                 }
             }
