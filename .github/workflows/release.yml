@@ -44,7 +44,7 @@ jobs:
           TAG=$(sed -n 's/.*"upstream_tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' nooagram-version.json)
           COMMIT=$(sed -n 's/.*"upstream_commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' nooagram-version.json)
           test -n "$TAG" && test -n "$COMMIT"
-          git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          git fetch --no-tags https://github.com/Keeperorowner/NagramXF.git "refs/tags/$TAG:refs/tags/$TAG"
           test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$COMMIT"
 
       - name: Set up JDK
