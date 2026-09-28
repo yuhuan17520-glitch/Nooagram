@@ -28,6 +28,8 @@ public class RecyclerAnimationScrollHelper {
 
     private int scrollDirection;
     private ValueAnimator animator;
+    private View.OnLayoutChangeListener pendingScrollLayout;
+    private Runnable pendingScrollCleanup;
 
     private ScrollListener scrollListener;
 
@@ -49,6 +51,18 @@ public class RecyclerAnimationScrollHelper {
 
     public void scrollToPosition(int position, int offset, boolean bottom) {
         scrollToPosition(position, offset, bottom, false);
+    }
+
+    public void scrollToPositionNow(int position, int offset, boolean bottom) {
+        recyclerView.stopScroll();
+        if (recyclerView.fastScrollAnimationRunning || animator != null) {
+            cancel();
+        }
+        RecyclerView.ItemAnimator itemAnimator = recyclerView.getItemAnimator();
+        if (itemAnimator != null && itemAnimator.isRunning()) {
+            itemAnimator.endAnimations();
+        }
+        layoutManager.scrollToPositionWithOffset(position, offset, bottom);
     }
 
     public void scrollToPosition(int position, int offset, final boolean bottom, boolean smooth) {
@@ -131,10 +145,25 @@ public class RecyclerAnimationScrollHelper {
         recyclerView.fastScrollAnimationRunning = true;
         if (finalAnimatableAdapter != null) finalAnimatableAdapter.onAnimationStart();
 
-        recyclerView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+        pendingScrollCleanup = () -> {
+            for (View oldView : oldViews) {
+                if (oldView instanceof IMessageCell) {
+                    ((IMessageCell) oldView).setAnimationRunning(false, true);
+                }
+                oldView.setTranslationY(0);
+            }
+            positionToOldView.clear();
+            oldStableIds.clear();
+            if (animationCallback != null) {
+                animationCallback.onEndAnimation();
+            }
+        };
+        pendingScrollLayout = new View.OnLayoutChangeListener() {
             @Override
             public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) {
                 recyclerView.removeOnLayoutChangeListener(this);
+                pendingScrollLayout = null;
+                pendingScrollCleanup = null;
                 final ArrayList<View> incomingViews = new ArrayList<>();
 
                 recyclerView.stopScroll();
@@ -348,15 +377,26 @@ public class RecyclerAnimationScrollHelper {
                 }
                 animator.start();
             }
-        });
+        };
+        recyclerView.addOnLayoutChangeListener(pendingScrollLayout);
     }
 
     public void cancel() {
+        if (pendingScrollLayout != null) {
+            recyclerView.removeOnLayoutChangeListener(pendingScrollLayout);
+            pendingScrollLayout = null;
+            Runnable cleanup = pendingScrollCleanup;
+            pendingScrollCleanup = null;
+            if (cleanup != null) {
+                cleanup.run();
+            }
+        }
         if (animator != null) animator.cancel();
         clear();
     }
 
     private void clear() {
+        recyclerView.setScrollEnabled(true);
         recyclerView.setVerticalScrollBarEnabled(true);
         recyclerView.fastScrollAnimationRunning = false;
         final RecyclerView.Adapter adapter = recyclerView.getAdapter();

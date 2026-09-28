@@ -64,7 +64,10 @@ import tw.nekomimi.nekogram.NekoXConfig;
 public class PasskeysController {
 
     public static void create(Context context, int currentAccount, Utilities.Callback2<TL_account.Passkey, String> done) {
-        if (!BuildVars.SUPPORTS_PASSKEYS) return;
+        if (!BuildVars.SUPPORTS_PASSKEYS) {
+            AndroidUtilities.runOnUIThread(() -> done.run(null, LocaleController.getString(R.string.PasskeyUnsupportedTitle)));
+            return;
+        }
 
         final CredentialManager credentialManager = CredentialManager.create(context);
         final AlertDialog progressDialog = new AlertDialog(context, AlertDialog.ALERT_TYPE_SPINNER);
@@ -179,7 +182,10 @@ public class PasskeysController {
     }
 
     public static Runnable login(Context context, int currentAccount, boolean clickedButton, Utilities.Callback3<Long, TLRPC.auth_Authorization, String> done) {
-        if (!BuildVars.SUPPORTS_PASSKEYS) return null;
+        if (!BuildVars.SUPPORTS_PASSKEYS) {
+            AndroidUtilities.runOnUIThread(() -> done.run(0L, null, LocaleController.getString(R.string.PasskeyUnsupportedTitle)));
+            return null;
+        }
 
         final CredentialManager credentialManager = CredentialManager.create(context);
 

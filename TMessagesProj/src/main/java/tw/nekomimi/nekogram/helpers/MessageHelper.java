@@ -735,38 +735,77 @@ public class MessageHelper extends BaseController {
             return;
         }
         CharSequence messageText = messageObject.messageText;
-        if (!TextUtils.isEmpty(messageText)
+        if (hasFilterText(messageText)
             && !TextUtils.equals(messageText, LocaleController.getString(R.string.AttachVideo))
             && !TextUtils.equals(messageText, LocaleController.getString(R.string.AttachPhoto))
             && !TextUtils.equals(messageText, LocaleController.getString(R.string.Album))) {
             text.append(messageText);
             text.append("\n");
         }
-        if (!TextUtils.isEmpty(messageObject.caption)) {
+        if (hasFilterText(messageObject.caption)) {
             text.append(messageObject.caption);
             text.append("\n");
         }
-        if (!TextUtils.isEmpty(messageObject.getVoiceTranscription())) {
+        if (hasFilterText(messageObject.getVoiceTranscription())) {
             text.append(messageObject.getVoiceTranscription());
             text.append("\n");
         }
-        String restrictionReason = MessagesController.getInstance(messageObject.currentAccount).getRestrictionReason(messageObject.messageOwner.restriction_reason);
-        if (!TextUtils.isEmpty(restrictionReason)) {
+        String restrictionReason = messageObject.messageOwner.restriction_reason == null
+                || messageObject.messageOwner.restriction_reason.isEmpty() ? null
+                : MessagesController.getInstance(messageObject.currentAccount).getRestrictionReason(messageObject.messageOwner.restriction_reason);
+        if (hasFilterText(restrictionReason)) {
             text.append(restrictionReason);
             text.append("\n");
         }
     }
 
-    public static CharSequence getMessageFilterMatchText(MessageObject messageObject, MessageObject.GroupedMessages messageGroup) {
-        StringBuilder text = new StringBuilder();
-        if (messageGroup != null && messageGroup.messages != null) {
-            for (var groupedMessage : messageGroup.messages) {
-                appendFilterPlainText(text, groupedMessage);
-            }
-        } else {
-            appendFilterPlainText(text, messageObject);
-        }
+    private static boolean hasFilterText(CharSequence text) {
+        return text != null && text.length() > 0;
+    }
 
+    public static CharSequence getMessageFilterMatchText(MessageObject messageObject, MessageObject.GroupedMessages messageGroup) {
+        return getMessageFilterText(messageObject, messageGroup).matchText;
+    }
+
+    public static final class FilterText {
+        public final String matchText;
+        public final ArrayList<String> content;
+
+        private FilterText(String matchText, ArrayList<String> content) {
+            this.matchText = matchText;
+            this.content = content;
+        }
+    }
+
+    public static FilterText getMessageFilterText(MessageObject messageObject, MessageObject.GroupedMessages messageGroup) {
+        StringBuilder text = new StringBuilder();
+        ArrayList<String> content = new ArrayList<>();
+        ArrayList<MessageObject> messages = new ArrayList<>();
+        if (messageGroup != null && messageGroup.messages != null && !messageGroup.messages.isEmpty()) {
+            messages.addAll(messageGroup.messages);
+        } else {
+            messages.add(messageObject);
+        }
+        for (MessageObject member : messages) {
+            StringBuilder plain = new StringBuilder();
+            appendFilterPlainText(plain, member);
+            text.append(plain);
+            content.add(plain.toString());
+        }
+        // Keep the legacy match protocol, but expose only actual content to extraction.
+        // Every album member contributes metadata regardless of the selected message.
+        for (MessageObject member : messages) {
+            appendFilterMetadata(text, content, member);
+        }
+        if (messageObject != null && messageObject.messageOwner != null) {
+            text.append("\n<type>");
+            text.append(messageObject.type);
+            text.append("</type>");
+        }
+        return new FilterText(text.toString(), content);
+    }
+
+    private static void appendFilterMetadata(StringBuilder text, ArrayList<String> content, MessageObject messageObject) {
         if (messageObject != null && messageObject.messageOwner != null) {
             if (messageObject.isPoll()) {
                 TLRPC.Poll poll = ((TLRPC.TL_messageMediaPoll) messageObject.messageOwner.media).poll;
@@ -777,14 +816,16 @@ public class MessageHelper extends BaseController {
                 }
                 text.append(pollText);
                 text.append("\n");
+                content.add(pollText.toString());
             }
 
             ArrayList<TLRPC.MessageEntity> entities = messageObject.messageOwner.entities;
             if (entities != null && !entities.isEmpty()) {
                 for (TLRPC.MessageEntity entity : entities) {
-                    if (entity instanceof TLRPC.TL_messageEntityTextUrl && !TextUtils.isEmpty(entity.url)) {
+                    if (entity instanceof TLRPC.TL_messageEntityTextUrl && hasFilterText(entity.url)) {
                         text.append("\n");
                         text.append(entity.url);
+                        content.add(entity.url);
                     }
                 }
                 text.append("\n");
@@ -802,12 +843,14 @@ public class MessageHelper extends BaseController {
                                 continue;
                             }
                             text.append("<button>");
-                            if (!TextUtils.isEmpty(button.getText())) {
+                            if (hasFilterText(button.getText())) {
                                 text.append(button.getText());
+                                content.add(button.getText());
                             }
-                            if (!TextUtils.isEmpty(button.getUrl())) {
+                            if (hasFilterText(button.getUrl())) {
                                 text.append(" ");
                                 text.append(button.getUrl());
+                                content.add(button.getUrl());
                             }
                             text.append("</button>\n");
                         }
@@ -825,24 +868,21 @@ public class MessageHelper extends BaseController {
                                 continue;
                             }
                             text.append("<button>");
-                            if (!TextUtils.isEmpty(button.getText())) {
+                            if (hasFilterText(button.getText())) {
                                 text.append(button.getText());
+                                content.add(button.getText());
                             }
-                            if (!TextUtils.isEmpty(button.getUrl())) {
+                            if (hasFilterText(button.getUrl())) {
                                 text.append(" ");
                                 text.append(button.getUrl());
+                                content.add(button.getUrl());
                             }
                             text.append("</button>\n");
                         }
                     }
                 }
             }
-
-            text.append("\n<type>");
-            text.append(messageObject.type);
-            text.append("</type>");
         }
-        return text.toString();
     }
 
     public static boolean messageObjectIsFile(int type, MessageObject messageObject) {

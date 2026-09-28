@@ -149,17 +149,19 @@ public class AyuFilter {
             return;
         }
         try {
-            dao.deleteAllShared();
-            // The DAO reads rows by descending rowid. Insert in reverse so the
-            // loaded list keeps the exact save-order instead of flipping on each edit.
-            for (int i = filterModels1.size() - 1; i >= 0; i--) {
-                FilterModel m = filterModels1.get(i);
+            ArrayList<RegexFilter> rows = new ArrayList<>();
+            for (FilterModel m : filterModels1) {
+                if (m == null) continue;
                 m.ensureId();
                 m.buildPattern();
-                dao.insert(toRow(m, null));
+                rows.add(toRow(m, null));
+            }
+            if (!dao.replaceShared(rows)) {
+                throw new IllegalStateException("Filter database unavailable");
             }
         } catch (Exception e) {
             FileLog.e("AyuFilter.saveFilter", e);
+            return;
         }
         NaConfig.INSTANCE.getRegexFiltersData().setConfigString(new Gson().toJson(filterModels1));
         rebuildCache();
@@ -198,15 +200,24 @@ public class AyuFilter {
             excludedSharedFilterIdsByDialog = null;
             AyuFilterCache.clearAll();
         }
-        AndroidUtilities.runOnUIThread(() -> {
-            NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.regexFiltersUpdated);
-        });
+        notifyFiltersUpdated();
     }
 
     public static void invalidateFilteredCache() {
         synchronized (cacheLock) {
             AyuFilterCache.clearAll();
         }
+        notifyFiltersUpdated();
+    }
+
+    private static void notifyFiltersUpdated() {
+        AndroidUtilities.runOnUIThread(() -> {
+            for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) {
+                if (UserConfig.getInstance(account).isClientActivated()) {
+                    NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.regexFiltersUpdated);
+                }
+            }
+        });
     }
 
     private static boolean isFilterMatch(FilterModel filter, CharSequence text) {
@@ -349,7 +360,8 @@ public class AyuFilter {
             return false;
         }
 
-        Boolean cached = AyuFilterCache.get(dialogId, msg, group);
+        AyuFilterCache.DialogKey cacheKey = AyuFilterCache.keyFor(dialogId, msg);
+        Boolean cached = AyuFilterCache.get(cacheKey, msg, group);
         if (cached != null) {
             return cached;
         }
@@ -368,7 +380,7 @@ public class AyuFilter {
 
         boolean result = isFilteredInternal(text, dialogId);
         if (group != null || msg.getGroupId() == 0) {
-            AyuFilterCache.put(dialogId, msg, group, result);
+            AyuFilterCache.put(cacheKey, msg, group, result);
         }
 
         return result;
@@ -634,12 +646,7 @@ public class AyuFilter {
             return;
         }
         try {
-            // Build all rows in the expected load order, then persist them in reverse.
-            // This keeps shared and per-chat filters stable when rowid DESC is used for loading.
             ArrayList<RegexFilter> rows = new ArrayList<>();
-            List<RegexFilter> shared = dao.getShared();
-            dao.deleteAllFilters();
-            rows.addAll(shared);
             for (ChatFilterEntry entry : entries) {
                 if (entry == null || entry.filters == null) continue;
                 for (FilterModel m : entry.filters) {
@@ -650,14 +657,92 @@ public class AyuFilter {
                     }
                 }
             }
-            for (int i = rows.size() - 1; i >= 0; i--) {
-                dao.insert(rows.get(i));
+            if (!dao.replaceChats(rows)) {
+                throw new IllegalStateException("Filter database unavailable");
             }
         } catch (Exception e) {
             FileLog.e("AyuFilter.saveChatFilterEntries", e);
+            return;
         }
         NaConfig.INSTANCE.getRegexChatFiltersData().setConfigString(new Gson().toJson(entries));
         rebuildCache();
+    }
+
+    public static RegexFilterDao.Snapshot getPersistedFilters() {
+        RegexFilterDao dao = AyuData.getRegexFilterDao();
+        RegexFilterDao.Snapshot snapshot = dao == null ? null : dao.getSnapshot();
+        if (snapshot == null) {
+            throw new IllegalStateException("Filter database unavailable");
+        }
+        return snapshot;
+    }
+
+    public static RegexFilterDao.ImportResult importFilters(ArrayList<FilterModel> shared,
+                                                            ArrayList<ChatFilterEntry> chats,
+                                                            ArrayList<ExcludedFilterEntry> exclusions,
+                                                            boolean apply) {
+        ArrayList<RegexFilter> rows = new ArrayList<>();
+        if (shared != null) {
+            for (FilterModel model : shared) {
+                if (model != null && model.regex != null) rows.add(toRow(model, null));
+            }
+        }
+        if (chats != null) {
+            for (ChatFilterEntry entry : chats) {
+                if (entry == null || entry.filters == null) continue;
+                for (FilterModel model : entry.filters) {
+                    if (model != null && model.regex != null) rows.add(toRow(model, entry.dialogId));
+                }
+            }
+        }
+        ArrayList<RegexFilterGlobalExclusion> exclusionRows = new ArrayList<>();
+        if (exclusions != null) {
+            for (ExcludedFilterEntry entry : exclusions) {
+                if (entry == null) continue;
+                RegexFilterGlobalExclusion row = new RegexFilterGlobalExclusion();
+                row.dialogId = entry.dialogId;
+                row.filterId = entry.filterId;
+                exclusionRows.add(row);
+            }
+        }
+        RegexFilterDao dao = AyuData.getRegexFilterDao();
+        RegexFilterDao.ImportResult result = dao == null ? null : dao.importFilters(rows, exclusionRows, apply);
+        if (result == null) {
+            throw new IllegalStateException("Filter database unavailable");
+        }
+        if (apply) {
+            persistFilterBackup(result);
+            rebuildCache();
+        }
+        return result;
+    }
+
+    private static void persistFilterBackup(RegexFilterDao.Snapshot snapshot) {
+        ArrayList<FilterModel> shared = new ArrayList<>();
+        HashMap<Long, ChatFilterEntry> chats = new HashMap<>();
+        for (RegexFilter row : snapshot.filters) {
+            FilterModel model = new FilterModel();
+            model.id = row.id;
+            model.regex = row.text;
+            model.enabled = row.enabled;
+            model.caseInsensitive = row.caseInsensitive;
+            model.reversed = row.reversed;
+            if (row.dialogId == null) {
+                shared.add(model);
+            } else {
+                ChatFilterEntry entry = chats.computeIfAbsent(row.dialogId, did -> {
+                    ChatFilterEntry chat = new ChatFilterEntry();
+                    chat.dialogId = did;
+                    chat.filters = new ArrayList<>();
+                    return chat;
+                });
+                entry.filters.add(model);
+            }
+        }
+        Gson gson = new Gson();
+        NaConfig.INSTANCE.getRegexFiltersData().setConfigString(gson.toJson(shared));
+        NaConfig.INSTANCE.getRegexChatFiltersData().setConfigString(gson.toJson(chats.values()));
+        NaConfig.INSTANCE.getRegexFiltersExcludedEntriesData().setConfigString(gson.toJson(snapshot.exclusions));
     }
 
     public static ArrayList<FilterModel> getChatFiltersForDialog(long dialogId) {
@@ -772,6 +857,7 @@ public class AyuFilter {
             String str = new Gson().toJson(arr);
             NaConfig.INSTANCE.getRegexFiltersExcludedDialogs().setConfigString(str);
             AyuFilterCache.clearDialog(dialogId);
+            notifyFiltersUpdated();
         }
     }
 
@@ -880,11 +966,13 @@ public class AyuFilter {
             dao.insertExclusion(row);
         } catch (Exception e) {
             FileLog.e("AyuFilter.addSharedFilterExclusion", e);
+            return;
         }
         synchronized (cacheLock) {
             excludedSharedFilterIdsByDialog = null;
             AyuFilterCache.clearAll();
         }
+        notifyFiltersUpdated();
     }
 
     private static void removeSharedFilterExclusion(long dialogId, String filterId) {
@@ -894,11 +982,13 @@ public class AyuFilter {
             dao.deleteExclusion(dialogId, filterId);
         } catch (Exception e) {
             FileLog.e("AyuFilter.removeSharedFilterExclusion", e);
+            return;
         }
         synchronized (cacheLock) {
             excludedSharedFilterIdsByDialog = null;
             AyuFilterCache.clearAll();
         }
+        notifyFiltersUpdated();
     }
 
     private static void removeExcludedSharedFilterEntries(String filterId) {
@@ -979,6 +1069,7 @@ public class AyuFilter {
             synchronized (cacheLock) {
                 blockedChannels = set;
             }
+            invalidateFilteredCache();
         }
     }
 
@@ -991,6 +1082,7 @@ public class AyuFilter {
             synchronized (cacheLock) {
                 blockedChannels = set;
             }
+            invalidateFilteredCache();
         }
     }
 
@@ -1007,6 +1099,7 @@ public class AyuFilter {
         synchronized (cacheLock) {
             blockedChannels = new HashSet<>();
         }
+        invalidateFilteredCache();
     }
 
     public static ArrayList<Long> checkBlockedChannels(HashSet<Long> blockedChannels) {
@@ -1078,6 +1171,7 @@ public class AyuFilter {
     }
 
     private static void saveCustomFilteredUsers(HashSet<Long> ids, HashMap<Long, CustomFilteredUser> dataMap) {
+        boolean membershipChanged = !ids.equals(getCustomFilteredUsers());
         ArrayList<Long> sorted = new ArrayList<>(ids);
         Collections.sort(sorted);
         ArrayList<CustomFilteredUser> out = new ArrayList<>(sorted.size());
@@ -1099,6 +1193,9 @@ public class AyuFilter {
         synchronized (cacheLock) {
             customFilteredUsers = new HashSet<>(resultMap.keySet());
             customFilteredUsersData = resultMap;
+        }
+        if (membershipChanged) {
+            invalidateFilteredCache();
         }
     }
 

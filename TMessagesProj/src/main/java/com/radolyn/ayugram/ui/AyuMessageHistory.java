@@ -40,7 +40,6 @@ import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -90,6 +89,7 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     private String[] cachedAttachmentFileNames;
 
     public AyuMessageHistory(MessageObject messageObject) {
+        setCurrentAccount(messageObject.currentAccount);
         this.messageObject = messageObject;
         updateHistory();
     }
@@ -129,7 +129,7 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     public View createView(Context context) {
         long dialogId = messageObject.messageOwner.dialog_id;
         var peer = getMessagesController().getUserOrChat(dialogId);
-        int currentAccount = UserConfig.selectedAccount;
+        int currentAccount = getCurrentAccount();
 
         String name = switch (peer) {
             case null -> getString(R.string.EditsHistoryMenuText);
@@ -240,8 +240,8 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     public boolean onFragmentCreate() {
         super.onFragmentCreate();
 
-        NotificationCenter.getInstance(UserConfig.selectedAccount).addObserver(this, AyuConstants.MESSAGE_EDITED_NOTIFICATION);
-        NotificationCenter.getInstance(UserConfig.selectedAccount).addObserver(this, NotificationCenter.voiceTranscriptionUpdate);
+        getNotificationCenter().addObserver(this, AyuConstants.MESSAGE_EDITED_NOTIFICATION);
+        getNotificationCenter().addObserver(this, NotificationCenter.voiceTranscriptionUpdate);
 
         return true;
     }
@@ -250,8 +250,8 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
 
-        NotificationCenter.getInstance(UserConfig.selectedAccount).removeObserver(this, AyuConstants.MESSAGE_EDITED_NOTIFICATION);
-        NotificationCenter.getInstance(UserConfig.selectedAccount).removeObserver(this, NotificationCenter.voiceTranscriptionUpdate);
+        getNotificationCenter().removeObserver(this, AyuConstants.MESSAGE_EDITED_NOTIFICATION);
+        getNotificationCenter().removeObserver(this, NotificationCenter.voiceTranscriptionUpdate);
         Bulletin.removeDelegate(this);
 
         if (scrimPopupWindow != null) {
@@ -273,6 +273,9 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     @SuppressLint("NotifyDataSetChanged")
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (account != getCurrentAccount()) {
+            return;
+        }
         if (id == AyuConstants.MESSAGE_EDITED_NOTIFICATION) {
             var dialogId = (long) args[0];
             var messageId = (int) args[1];

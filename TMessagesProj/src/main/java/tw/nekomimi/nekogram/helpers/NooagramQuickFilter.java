@@ -10,6 +10,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -18,10 +20,10 @@ import tw.nekomimi.nekogram.filters.AyuFilter;
 import xyz.nextalone.nagram.NaConfig;
 
 public final class NooagramQuickFilter {
-    private static final int MAX_CANDIDATES = 1;
     private static final Pattern URL_PATTERN = Pattern.compile("(?i)\\b(?:https?://|www\\.)[^\\s]+");
     private static final Pattern DOMAIN_PATTERN = Pattern.compile(
             "(?i)(?<![A-Za-z0-9.-])(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}(?![A-Za-z0-9.-])");
+    private static final Pattern BARE_LINK_PATTERN = Pattern.compile(DOMAIN_PATTERN.pattern() + "(?:/[^\\s<>]*)?");
     private static final Pattern CONTACT_PATTERN = Pattern.compile(
             "(?i)(?:telegram|t\\.me|tg|qq|\\u5fae\\u4fe1|vx|wechat)"
                     + "[\\s:\\uFF1A]*[A-Za-z0-9_./-]{3,}");
@@ -47,16 +49,19 @@ public final class NooagramQuickFilter {
     private NooagramQuickFilter() {}
 
     public static Result block(MessageObject message, MessageObject.GroupedMessages group) {
-        CharSequence source = AyuFilter.getMessageText(message, group);
-        if (TextUtils.isEmpty(source)) {
+        if (message == null || message.translated || message.isRestrictedMessage) {
             return Result.error("NO_TEXT");
         }
         try {
-            String regex = buildRegex(source.toString());
+            MessageHelper.FilterText source = MessageHelper.getMessageFilterText(message, group);
+            String regex = buildRegex(source.content, source.matchText);
+            if (TextUtils.isEmpty(regex)) {
+                return Result.error("NO_TEXT");
+            }
             ArrayList<AyuFilter.FilterModel> filters = new ArrayList<>(AyuFilter.getRegexFilters());
             boolean duplicate = false;
             for (AyuFilter.FilterModel filter : filters) {
-                if (filter != null && filter.caseInsensitive && TextUtils.equals(filter.regex, regex)) {
+                if (canReuse(filter, regex)) {
                     filter.enabled = true;
                     duplicate = true;
                     break;
@@ -76,23 +81,40 @@ public final class NooagramQuickFilter {
         }
     }
 
+    static boolean canReuse(AyuFilter.FilterModel filter, String regex) {
+        return filter != null && !filter.reversed && filter.caseInsensitive && Objects.equals(filter.regex, regex);
+    }
+
     private static String buildRegex(String rawText) {
-        String source = rawText == null ? "" : rawText.replace('\r', '\n').trim();
-        source = source.replace('\u200B', ' ');
-        String text = source.replace('\n', ' ').trim();
-        String candidateText = HANDLE_PATTERN.matcher(text).replaceAll(" ");
-        String extractableText = removeGenericLinks(candidateText);
+        return buildRegex(Collections.singletonList(rawText), rawText);
+    }
+
+    static String buildRegex(List<String> content, String matchText) {
+        if (TextUtils.isEmpty(matchText)) {
+            return null;
+        }
         ArrayList<Candidate> candidates = new ArrayList<>();
-        collectFilenameCandidates(source, candidates);
-        collectFileTokenCandidates(extractableText, candidates);
-        collectProductCandidates(extractableText, candidates);
-        if (candidates.size() < 2) {
+        ArrayList<String> fallbacks = new ArrayList<>();
+        for (String part : content) {
+            if (TextUtils.isEmpty(part)) {
+                continue;
+            }
+            String extractableText = removeGenericLinks(HANDLE_PATTERN.matcher(part).replaceAll("\n"))
+                    .replace('\u200B', '\n');
+            collectFilenameCandidates(extractableText, candidates);
+            collectFileTokenCandidates(extractableText, candidates);
+            collectProductCandidates(extractableText, candidates);
             collectPatternCandidates(extractableText, DOMAIN_PATTERN, 65, candidates);
             collectPatternCandidates(extractableText, CONTACT_PATTERN, 60, candidates);
             collectPatternCandidates(extractableText, URL_PATTERN, 55, candidates);
-        }
-        if (candidates.size() < 2) {
             collectFallbackCandidates(extractableText, candidates);
+            for (String fragment : extractableText.split("[\r\n]+")) {
+                String value = fragment.trim();
+                if (!value.isEmpty() && !isGenericCandidate(value)
+                        && value.codePoints().anyMatch(Character::isLetterOrDigit)) {
+                    fallbacks.add(truncate(value));
+                }
+            }
         }
         removeRedundantCandidates(candidates);
         candidates.sort((left, right) -> {
@@ -100,23 +122,23 @@ public final class NooagramQuickFilter {
             return score != 0 ? score : Integer.compare(left.position, right.position);
         });
 
-        if (candidates.isEmpty()) {
-            return Pattern.quote(truncate(text));
-        }
-
-        StringBuilder builder = new StringBuilder();
-        int count = Math.min(MAX_CANDIDATES, candidates.size());
-        for (int i = 0; i < count; i++) {
-            if (i > 0) {
-                builder.append('|');
+        for (Candidate candidate : candidates) {
+            String regex = candidateRegex(candidate.value);
+            if (matchesSource(regex, matchText)) {
+                return regex;
             }
-            builder.append(candidateRegex(candidates.get(i).value));
         }
-        String regex = builder.toString();
-        if (!Pattern.compile(regex, Pattern.CASE_INSENSITIVE).matcher(text).find()) {
-            return Pattern.quote(truncate(text));
+        for (String fallback : fallbacks) {
+            String regex = Pattern.quote(fallback);
+            if (matchesSource(regex, matchText)) {
+                return regex;
+            }
         }
-        return regex;
+        return null;
+    }
+
+    private static boolean matchesSource(String regex, String source) {
+        return Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.MULTILINE).matcher(source).find();
     }
 
     private static void removeRedundantCandidates(ArrayList<Candidate> candidates) {
@@ -368,7 +390,8 @@ public final class NooagramQuickFilter {
 
     private static String removeGenericLinks(String text) {
         String withoutUrls = removeGenericMatches(text, URL_PATTERN);
-        return removeGenericMatches(withoutUrls, CONTACT_PATTERN);
+        String withoutContacts = removeGenericMatches(withoutUrls, CONTACT_PATTERN);
+        return removeGenericMatches(withoutContacts, BARE_LINK_PATTERN);
     }
 
     private static String removeGenericMatches(String text, Pattern pattern) {
@@ -379,6 +402,8 @@ public final class NooagramQuickFilter {
             result.append(text, lastEnd, matcher.start());
             if (findGenericLinkDomain(matcher.group()) == null) {
                 result.append(matcher.group());
+            } else {
+                result.append('\n');
             }
             lastEnd = matcher.end();
         }
@@ -396,8 +421,10 @@ public final class NooagramQuickFilter {
             if (domain.startsWith("www.")) {
                 domain = domain.substring(4);
             }
-            if (GENERIC_LINK_DOMAINS.contains(domain)) {
-                return domain;
+            for (String generic : GENERIC_LINK_DOMAINS) {
+                if (domain.equals(generic) || domain.endsWith("." + generic)) {
+                    return domain;
+                }
             }
         }
         return null;
@@ -419,7 +446,7 @@ public final class NooagramQuickFilter {
         }
 
         private static Result error(String error) {
-            return new Result(null, false, error);
+            return new Result(null, false, error == null ? "FAILED" : error);
         }
     }
 

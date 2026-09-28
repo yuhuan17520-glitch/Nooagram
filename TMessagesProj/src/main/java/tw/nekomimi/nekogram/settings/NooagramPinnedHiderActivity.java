@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
@@ -27,8 +28,8 @@ import java.util.ArrayList;
 import tw.nekomimi.nekogram.helpers.NooagramPinnedHider;
 import tw.nekomimi.nekogram.ui.cells.HeaderCell;
 
-public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
-    private ListAdapter listAdapter;
+public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity implements NotificationCenter.NotificationCenterDelegate {
+    private ArrayList<Long> hiddenDialogs = new ArrayList<>();
     private int headerRow;
     private int startRow;
     private int endRow;
@@ -38,17 +39,17 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
     protected void updateRows() {
         super.updateRows();
 
-        ArrayList<Long> dialogs = NooagramPinnedHider.getHiddenDialogs(UserConfig.selectedAccount);
+        hiddenDialogs = NooagramPinnedHider.getHiddenDialogs(currentAccount);
         headerRow = -1;
         startRow = -1;
         endRow = -1;
         emptyRow = -1;
-        if (dialogs.isEmpty()) {
+        if (hiddenDialogs.isEmpty()) {
             emptyRow = rowCount++;
         } else {
             headerRow = rowCount++;
             startRow = rowCount;
-            rowCount += dialogs.size();
+            rowCount += hiddenDialogs.size();
             endRow = rowCount;
         }
     }
@@ -59,9 +60,31 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
     }
 
     @Override
+    public boolean onFragmentCreate() {
+        if (!super.onFragmentCreate()) return false;
+        getNotificationCenter().addObserver(this, NotificationCenter.nooagramPinnedHiderChanged);
+        return true;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        getNotificationCenter().removeObserver(this, NotificationCenter.nooagramPinnedHiderChanged);
+        super.onFragmentDestroy();
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        updateRows();
+        if (listAdapter != null) listAdapter.notifyDataSetChanged();
+    }
+
+    @Override
     public View createView(Context context) {
         View view = super.createView(context);
         ActionBarMenu menu = actionBar.createMenu();
+        if (!NooagramPinnedHider.getLegacyDialogs(currentAccount).isEmpty()) {
+            menu.addItem(998, R.drawable.msg_unarchive).setContentDescription(getString(R.string.NooagramRestoreLegacyPinned));
+        }
         menu.addItem(999, R.drawable.msg_delete).setContentDescription(getString(R.string.Clear));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -70,6 +93,8 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
                     finishFragment();
                 } else if (id == 999) {
                     showClearAlert();
+                } else if (id == 998) {
+                    showRestoreLegacyAlert();
                 }
             }
         });
@@ -91,13 +116,12 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
         if (position < startRow || position >= endRow) {
             return;
         }
-        ArrayList<Long> dialogs = NooagramPinnedHider.getHiddenDialogs(UserConfig.selectedAccount);
         int index = position - startRow;
-        if (index < 0 || index >= dialogs.size()) {
+        if (index < 0 || index >= hiddenDialogs.size() || !(view.getTag() instanceof Long)) {
             return;
         }
-        long dialogId = dialogs.get(index);
-        NooagramPinnedHider.setHidden(UserConfig.selectedAccount, dialogId, false);
+        long dialogId = (Long) view.getTag();
+        NooagramPinnedHider.setHidden(currentAccount, dialogId, false);
         updateRows();
         if (listAdapter != null) {
             listAdapter.notifyDataSetChanged();
@@ -125,7 +149,7 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
         builder.setMessage(getString(R.string.NooagramPinnedClearMessage));
         builder.setNegativeButton(getString(R.string.Cancel), null);
         builder.setPositiveButton(getString(R.string.Clear), (dialog, which) -> {
-            NooagramPinnedHider.clear(UserConfig.selectedAccount);
+            NooagramPinnedHider.clear(currentAccount);
             updateRows();
             if (listAdapter != null) {
                 listAdapter.notifyDataSetChanged();
@@ -134,15 +158,33 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
         showDialog(builder.create());
     }
 
+    private void showRestoreLegacyAlert() {
+        if (getParentActivity() == null) return;
+        ArrayList<Long> legacy = NooagramPinnedHider.getLegacyDialogs(currentAccount);
+        if (legacy.isEmpty()) return;
+        long userId = getUserConfig().getClientUserId();
+        StringBuilder message = new StringBuilder(getString(R.string.NooagramRestoreLegacyPinnedInfo));
+        for (long dialogId : legacy) message.append("\n").append(dialogTitle(dialogId));
+        showDialog(new AlertDialog.Builder(getParentActivity(), getResourceProvider())
+                .setTitle(getString(R.string.NooagramRestoreLegacyPinned))
+                .setMessage(message)
+                .setNegativeButton(getString(R.string.Cancel), null)
+                .setPositiveButton(getString(R.string.Restore), (dialog, which) -> {
+                    if (getUserConfig().getClientUserId() != userId || userId == 0) return;
+                    NooagramPinnedHider.restoreLegacyDialogs(currentAccount);
+                    actionBar.createMenu().getItem(998).setVisibility(View.GONE);
+                }).create());
+    }
+
     private String dialogTitle(long dialogId) {
         try {
             if (dialogId > 0) {
-                TLRPC.User user = MessagesController.getInstance(UserConfig.selectedAccount).getUser(dialogId);
+                TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
                 if (user != null) {
                     return ContactsController.formatName(user.first_name, user.last_name);
                 }
             } else {
-                TLRPC.Chat chat = MessagesController.getInstance(UserConfig.selectedAccount).getChat(-dialogId);
+                TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-dialogId);
                 if (chat != null) {
                     return chat.title;
                 }
@@ -164,11 +206,12 @@ public class NooagramPinnedHiderActivity extends BaseNekoSettingsActivity {
                     ((HeaderCell) holder.itemView).setText(getString(R.string.NooagramPinnedHiddenHeader));
                     break;
                 case TYPE_TEXT: {
-                    ArrayList<Long> dialogs = NooagramPinnedHider.getHiddenDialogs(UserConfig.selectedAccount);
                     int index = position - startRow;
-                    if (index >= 0 && index < dialogs.size()) {
+                    if (index >= 0 && index < hiddenDialogs.size()) {
                         TextCell cell = (TextCell) holder.itemView;
-                        String title = dialogTitle(dialogs.get(index));
+                        long dialogId = hiddenDialogs.get(index);
+                        cell.setTag(dialogId);
+                        String title = dialogTitle(dialogId);
                         cell.setColors(-1, Theme.key_windowBackgroundWhiteBlackText);
                         cell.setText(title, position + 1 < endRow);
                     }

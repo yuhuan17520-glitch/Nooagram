@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="NooagramRestoreLegacyPinned">Restore old hidden pins list</string>
+    <string name="NooagramRestoreLegacyPinnedInfo">The old list did not record its account owner. Restore the following chats only if they belong to this account.</string>
     <string name="NagramX" translatable="false">Nagram X</string>
     <string name="XChannel">Nagram X Channel</string>
     <string name="NagramXForkChannel">Nagram XF Channel</string>

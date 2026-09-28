@@ -49,7 +49,7 @@ public class HTMLKeeper {
     private static final Pattern PATTERN_TRAILING_NEWLINE = Pattern.compile("[\n\r]$");
     private static final Pattern PATTERN_NEWLINE_TO_BR = Pattern.compile("\n");
 
-    private static void toHtml(StringBuilder out, Spanned text, int end) {
+    private static void toHtml(StringBuilder out, Spanned text, int end, boolean includeLinks) {
         ArrayList<CharacterStyle> openStack = new ArrayList<>();
 
         int next;
@@ -74,16 +74,18 @@ public class HTMLKeeper {
 
             ArrayList<CharacterStyle> currentActiveSpans = new ArrayList<>(Arrays.asList(spans));
 
-            boolean sameSet = openStack.size() == currentActiveSpans.size() && openStack.containsAll(currentActiveSpans);
-            if (!sameSet) {
-                for (int j = openStack.size() - 1; j >= 0; j--) {
-                    closeTagFor(out, openStack.get(j));
-                }
-                openStack.clear();
-                for (CharacterStyle currentSpan : currentActiveSpans) {
-                    openTagFor(out, currentSpan);
-                    openStack.add(currentSpan);
-                }
+            int shared = 0;
+            while (shared < openStack.size() && shared < currentActiveSpans.size()
+                    && sameSpan(openStack.get(shared), currentActiveSpans.get(shared))) {
+                shared++;
+            }
+            for (int j = openStack.size() - 1; j >= shared; j--) {
+                closeTagFor(out, openStack.remove(j));
+            }
+            for (int j = shared; j < currentActiveSpans.size(); j++) {
+                CharacterStyle currentSpan = currentActiveSpans.get(j);
+                openTagFor(out, currentSpan, includeLinks);
+                openStack.add(currentSpan);
             }
 
             out.append(StringEscapeUtils.escapeHtml4(text.subSequence(i, next).toString()));
@@ -94,7 +96,12 @@ public class HTMLKeeper {
         }
     }
 
-    private static void openTagFor(StringBuilder out, CharacterStyle span) {
+    private static boolean sameSpan(CharacterStyle first, CharacterStyle second) {
+        return first == second || first instanceof EntityURLSpan left && second instanceof EntityURLSpan right
+                && left.entityIndex >= 0 && left.entityIndex == right.entityIndex;
+    }
+
+    private static void openTagFor(StringBuilder out, CharacterStyle span, boolean includeLinks) {
         if (span instanceof StyleSpan) {
             int style = ((StyleSpan) span).getStyle();
             if ((style & Typeface.BOLD) != 0) {
@@ -109,6 +116,10 @@ public class HTMLKeeper {
             out.append("<u>");
         } else if (span instanceof StrikethroughSpan) {
             out.append("<s>");
+        } else if (span instanceof EntityURLSpan entitySpan) {
+            out.append("<a data-nooagram-entity=\"").append(entitySpan.entityIndex).append("\" href=\"")
+                    .append(includeLinks ? StringEscapeUtils.escapeHtml4(entitySpan.getURL()) : "https://telegram.org/")
+                    .append("\">");
         } else if (span instanceof URLSpan) {
             out.append("<a href=\"").append(StringEscapeUtils.escapeHtml4(((URLSpan) span).getURL())).append("\">");
         } else if (span instanceof ForegroundColorSpan) {
@@ -200,13 +211,15 @@ public class HTMLKeeper {
                 if ((((TextStyleSpan) mSpan).getStyleFlags() & TextStyleSpan.FLAG_STYLE_URL) > 0) {
                     String url = ((TextStyleSpan) mSpan).getTextStyleRun().urlEntity.url;
                     if (url != null || !includeLink) {
-                        messSpan.setSpan(new URLSpan(url), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        int entityIndex = entities.indexOf(((TextStyleSpan) mSpan).getTextStyleRun().urlEntity);
+                        messSpan.setSpan(new EntityURLSpan(url, entityIndex), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     }
                 }
                 if ((((TextStyleSpan) mSpan).getStyleFlags() & TextStyleSpan.FLAG_STYLE_MENTION) > 0) {
                     if (((TextStyleSpan) mSpan).getTextStyleRun().urlEntity instanceof TLRPC.TL_messageEntityMentionName) {
                         long id = ((TLRPC.TL_messageEntityMentionName) ((TextStyleSpan) mSpan).getTextStyleRun().urlEntity).user_id;
-                        messSpan.setSpan(new URLSpan("tg://user?id=" + id), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                        int entityIndex = entities.indexOf(((TextStyleSpan) mSpan).getTextStyleRun().urlEntity);
+                        messSpan.setSpan(new EntityURLSpan("tg://user?id=" + id, entityIndex), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     }
                 }
             }
@@ -226,7 +239,7 @@ public class HTMLKeeper {
         }
 
         StringBuilder out = new StringBuilder();
-        toHtml(out, messSpan, messSpan.length());
+        toHtml(out, messSpan, messSpan.length(), includeLink);
         String html_result = out.toString();
 
         if (!includeLink) {
@@ -274,51 +287,8 @@ public class HTMLKeeper {
             TLRPC.MessageEntity entity = null;
             if (mSpan instanceof URLSpan urlSpan) {
                 if (copyEntities != null) {
-                    for (int i = 0; i < copyEntities.size(); i++) {
-                        TLRPC.MessageEntity old_entity = copyEntities.get(i);
-                        boolean found = false;
-                        if (old_entity instanceof TLRPC.TL_messageEntityMentionName) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityMentionName();
-                            ((TLRPC.TL_messageEntityMentionName) entity).user_id = ((TLRPC.TL_messageEntityMentionName) old_entity).user_id;
-                        } else if (old_entity instanceof TLRPC.TL_inputMessageEntityMentionName) {
-                            found = true;
-                            entity = new TLRPC.TL_inputMessageEntityMentionName();
-                            ((TLRPC.TL_inputMessageEntityMentionName) entity).user_id = ((TLRPC.TL_inputMessageEntityMentionName) old_entity).user_id;
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityTextUrl) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityTextUrl();
-                            entity.url = old_entity.url;
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityUrl) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityUrl();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityMention) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityMention();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityBotCommand) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityBotCommand();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityHashtag) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityHashtag();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityCashtag) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityCashtag();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityEmail) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityEmail();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityBankCard) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityBankCard();
-                        } else if (old_entity instanceof TLRPC.TL_messageEntityPhone) {
-                            found = true;
-                            entity = new TLRPC.TL_messageEntityPhone();
-                        }
-                        if (found) {
-                            copyEntities.remove(i);
-                            break;
-                        }
-                    }
+                    int identifiedIndex = mSpan instanceof EntityURLSpan identified ? identified.entityIndex : -1;
+                    entity = mapLinkEntity(entities, copyEntities, identifiedIndex, urlSpan.getURL());
                 } else {
                     entity = new TLRPC.TL_messageEntityTextUrl();
                     entity.url = urlSpan.getURL();
@@ -355,6 +325,77 @@ public class HTMLKeeper {
             }
         }
         return Pair.create(htmlParsed.toString(), returnEntities);
+    }
+
+    static TLRPC.MessageEntity originalLink(ArrayList<TLRPC.MessageEntity> entities, int index, String url) {
+        if (index >= 0 && index < entities.size()) return entities.get(index);
+        if (url != null && !"https://telegram.org/".equals(url)) {
+            for (TLRPC.MessageEntity original : entities) {
+                if (original instanceof TLRPC.TL_messageEntityTextUrl && url.equals(original.url)) return original;
+            }
+        }
+        return null;
+    }
+
+    static TLRPC.MessageEntity mapLinkEntity(ArrayList<TLRPC.MessageEntity> originals,
+                                             ArrayList<TLRPC.MessageEntity> fallback,
+                                             int identifiedIndex, String url) {
+        TLRPC.MessageEntity identified = originalLink(originals, identifiedIndex, url);
+        if (identified != null) {
+            TLRPC.MessageEntity mapped = copyLinkEntity(identified);
+            if (mapped != null) {
+                removeByIdentity(fallback, identified);
+            }
+            return mapped;
+        }
+        for (int i = 0; i < fallback.size(); i++) {
+            TLRPC.MessageEntity mapped = copyLinkEntity(fallback.get(i));
+            if (mapped != null) {
+                fallback.remove(i);
+                return mapped;
+            }
+        }
+        return null;
+    }
+
+    private static TLRPC.MessageEntity copyLinkEntity(TLRPC.MessageEntity oldEntity) {
+        TLRPC.MessageEntity entity = null;
+        if (oldEntity instanceof TLRPC.TL_messageEntityMentionName) {
+            entity = new TLRPC.TL_messageEntityMentionName();
+            ((TLRPC.TL_messageEntityMentionName) entity).user_id = ((TLRPC.TL_messageEntityMentionName) oldEntity).user_id;
+        } else if (oldEntity instanceof TLRPC.TL_inputMessageEntityMentionName) {
+            entity = new TLRPC.TL_inputMessageEntityMentionName();
+            ((TLRPC.TL_inputMessageEntityMentionName) entity).user_id = ((TLRPC.TL_inputMessageEntityMentionName) oldEntity).user_id;
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityTextUrl) {
+            entity = new TLRPC.TL_messageEntityTextUrl();
+            entity.url = oldEntity.url;
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityUrl) {
+            entity = new TLRPC.TL_messageEntityUrl();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityMention) {
+            entity = new TLRPC.TL_messageEntityMention();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityBotCommand) {
+            entity = new TLRPC.TL_messageEntityBotCommand();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityHashtag) {
+            entity = new TLRPC.TL_messageEntityHashtag();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityCashtag) {
+            entity = new TLRPC.TL_messageEntityCashtag();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityEmail) {
+            entity = new TLRPC.TL_messageEntityEmail();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityBankCard) {
+            entity = new TLRPC.TL_messageEntityBankCard();
+        } else if (oldEntity instanceof TLRPC.TL_messageEntityPhone) {
+            entity = new TLRPC.TL_messageEntityPhone();
+        }
+        return entity;
+    }
+
+    private static void removeByIdentity(ArrayList<TLRPC.MessageEntity> entities, TLRPC.MessageEntity target) {
+        for (int i = 0; i < entities.size(); i++) {
+            if (entities.get(i) == target) {
+                entities.remove(i);
+                return;
+            }
+        }
     }
 
     // VARIOUS HTML FIXERS
@@ -402,8 +443,9 @@ public class HTMLKeeper {
         stack.parse(string);
         for (int i = 0; i < stack.stack.size(); i++) {
             HTMLTagPosition tagPosition = stack.stack.get(i);
-            String tag = tagPosition.tag();
-            tag = tag.replace("<", "").replace(">", "").replace(" ", "");
+            String tag = tagPosition.tag().trim();
+            int attributes = tag.indexOf(' ');
+            if (attributes >= 0) tag = tag.substring(0, attributes);
             if (!tag.contains("/")) {
                 listUnclosedTags.add(0, tag);
                 listUnopenedTags.add(0, tag);
@@ -442,6 +484,15 @@ public class HTMLKeeper {
     public static class BlockquoteSpan extends CharacterStyle {
         @Override
         public void updateDrawState(TextPaint ds) {
+        }
+    }
+
+    public static class EntityURLSpan extends URLSpan {
+        public final int entityIndex;
+
+        public EntityURLSpan(String url, int entityIndex) {
+            super(url);
+            this.entityIndex = entityIndex;
         }
     }
 

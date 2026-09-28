@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   issues: write
+  actions: write
 
 concurrency:
   group: nooagram-upstream-sync
@@ -27,23 +28,32 @@ jobs:
           fetch-depth: 0
 
       - name: Configure Git
+        id: base
         run: |
           git config user.name "Nooagram Bot"
           git config user.email "actions@github.com"
+          EXPECTED_SHA=$(git rev-parse refs/remotes/origin/ayu)
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          echo "expected_sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
           git remote add upstream https://github.com/Keeperorowner/NagramXF.git
-          git fetch --force upstream --tags
 
       - name: Resolve upstream release tag
         id: tag
         run: |
           UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
+          [[ "$UPSTREAM_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+          git fetch --no-tags upstream "refs/tags/${UPSTREAM_TAG}:refs/nooagram/upstream-release"
+          UPSTREAM_SHA=$(git rev-parse 'refs/nooagram/upstream-release^{commit}')
           echo "tag=${UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
           echo "resolved tag: ${UPSTREAM_TAG}"
 
       - name: Check upstream release tag
         id: check
+        env:
+          UPSTREAM_SHA: ${{ steps.tag.outputs.sha }}
         run: |
-          if git merge-base --is-ancestor "${{ steps.tag.outputs.tag }}" HEAD; then
+          if git merge-base --is-ancestor "$UPSTREAM_SHA" HEAD; then
             echo "updated=false" >> "$GITHUB_OUTPUT"
           else
             echo "updated=true" >> "$GITHUB_OUTPUT"
@@ -53,7 +63,9 @@ jobs:
         id: rebase
         if: steps.check.outputs.updated == 'true'
         continue-on-error: true
-        run: git rebase "${{ steps.tag.outputs.tag }}"
+        env:
+          UPSTREAM_SHA: ${{ steps.tag.outputs.sha }}
+        run: git rebase "$UPSTREAM_SHA"
 
       - name: Report rebase conflict
         if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'failure'
@@ -78,10 +90,35 @@ jobs:
           fi
           exit 1
 
+      - name: Pin rebased upstream version
+        if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'success'
+        shell: pwsh
+        env:
+          UPSTREAM_TAG: ${{ steps.tag.outputs.tag }}
+          UPSTREAM_SHA: ${{ steps.tag.outputs.sha }}
+        run: |
+          $source = Get-Content -LiteralPath nooagram-version.json -Raw | ConvertFrom-Json
+          $source.upstream_tag = $env:UPSTREAM_TAG
+          $source.upstream_commit = $env:UPSTREAM_SHA
+          $source | ConvertTo-Json | Set-Content -LiteralPath nooagram-version.json -Encoding utf8
+          git add -- nooagram-version.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m "chore: pin upstream release $env:UPSTREAM_TAG"
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to commit upstream version pin.' }
+          } elseif ($LASTEXITCODE -ne 0) {
+            throw 'Unable to inspect upstream version pin.'
+          }
+
       - name: Push ayu
         if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'success'
-        run: git push origin ayu
+        env:
+          EXPECTED_SHA: ${{ steps.base.outputs.expected_sha }}
+          UPSTREAM_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          git push --atomic "--force-with-lease=refs/heads/ayu:${EXPECTED_SHA}" origin \
+            HEAD:refs/heads/ayu "refs/nooagram/upstream-release:refs/tags/${UPSTREAM_TAG}"
 
       - name: Start Nooagram release build
         if: steps.check.outputs.updated == 'true' && steps.rebase.outcome == 'success'
-        run: gh workflow run release.yml --ref ayu
+        run: gh workflow run release.yml --ref ayu -f source_sha="$(git rev-parse HEAD)"

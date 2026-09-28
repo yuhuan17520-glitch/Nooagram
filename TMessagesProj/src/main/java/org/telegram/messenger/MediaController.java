@@ -5864,10 +5864,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     selectedType = 1;
                 }
             }
-            String folderName = NekoConfig.customSavePath.String();
+            String folderName = NekoConfig.getCustomSavePath();
             if (messageObject != null && NaConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
                 String chatFolderName = ChatsHelper.getChatFolderName(messageObject);
-                folderName = folderName + File.separator + chatFolderName;
+                folderName = TextUtils.isEmpty(folderName) ? chatFolderName : folderName + File.separator + chatFolderName;
             }
             if (selectedType == 0) {
                 if (filename == null) {

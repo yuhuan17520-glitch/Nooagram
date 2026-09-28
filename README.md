@@ -13,7 +13,7 @@ Nooagram 是基于 [Nagram XF](https://github.com/Keeperorowner/NagramXF) 的 Te
 - [GitHub Releases](https://github.com/yuhuan17520-glitch/Nooagram/releases)
 - [应用内更新清单](https://github.com/yuhuan17520-glitch/Nooagram/releases/latest/download/update.json)
 
-大多数现代 Android 手机选择 `arm64-v8a`；32 位设备选择 `armeabi-v7a`。
+大多数现代 Android 手机选择 `arm64-v8a`；32 位设备选择 `armeabi-v7a`；Android Studio 的 Intel/AMD 模拟器选择 `x86_64`。
 
 ## 赞助
 
@@ -66,14 +66,16 @@ Nooagram automatically rebases onto the latest release tag of [Nagram XF](https:
 Nooagram follows Semantic Versioning 2.0.0. The version name uses the format:
 
 ```text
-1.0.0-<NagramXF version>.<NagramXF release tag>
+1.2.0-<NagramXF version>.<NagramXF release tag>+<Android build code>
 ```
 
 For example:
 
 ```text
-1.0.1-12.10.1.1450
+1.2.0-12.10.1.1251+125000043
 ```
+
+`nooagram-version.json` records the app version and the exact upstream release commit. Build metadata keeps successive deliveries distinct without changing the upstream version label. Local and CI builds use the same source; existing releases are never overwritten.
 
 ## Acknowledgments
 

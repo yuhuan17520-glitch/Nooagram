@@ -4,6 +4,8 @@ import android.text.TextUtils
 import android.view.View
 import androidx.core.content.edit
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -112,9 +114,9 @@ interface Translator {
             query: String,
             provider: Int = 0,
             translateCallBack: TranslateCallBack
-        ) {
+        ): Job {
 
-            AppScope.io.launch {
+            return AppScope.io.launch {
                 runCatching {
                     val result: String = translate(to, query, provider.takeIf { it != 0 } ?: NekoConfig.translationProvider.Int())
 
@@ -122,6 +124,7 @@ interface Translator {
                         translateCallBack.onSuccess(result)
                     }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     AndroidUtilities.runOnUIThread {
                         translateCallBack.onFailed(
                             it is UnsupportedOperationException,
@@ -167,8 +170,8 @@ interface Translator {
             entities: ArrayList<TLRPC.MessageEntity>,
             context: String?,
             translateCallBack: TranslateCallBack2
-        ) {
-            translateWithContext(
+        ): Job {
+            return translateWithContext(
                 to,
                 query,
                 entities,
@@ -186,8 +189,8 @@ interface Translator {
             context: String?,
             provider: Int,
             translateCallBack: TranslateCallBack2
-        ) {
-            AppScope.io.launch {
+        ): Job {
+            return AppScope.io.launch {
                 runCatching {
                     val effectiveProvider = provider.takeIf { it != 0 } ?: NekoConfig.translationProvider.Int()
                     val result = LLMTranslator.withTranslationContext(context) {
@@ -195,6 +198,7 @@ interface Translator {
                     }
                     AndroidUtilities.runOnUIThread { translateCallBack.onSuccess(result) }
                 }.onFailure {
+                    if (it is CancellationException) throw it
                     AndroidUtilities.runOnUIThread {
                         translateCallBack.onFailed(
                             it is UnsupportedOperationException,

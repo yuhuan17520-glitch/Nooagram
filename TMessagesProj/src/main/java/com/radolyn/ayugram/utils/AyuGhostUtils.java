@@ -82,7 +82,6 @@ public class AyuGhostUtils {
             req = request;
         }
 
-        AyuState.setAllowReadPacket(true, 1);
         ConnectionsManager.getInstance(account).sendRequest(new TLRPCWrappedBypass(req), (response, error) -> {
             if (error == null) {
                 if (response instanceof TLRPC.TL_messages_affectedMessages res) {
@@ -97,7 +96,7 @@ public class AyuGhostUtils {
     }
 
     public static void markReadOnServer(MessageObject message, boolean internal) {
-        markReadOnServer(UserConfig.selectedAccount, message, internal);
+        markReadOnServer(message.currentAccount, message, internal);
     }
 
     public static void markReadOnServer(int account, MessageObject message, boolean internal) {
@@ -138,7 +137,6 @@ public class AyuGhostUtils {
             req = request;
         }
 
-        AyuState.setAllowReadPacket(true, 1);
         ConnectionsManager.getInstance(account).sendRequest(new TLRPCWrappedBypass(req), (response, error) -> {
             if (error == null) {
                 if (response instanceof TLRPC.TL_messages_affectedMessages res) {
@@ -194,7 +192,7 @@ public class AyuGhostUtils {
         if (isReadMessageRequest(object)) {
             boolean block;
             if (!AyuGhostController.getInstance(account).isSendReadMessagePackets()) {
-                block = !AyuState.getAllowReadPacket() && AyuGhostPreferences.shouldBlockWhenGlobalDisabled(readType);
+                block = AyuGhostPreferences.shouldBlockWhenGlobalDisabled(readType);
             } else {
                 block = AyuGhostPreferences.shouldBlockWhenGlobalEnabled(readType);
             }

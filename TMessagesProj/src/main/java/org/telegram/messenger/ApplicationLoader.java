@@ -321,6 +321,8 @@ public class ApplicationLoader extends Application {
             }
         }
 
+        tw.nekomimi.nekogram.helpers.NooagramPinnedHider.migrateLegacyAccounts();
+
         // init fcm
         initPushServices();
         if (BuildVars.LOGS_ENABLED) {

@@ -29,7 +29,7 @@ public class PythonSdkUpdateDialog extends UpdateAppAlertDialog {
 
     @Override
     public String getDoneButtonText() {
-        return LocaleController.getString(R.string.AppUpdateNow);
+        return LocaleController.getString(R.string.AppUpdateNow) + " / " + LocaleController.getString(R.string.RestartApp);
     }
 
     @Override

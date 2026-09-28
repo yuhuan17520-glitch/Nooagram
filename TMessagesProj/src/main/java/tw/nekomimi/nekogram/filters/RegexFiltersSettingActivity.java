@@ -18,6 +18,9 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.gson.Gson;
+import com.radolyn.ayugram.database.dao.RegexFilterDao;
+import com.radolyn.ayugram.database.entities.RegexFilter;
+import com.radolyn.ayugram.database.entities.RegexFilterGlobalExclusion;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -272,26 +275,15 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         data.filters = new ArrayList<>();
         data.peers = new HashMap<>();
         MessagesController messagesController = getMessagesController();
-        for (AyuFilter.FilterModel model : AyuFilter.getRegexFilters()) {
-            if (model == null || model.regex == null) {
-                continue;
+        RegexFilterDao.Snapshot snapshot = AyuFilter.getPersistedFilters();
+        for (RegexFilter model : snapshot.filters) {
+            data.filters.add(buildBackupFilter(model));
+            if (model.dialogId != null) {
+                addPeerUsername(data.peers, model.dialogId, messagesController);
             }
-            data.filters.add(buildBackupFilter(model, null));
-        }
-        for (AyuFilter.ChatFilterEntry entry : checkChatFilters(AyuFilter.getChatFilterEntries())) {
-            if (entry == null || entry.filters == null) {
-                continue;
-            }
-            for (AyuFilter.FilterModel model : entry.filters) {
-                if (model == null || model.regex == null) {
-                    continue;
-                }
-                data.filters.add(buildBackupFilter(model, entry.dialogId));
-            }
-            addPeerUsername(data.peers, entry.dialogId, messagesController);
         }
         data.exclusions = new ArrayList<>();
-        for (AyuFilter.ExcludedFilterEntry entry : AyuFilter.getExcludedFilterEntries()) {
+        for (RegexFilterGlobalExclusion entry : snapshot.exclusions) {
             if (entry == null || TextUtils.isEmpty(entry.filterId) || entry.dialogId == 0L) {
                 continue;
             }
@@ -377,26 +369,6 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 });
             }
         });
-    }
-
-    private ArrayList<AyuFilter.ChatFilterEntry> checkChatFilters(ArrayList<AyuFilter.ChatFilterEntry> chatEntries) {
-        if (chatEntries == null || chatEntries.isEmpty()) return chatEntries;
-        ArrayList<AyuFilter.ChatFilterEntry> newEntries = new ArrayList<>();
-        for (AyuFilter.ChatFilterEntry entry : chatEntries) {
-            if (entry == null) continue;
-            if (entry.dialogId > 0) {
-                TLRPC.User user = MessagesController.getInstance(UserConfig.selectedAccount).getUser(entry.dialogId);
-                if (user != null) {
-                    newEntries.add(entry);
-                }
-            } else {
-                TLRPC.Chat chat = MessagesController.getInstance(UserConfig.selectedAccount).getChat(-entry.dialogId);
-                if (chat != null) {
-                    newEntries.add(entry);
-                }
-            }
-        }
-        return newEntries;
     }
 
     private boolean isKnownDialog(long dialogId) {
@@ -547,84 +519,12 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     private FiltersImportBottomSheet.Summary buildImportSummary(ParsedImport parsed) {
         FiltersImportBottomSheet.Summary s = new FiltersImportBottomSheet.Summary();
         if (parsed == null) return s;
-        if (parsed.sharedIncoming != null && !parsed.sharedIncoming.isEmpty()) {
-            ArrayList<AyuFilter.FilterModel> currentShared = AyuFilter.getRegexFilters();
-            for (AyuFilter.FilterModel in : parsed.sharedIncoming) {
-                boolean exactDuplicate = false;
-                boolean needsUpdate = false;
-                for (AyuFilter.FilterModel ex : currentShared) {
-                    if (ex != null && ex.regex != null
-                            && ex.regex.equals(in.regex)
-                            && ex.caseInsensitive == in.caseInsensitive
-                            && ex.reversed == in.reversed) {
-                        if (ex.enabled == in.enabled) {
-                            exactDuplicate = true;
-                        } else {
-                            needsUpdate = true;
-                        }
-                        break;
-                    }
-                }
-                if (exactDuplicate) {
-                } else if (needsUpdate) {
-                    s.updatedFilters++;
-                } else {
-                    s.newFilters++;
-                }
-            }
-        }
-        if (parsed.chatsIncoming != null) {
-            ArrayList<AyuFilter.ChatFilterEntry> currentChats = checkChatFilters(AyuFilter.getChatFilterEntries());
-            for (AyuFilter.ChatFilterEntry inEntry : parsed.chatsIncoming) {
-                if (inEntry == null || inEntry.filters == null) continue;
-                AyuFilter.ChatFilterEntry existingEntry = null;
-                for (AyuFilter.ChatFilterEntry exEntry : currentChats) {
-                    if (exEntry != null && exEntry.dialogId == inEntry.dialogId) {
-                        existingEntry = exEntry;
-                        break;
-                    }
-                }
-                for (AyuFilter.FilterModel in : inEntry.filters) {
-                    boolean exactDuplicate = false;
-                    boolean needsUpdate = false;
-                    if (existingEntry != null && existingEntry.filters != null) {
-                        for (AyuFilter.FilterModel ex : existingEntry.filters) {
-                            if (ex != null && ex.regex != null
-                                    && ex.regex.equals(in.regex)
-                                    && ex.caseInsensitive == in.caseInsensitive
-                                    && ex.reversed == in.reversed) {
-                                if (ex.enabled == in.enabled) {
-                                    exactDuplicate = true;
-                                } else {
-                                    needsUpdate = true;
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    if (exactDuplicate) {
-                    } else if (needsUpdate) {
-                        s.updatedFilters++;
-                    } else {
-                        s.newChatFilters++;
-                    }
-                }
-            }
-        }
-        if (parsed.exclusionsIncoming != null) {
-            ArrayList<AyuFilter.ExcludedFilterEntry> currentExclusions = AyuFilter.getExcludedFilterEntries();
-            for (AyuFilter.ExcludedFilterEntry in : parsed.exclusionsIncoming) {
-                boolean exists = false;
-                for (AyuFilter.ExcludedFilterEntry ex : currentExclusions) {
-                    if (ex != null && ex.dialogId == in.dialogId
-                            && ex.filterId != null && ex.filterId.equals(in.filterId)) {
-                        exists = true;
-                        break;
-                    }
-                }
-                if (!exists) s.newExclusions++;
-            }
-        }
+        RegexFilterDao.ImportResult merged = AyuFilter.importFilters(parsed.sharedIncoming,
+                parsed.chatsIncoming, parsed.exclusionsIncoming, false);
+        s.newFilters = merged.newFilters;
+        s.newChatFilters = merged.newChatFilters;
+        s.updatedFilters = merged.updatedFilters;
+        s.newExclusions = merged.newExclusions;
         if (parsed.customFilteredUsersIncoming != null) {
             long selfUserId = getUserConfig().getClientUserId();
             HashMap<Long, AyuFilter.CustomFilteredUser> existing = new HashMap<>();
@@ -656,62 +556,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     private void applyImport(ParsedImport parsed) {
         if (parsed == null) return;
         long selfUserId = getUserConfig().getClientUserId();
-        if (parsed.sharedIncoming != null && !parsed.sharedIncoming.isEmpty()) {
-            ArrayList<AyuFilter.FilterModel> currentShared = AyuFilter.getRegexFilters();
-            for (AyuFilter.FilterModel in : parsed.sharedIncoming) {
-                boolean found = false;
-                for (int i = 0; i < currentShared.size(); i++) {
-                    AyuFilter.FilterModel ex = currentShared.get(i);
-                    if (ex != null && ex.regex != null && ex.regex.equals(in.regex) && ex.caseInsensitive == in.caseInsensitive && ex.reversed == in.reversed) {
-                        ex.enabled = in.enabled;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    currentShared.add(in);
-                }
-            }
-            AyuFilter.saveFilter(currentShared);
-        }
-        if (parsed.chatsIncoming != null && !parsed.chatsIncoming.isEmpty()) {
-            ArrayList<AyuFilter.ChatFilterEntry> currentChats = checkChatFilters(AyuFilter.getChatFilterEntries());
-            for (AyuFilter.ChatFilterEntry inEntry : parsed.chatsIncoming) {
-                if (inEntry == null) continue;
-                AyuFilter.ChatFilterEntry target = null;
-                for (AyuFilter.ChatFilterEntry exEntry : currentChats) {
-                    if (exEntry != null && exEntry.dialogId == inEntry.dialogId) {
-                        target = exEntry;
-                        break;
-                    }
-                }
-                if (target == null) {
-                    AyuFilter.ChatFilterEntry newEntry = new AyuFilter.ChatFilterEntry();
-                    newEntry.dialogId = inEntry.dialogId;
-                    newEntry.filters = new ArrayList<>();
-                    currentChats.add(newEntry);
-                    target = newEntry;
-                }
-                if (inEntry.filters != null) {
-                    for (AyuFilter.FilterModel in : inEntry.filters) {
-                        boolean found = false;
-                        if (target.filters == null) target.filters = new ArrayList<>();
-                        for (int i = 0; i < target.filters.size(); i++) {
-                            AyuFilter.FilterModel ex = target.filters.get(i);
-                            if (ex != null && ex.regex != null && ex.regex.equals(in.regex) && ex.caseInsensitive == in.caseInsensitive && ex.reversed == in.reversed) {
-                                ex.enabled = in.enabled;
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            target.filters.add(in);
-                        }
-                    }
-                }
-            }
-            AyuFilter.saveChatFilterEntries(currentChats);
-        }
+        AyuFilter.importFilters(parsed.sharedIncoming, parsed.chatsIncoming, parsed.exclusionsIncoming, true);
         if (parsed.customFilteredUsersIncoming != null && !parsed.customFilteredUsersIncoming.isEmpty()) {
             HashMap<Long, AyuFilter.CustomFilteredUser> merged = new HashMap<>();
             for (AyuFilter.CustomFilteredUser existing : AyuFilter.getCustomFilteredUsersDataList()) {
@@ -746,14 +591,6 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             }
             AyuFilter.setCustomFilteredUsersData(new ArrayList<>(merged.values()));
         }
-        if (parsed.exclusionsIncoming != null && !parsed.exclusionsIncoming.isEmpty()) {
-            for (AyuFilter.ExcludedFilterEntry entry : parsed.exclusionsIncoming) {
-                if (entry == null || TextUtils.isEmpty(entry.filterId) || entry.dialogId == 0L) {
-                    continue;
-                }
-                AyuFilter.setSharedFilterExcluded(entry.dialogId, entry.filterId, true);
-            }
-        }
         if (parsed.peersIncoming != null && !parsed.peersIncoming.isEmpty()) {
             resolveUnknownPeers(parsed.peersIncoming);
         }
@@ -764,7 +601,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportNoChanges)).show();
             return;
         }
-        FiltersImportBottomSheet.Summary summary = buildImportSummary(parsed);
+        final FiltersImportBottomSheet.Summary summary;
+        try {
+            summary = buildImportSummary(parsed);
+        } catch (Exception e) {
+            FileLog.e(e);
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
+            return;
+        }
         if (summary.isEmpty()) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportNoChanges)).show();
             return;
@@ -922,7 +766,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
 
     private ArrayList<DialogFilterItem> getDialogFilterItems() {
         HashMap<Long, DialogFilterItem> map = new HashMap<>();
-        ArrayList<AyuFilter.ChatFilterEntry> chatEntries = checkChatFilters(AyuFilter.getChatFilterEntries());
+        ArrayList<AyuFilter.ChatFilterEntry> chatEntries = AyuFilter.getChatFilterEntries();
         if (chatEntries != null) {
             for (AyuFilter.ChatFilterEntry entry : chatEntries) {
                 if (entry == null || !isKnownDialog(entry.dialogId)) {
@@ -1037,11 +881,11 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         cell.setBackground(Theme.getThemedDrawable(cell.getContext(), R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
     }
 
-    private static BackupFilter buildBackupFilter(AyuFilter.FilterModel model, Long dialogId) {
+    private static BackupFilter buildBackupFilter(RegexFilter model) {
         BackupFilter bf = new BackupFilter();
         bf.id = model.id;
-        bf.text = model.regex;
-        bf.dialogId = dialogId;
+        bf.text = model.text;
+        bf.dialogId = model.dialogId;
         bf.enabled = model.enabled;
         bf.caseInsensitive = model.caseInsensitive;
         bf.reversed = model.reversed;

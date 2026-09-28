@@ -235,7 +235,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import kotlin.Unit;
 import tw.nekomimi.nekogram.helpers.ChatsHelper;
@@ -817,6 +816,9 @@ public class ChatActivityEnterView extends FrameLayout implements
     private Activity parentActivity;
     private ChatActivity parentFragment;
     private long dialog_id;
+    private final tw.nekomimi.nekogram.helpers.DraftTranslationGuard inputTranslationGuard = new tw.nekomimi.nekogram.helpers.DraftTranslationGuard();
+    private kotlinx.coroutines.Job inputTranslationJob;
+    private AlertDialog inputTranslationProgress;
     private boolean ignoreTextChange;
     private int innerTextChange;
     private MessageObject replyingMessageObject;
@@ -6533,6 +6535,7 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
 
             @Override
             public void onTextChanged(CharSequence charSequence, int start, int before, int count) {
+                inputTranslationGuard.draftChanged();
                 if (ignorePrevTextChange) {
                     return;
                 }
@@ -6785,6 +6788,9 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
     private void translateComment(Locale target, int provider) {
         if (messageEditText == null) return;
 
+        cancelInputTranslation();
+        final var translationTicket = inputTranslationGuard.begin();
+
         int start = messageEditText.getSelectionStart();
         int end = messageEditText.getSelectionEnd();
         CharSequence text = messageEditText.getText();
@@ -6796,13 +6802,13 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
         String llmContext = buildInputTranslationContext(provider);
 
         if (llmContext != null) {
-            Translator.translateWithContext(target, origin, new ArrayList<>(), llmContext, provider, new Translator.Companion.TranslateCallBack2() {
-                final AtomicBoolean cancel = new AtomicBoolean();
+            inputTranslationJob = Translator.translateWithContext(target, origin, new ArrayList<>(), llmContext, provider, new Translator.Companion.TranslateCallBack2() {
                 AlertDialog status = AlertUtil.showProgress(parentActivity);
 
                 {
+                    inputTranslationProgress = status;
                     status.setOnCancelListener((__) -> {
-                        cancel.set(true);
+                        cancelInputTranslation();
                     });
                     status.show();
                 }
@@ -6810,6 +6816,10 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 @Override
                 public void onSuccess(@NotNull TLRPC.TL_textWithEntities finalText) {
                     status.dismiss();
+                    if (destroyed || !inputTranslationGuard.canApply(translationTicket)) return;
+                    inputTranslationProgress = null;
+                    inputTranslationJob = null;
+                    inputTranslationGuard.cancel();
                     String translation = finalText.text;
                     if (start == end) messageEditText.replaceTextInternal(0, messageEditText.getText().length(), translation);
                     else messageEditText.replaceTextInternal(start, end, translation);
@@ -6818,23 +6828,23 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 @Override
                 public void onFailed(boolean unsupported, @NotNull String message) {
                     status.dismiss();
+                    if (destroyed || !inputTranslationGuard.canApply(translationTicket)) return;
+                    inputTranslationProgress = null;
+                    inputTranslationJob = null;
                     AlertUtil.showTransFailedDialog(parentActivity, unsupported, message, () -> {
-                        status = AlertUtil.showProgress(parentActivity);
-                        status.show();
-                        Translator.translateWithContext(target, origin, new ArrayList<>(), null, provider, this);
+                        if (!destroyed && inputTranslationGuard.canApply(translationTicket)) translateComment(target, 0);
                     });
                 }
             });
         } else {
-            Translator.translate(target, origin, provider, new Translator.Companion.TranslateCallBack() {
+            inputTranslationJob = Translator.translate(target, origin, provider, new Translator.Companion.TranslateCallBack() {
 
-                final AtomicBoolean cancel = new AtomicBoolean();
                 AlertDialog status = AlertUtil.showProgress(parentActivity);
 
                 {
-
+                    inputTranslationProgress = status;
                     status.setOnCancelListener((__) -> {
-                        cancel.set(true);
+                        cancelInputTranslation();
                     });
 
                     status.show();
@@ -6844,6 +6854,10 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 @Override
                 public void onSuccess(@NotNull String translation) {
                     status.dismiss();
+                    if (destroyed || !inputTranslationGuard.canApply(translationTicket)) return;
+                    inputTranslationProgress = null;
+                    inputTranslationJob = null;
+                    inputTranslationGuard.cancel();
                     if (start == end) messageEditText.replaceTextInternal(0, messageEditText.getText().length(), translation);
                     else messageEditText.replaceTextInternal(start, end, translation);
                 }
@@ -6851,14 +6865,27 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 @Override
                 public void onFailed(boolean unsupported, @NotNull String message) {
                     status.dismiss();
+                    if (destroyed || !inputTranslationGuard.canApply(translationTicket)) return;
+                    inputTranslationProgress = null;
+                    inputTranslationJob = null;
                     AlertUtil.showTransFailedDialog(parentActivity, unsupported, message, () -> {
-                        status = AlertUtil.showProgress(parentActivity);
-                        status.show();
-                        Translator.translate(target, origin, 0, this);
+                        if (!destroyed && inputTranslationGuard.canApply(translationTicket)) translateComment(target, 0);
                     });
                 }
 
             });
+        }
+    }
+
+    private void cancelInputTranslation() {
+        inputTranslationGuard.cancel();
+        if (inputTranslationJob != null) {
+            inputTranslationJob.cancel(null);
+            inputTranslationJob = null;
+        }
+        if (inputTranslationProgress != null) {
+            inputTranslationProgress.dismiss();
+            inputTranslationProgress = null;
         }
     }
 
@@ -7295,6 +7322,7 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
     }
 
     public void onDestroy() {
+        cancelInputTranslation();
         if (audioTimelineView != null) {
             audioTimelineView.destroy();
         }
@@ -7488,6 +7516,7 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
     }
 
     public void setDialogId(long id, int account) {
+        if (dialog_id != id || currentAccount != account) cancelInputTranslation();
         dialog_id = id;
         if (currentAccount != account) {
             notificationsLocker.unlock();

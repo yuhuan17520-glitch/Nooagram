@@ -940,29 +940,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return currentAccount;
     }
 
-    void applyFilteredPreviewReplacement(MessageObject replacement) {
-        if (replacement == null || replacement.messageOwner == null) {
-            return;
-        }
-        message = replacement;
-        groupMessages = null;
-        currentEditDate = replacement.messageOwner.edit_date;
-        lastMessageDate = replacement.messageOwner.date;
-        lastSendState = replacement.messageOwner.send_state;
-        lastUnreadState = replacement.isUnread();
+    void refreshFilteredPreview() {
         updateHelper.lastDrawnMessageId = Long.MIN_VALUE;
-        if (BuildConfig.DEBUG) {
-            FileLog.d("Nooagram preview apply dialog=" + currentDialogId
-                    + " account=" + currentAccount
-                    + " message=" + replacement.getId()
-                    + " attached=" + isAttachedToWindow());
-        }
-        if (isAttachedToWindow()) {
-            buildLayout();
-        } else {
-            updateLayout = true;
-        }
-        invalidate();
+        update(0, false);
     }
 
     public int getMessageId() {
@@ -1028,6 +1008,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         }
         if (botVerification != null) {
             botVerification.attach();
+        }
+        if (isDialogCell && message == filteredDummyMessages[currentAccount]) {
+            refreshFilteredPreview();
         }
     }
 
@@ -3347,18 +3330,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                             }
                         }
                         if (message != null) {
-                            boolean blocked = false;
-                            if (AyuFilter.shouldHideIgnoredBlockedMessages() && ChatObject.isMegagroup(MessagesController.getInstance(currentAccount).getChat(-dialog.id))) {
-                                blocked = AyuFilter.isIgnoredBlockedMessage(message);
-                            }
-                            boolean filteredByRegex = AyuFilter.shouldHideFilteredMessages() && AyuFilter.isFiltered(message, null);
-                            if (blocked || filteredByRegex) {
-                                MessageObject replacement = NooagramDialogPreviewFilter.getReplacement(currentAccount, dialog.id, message);
-                                if (replacement == null) {
-                                    if (NooagramDialogPreviewFilter.prepare(this, currentAccount, dialog.id, message)) {
-                                        replacement = NooagramDialogPreviewFilter.getReplacement(currentAccount, dialog.id, message);
-                                    }
-                                }
+                            if (NooagramDialogPreviewFilter.isHidden(currentAccount, dialog.id, message)) {
+                                MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
                                 if (replacement == null) {
                                     replacement = filteredDummyMessages[currentAccount];
                                 }

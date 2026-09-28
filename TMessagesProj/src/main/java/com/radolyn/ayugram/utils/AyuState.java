@@ -16,24 +16,13 @@ import org.telegram.messenger.UserConfig;
 
 import java.util.ArrayList;
 
-import tw.nekomimi.nekogram.NekoConfig;
 import xyz.nextalone.nagram.NaConfig;
 
 public class AyuState {
-    private static final AyuStateVariable allowReadPacket = new AyuStateVariable();
     private static final AyuStateVariable hideSelection = new AyuStateVariable();
     private static final AyuStateVariable automaticallyScheduled = new AyuStateVariable();
     private static final AyuStateVariable allowDeleteDialogs = new AyuStateVariable();
     private static final LongSparseArray<ArrayList<Integer>> deletePermitted = new LongSparseArray<>();
-
-    public static void setAllowReadPacket(boolean val, int resetAfter) {
-        allowReadPacket.val = val;
-        allowReadPacket.resetAfter = resetAfter;
-    }
-
-    public static boolean getAllowReadPacket() {
-        return NekoConfig.sendReadMessagePackets.Bool() || allowReadPacket.process();
-    }
 
     public static void setHideSelection(boolean val, int resetAfter) {
         hideSelection.val = val;

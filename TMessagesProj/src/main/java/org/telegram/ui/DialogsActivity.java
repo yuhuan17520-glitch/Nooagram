@@ -11121,8 +11121,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         } else if (id == NotificationCenter.dialogFiltersUpdated) {
             updateFilterTabs(true, true);
         } else if (id == NotificationCenter.regexFiltersUpdated) {
-            // Regex filters changed, refresh visible dialogs to show/hide filtered messages
-            updateVisibleRows(MessagesController.UPDATE_MASK_CHECK);
+            updateVisibleRows(0);
         } else if (id == NotificationCenter.filterSettingsUpdated) {
             showFiltersHint();
         } else if (id == NotificationCenter.newSuggestionsAvailable) {

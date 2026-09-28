@@ -2,7 +2,6 @@ package com.radolyn.ayugram.controllers;
 
 import android.text.TextUtils;
 
-import com.radolyn.ayugram.messages.AyuMessagesController;
 import com.radolyn.ayugram.utils.AyuMessageUtils;
 import com.radolyn.ayugram.utils.seq.AyuSequentialUtils;
 import com.radolyn.ayugram.utils.seq.DummyFileDownloadWaiter;
@@ -93,8 +92,10 @@ public class AyuAttachments {
             File file = new File(pathToMessage);
             if (!file.exists() || file.isDirectory() || (messageSize > 0 && file.length() != messageSize)) {
                 path = null;
+            } else {
+                path = pathToMessage;
             }
-            if (!TextUtils.isEmpty(pathToMessage)) {
+            if (TextUtils.isEmpty(path) && !TextUtils.isEmpty(pathToMessage)) {
                 File decrypted = tryEncrypted(file, new File(pathToMessage), !forceLoad);
                 if (!"/".equals(decrypted.getAbsolutePath())) {
                     return decrypted.getAbsolutePath();

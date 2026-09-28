@@ -20,7 +20,7 @@ import java.util.List;
  *
  * 按列名交集迁移，不依赖 Room 的 schema 校验，因此可以吃下列结构不同的库
  * （AyuGram 与本项目的实体字段已分叉）。合并删除/编辑消息、消息反应及已删除对话，
- * 重复消息按 (userId, dialogId, messageId, entityCreateDate) 跳过。
+ * 重复删除消息按 (userId, dialogId, messageId, entityCreateDate) 跳过，编辑版本还比较内容。
  */
 public class AyuDatabaseMerger {
 
@@ -336,12 +336,11 @@ public class AyuDatabaseMerger {
         }
 
         database.execSQL("DROP TABLE IF EXISTS " + EDITED_CANDIDATES);
-        database.execSQL("CREATE TEMP TABLE " + EDITED_CANDIDATES + " AS SELECT "
+        database.execSQL("CREATE TEMP TABLE " + EDITED_CANDIDATES + " AS SELECT DISTINCT "
                 + prefixedColumnList("s", columns)
                 + " FROM " + SOURCE + "." + EDITED_MESSAGE + " s"
                 + " WHERE NOT EXISTS (SELECT 1 FROM main." + EDITED_MESSAGE + " t"
-                + " WHERE t.`userId` = s.`userId` AND t.`dialogId` = s.`dialogId`"
-                + " AND t.`messageId` = s.`messageId` AND t.`entityCreateDate` = s.`entityCreateDate`)");
+                + " WHERE " + editedRevisionMatch(columns) + ")");
 
         int inserted = count(database, null, EDITED_CANDIDATES);
         if (inserted == 0) {
@@ -350,6 +349,18 @@ public class AyuDatabaseMerger {
 
         insertFromTemp(database, EDITED_MESSAGE, EDITED_CANDIDATES, columns);
         return inserted;
+    }
+
+    private static String editedRevisionMatch(List<String> columns) {
+        StringBuilder match = new StringBuilder();
+        for (String column : columns) {
+            if (match.length() > 0) {
+                match.append(" AND ");
+            }
+            // SQLite IS compares nulls and serialized blobs without losing same-second edits.
+            match.append("t.`").append(column).append("` IS s.`").append(column).append('`');
+        }
+        return match.toString();
     }
 
     private static void insertFromTemp(SQLiteDatabase database, String targetTable, String tempTable, List<String> columns) {

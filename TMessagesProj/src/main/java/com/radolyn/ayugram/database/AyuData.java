@@ -462,14 +462,16 @@ public class AyuData {
             // 替换库文件的整个窗口都持写锁，DAO 读取会在此期间等待而非崩溃
             AyuDataLock.LOCK.writeLock().lock();
             try {
-                closeDatabase();
-                backupCurrentDatabaseFiles(backupDir, dbFile);
                 try {
-                    replaceCurrentDatabaseFiles(importDbFile, importWalFile, importShmFile, dbFile);
-                    validateImportedDatabaseFiles();
-                } catch (IOException e) {
-                    restoreCurrentDatabaseFiles(backupDir, dbFile);
-                    throw e;
+                    closeDatabase();
+                    backupCurrentDatabaseFiles(backupDir, dbFile);
+                    try {
+                        replaceCurrentDatabaseFiles(importDbFile, importWalFile, importShmFile, dbFile);
+                        validateImportedDatabaseFiles();
+                    } catch (IOException e) {
+                        restoreCurrentDatabaseFiles(backupDir, dbFile);
+                        throw e;
+                    }
                 } finally {
                     reopenDatabaseLocked();
                 }

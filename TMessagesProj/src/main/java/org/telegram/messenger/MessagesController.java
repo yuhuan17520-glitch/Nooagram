@@ -14956,6 +14956,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markMessageAsRead2(long dialogId, int mid, TLRPC.InputChannel inputChannel, int ttl, long taskId, boolean createDeleteTask) {
+        markMessageAsRead2(dialogId, mid, inputChannel, ttl, taskId, createDeleteTask, false);
+    }
+
+    public void markMessageAsRead2(long dialogId, int mid, TLRPC.InputChannel inputChannel, int ttl, long taskId, boolean createDeleteTask, boolean explicitlyAuthorized) {
         if (mid == 0 || ttl < 0) {
             return;
         }
@@ -14992,7 +14996,7 @@ public class MessagesController extends BaseController implements NotificationCe
             TLRPC.TL_channels_readMessageContents req = new TLRPC.TL_channels_readMessageContents();
             req.channel = inputChannel;
             req.id.add(mid);
-            getConnectionsManager().sendRequest(req, (response, error) -> {
+            getConnectionsManager().sendRequest(explicitlyAuthorized ? new com.radolyn.ayugram.utils.network.TLRPCWrappedBypass(req) : req, (response, error) -> {
                 if (newTaskId != 0) {
                     getMessagesStorage().removePendingTask(newTaskId);
                 }
@@ -15000,7 +15004,7 @@ public class MessagesController extends BaseController implements NotificationCe
         } else {
             TLRPC.TL_messages_readMessageContents req = new TLRPC.TL_messages_readMessageContents();
             req.id.add(mid);
-            getConnectionsManager().sendRequest(req, (response, error) -> {
+            getConnectionsManager().sendRequest(explicitlyAuthorized ? new com.radolyn.ayugram.utils.network.TLRPCWrappedBypass(req) : req, (response, error) -> {
                 if (error == null) {
                     TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
                     processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
@@ -16624,6 +16628,7 @@ public class MessagesController extends BaseController implements NotificationCe
         } else {
             getConnectionsManager().cleanup(type == 2);
         }
+        tw.nekomimi.nekogram.helpers.NooagramPinnedHider.onAccountLogout(currentAccount);
         getUserConfig().clearConfig();
         SharedPrefsHelper.cleanupAccount(currentAccount);
 

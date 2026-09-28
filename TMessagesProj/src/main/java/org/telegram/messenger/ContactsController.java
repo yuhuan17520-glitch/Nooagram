@@ -23,6 +23,7 @@ import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
 import android.provider.BaseColumns;
 import android.provider.ContactsContract;
 import android.text.TextUtils;
@@ -56,7 +57,12 @@ import tw.nekomimi.nekogram.helpers.MessageHelper;
 
 public class ContactsController extends BaseController {
 
-    private Account systemAccount;
+    private static final String SYSTEM_ACCOUNT_PREFIX = "nooagram-user:";
+    private static final String SYSTEM_ACCOUNT_OWNER_KEY = "nooagram_owner_user_id";
+    private static final String SYSTEM_ACCOUNT_SELECTION = ContactsContract.RawContacts.ACCOUNT_NAME + "=? AND "
+            + ContactsContract.RawContacts.ACCOUNT_TYPE + "=?";
+
+    private volatile Account systemAccount;
     private boolean loadingContacts;
     private final Object loadContactsSync = new Object();
     private boolean ignoreChanges;
@@ -394,47 +400,177 @@ public class ContactsController extends BaseController {
         Utilities.globalQueue.postRunnable(() -> {
             AccountManager am = AccountManager.get(ApplicationLoader.applicationContext);
             try {
-                Account[] accounts = am.getAccountsByType(BuildConfig.APPLICATION_ID);
-                for (int a = 0; a < accounts.length; a++) {
-                    Account acc = accounts[a];
-                    boolean found = false;
-                    for (int b = 0; b < UserConfig.MAX_ACCOUNT_COUNT; b++) {
-                        TLRPC.User user = UserConfig.getInstance(b).getCurrentUser();
-                        if (user != null) {
-                            if (acc.name.equals(formatName(user.first_name, user.last_name))) {
-                                if (b == currentAccount) {
-                                    systemAccount = acc;
-                                }
-                                found = true;
-                                break;
-                            }
+                if (!NekoConfig.disableSystemAccount.Bool()) {
+                    migrateLegacySystemAccounts(am);
+                    for (Account acc : am.getAccountsByType(BuildConfig.APPLICATION_ID)) {
+                        long ownerId = getStableSystemAccountOwnerId(am, acc);
+                        if (ownerId == 0) continue;
+                        if (!isActiveSystemAccountOwner(ownerId)) {
+                            am.removeAccountExplicitly(acc);
+                        } else if (ownerId == getUserConfig().getClientUserId()) {
+                            systemAccount = acc;
                         }
                     }
-                    if (!found) {
-                        try {
-                            am.removeAccount(accounts[a], null, null);
-                        } catch (Exception ignore) {
-
-                        }
-                    }
-
                 }
-            } catch (Throwable ignore) {
-
+            } catch (Exception e) {
+                FileLog.e(e);
             }
             if (getUserConfig().isClientActivated()) {
-                readContacts();
                 if (systemAccount == null && !NekoConfig.disableSystemAccount.Bool()) {
                     try {
                         TLRPC.User user = getUserConfig().getCurrentUser();
-                        systemAccount = new Account(formatName(user.first_name, user.last_name), BuildConfig.APPLICATION_ID);
-                        am.addAccountExplicitly(systemAccount, "", null);
+                        systemAccount = ensureSystemAccount(am, user.id);
                     } catch (Exception ignore) {
 
                     }
                 }
+                readContacts();
             }
         });
+    }
+
+    private static Account ensureSystemAccount(AccountManager manager, long userId) {
+        if (userId <= 0) return null;
+        Account desired = new Account(SYSTEM_ACCOUNT_PREFIX + userId, BuildConfig.APPLICATION_ID);
+        Bundle ownership = new Bundle();
+        ownership.putString(SYSTEM_ACCOUNT_OWNER_KEY, Long.toString(userId));
+        manager.addAccountExplicitly(desired, "", ownership);
+        for (Account existing : manager.getAccountsByType(BuildConfig.APPLICATION_ID)) {
+            if (desired.equals(existing) && getStableSystemAccountOwnerId(manager, existing) == userId) return existing;
+        }
+        return null;
+    }
+
+    private static long getStableSystemAccountOwnerId(AccountManager manager, Account account) {
+        if (!BuildConfig.APPLICATION_ID.equals(account.type) || !account.name.startsWith(SYSTEM_ACCOUNT_PREFIX)) return 0;
+        String owner = manager.getUserData(account, SYSTEM_ACCOUNT_OWNER_KEY);
+        if (owner == null || !account.name.equals(SYSTEM_ACCOUNT_PREFIX + owner)) return 0;
+        try {
+            long userId = Long.parseLong(owner);
+            return userId > 0 && owner.equals(Long.toString(userId)) ? userId : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static long getUniqueLegacySystemAccountOwnerId(String name) {
+        if (TextUtils.isEmpty(name) || name.startsWith(SYSTEM_ACCOUNT_PREFIX)) return 0;
+        long ownerId = 0;
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
+            UserConfig config = UserConfig.getInstance(i);
+            TLRPC.User user = config.getCurrentUser();
+            if (config.isClientActivated() && user != null && name.equals(formatName(user.first_name, user.last_name))) {
+                if (ownerId != 0) return 0;
+                ownerId = user.id;
+            }
+        }
+        return ownerId;
+    }
+
+    public static long getSystemAccountOwnerId(String name, String type) {
+        if (TextUtils.isEmpty(name) || !BuildConfig.APPLICATION_ID.equals(type)) return 0;
+        try {
+            AccountManager manager = AccountManager.get(ApplicationLoader.applicationContext);
+            for (Account account : manager.getAccountsByType(type)) {
+                if (name.equals(account.name)) {
+                    return name.startsWith(SYSTEM_ACCOUNT_PREFIX) ? getStableSystemAccountOwnerId(manager, account)
+                            : getUniqueLegacySystemAccountOwnerId(name);
+                }
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return 0;
+    }
+
+    private static boolean isActiveSystemAccountOwner(long ownerId) {
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
+            UserConfig config = UserConfig.getInstance(i);
+            if (config.isClientActivated() && config.getClientUserId() == ownerId) return true;
+        }
+        return false;
+    }
+
+    private void migrateLegacySystemAccounts(AccountManager manager) {
+        if (NekoConfig.disableSystemAccount.Bool() || !hasContactsPermission() || !hasContactsWritePermission()) return;
+        ContentResolver resolver = ApplicationLoader.applicationContext.getContentResolver();
+        Uri groupsUri = ContactsContract.Groups.CONTENT_URI.buildUpon()
+                .appendQueryParameter(ContactsContract.CALLER_IS_SYNCADAPTER, "true").build();
+        Uri rawContactsUri = ContactsContract.RawContacts.CONTENT_URI.buildUpon()
+                .appendQueryParameter(ContactsContract.CALLER_IS_SYNCADAPTER, "true").build();
+        for (Account legacy : manager.getAccountsByType(BuildConfig.APPLICATION_ID)) {
+            long ownerId = getUniqueLegacySystemAccountOwnerId(legacy.name);
+            // Unproven or ambiguous legacy owners are retained, including numeric display names.
+            if (ownerId == 0) continue;
+            try {
+                Account replacement = ensureSystemAccount(manager, ownerId);
+                if (replacement == null) continue;
+                ArrayList<Long> groupIds = getSystemAccountRowIds(resolver, groupsUri, legacy);
+                ArrayList<Long> rawContactIds = getSystemAccountRowIds(resolver, rawContactsUri, legacy);
+                ArrayList<ContentProviderOperation> operations = new ArrayList<>();
+                addSystemAccountMove(operations, groupsUri, legacy, replacement, groupIds);
+                addSystemAccountMove(operations, rawContactsUri, legacy, replacement, rawContactIds);
+
+                String membershipSelection = ContactsContract.Data.MIMETYPE + "=? AND (" + SYSTEM_ACCOUNT_SELECTION;
+                if (!groupIds.isEmpty()) {
+                    membershipSelection += " OR " + ContactsContract.CommonDataKinds.GroupMembership.GROUP_ROW_ID
+                            + " IN (" + TextUtils.join(",", groupIds) + ")";
+                }
+                membershipSelection += ")";
+                try (Cursor cursor = resolver.query(ContactsContract.Data.CONTENT_URI,
+                        new String[]{ContactsContract.Data._ID, ContactsContract.Data.RAW_CONTACT_ID,
+                                ContactsContract.CommonDataKinds.GroupMembership.GROUP_ROW_ID}, membershipSelection,
+                        new String[]{ContactsContract.CommonDataKinds.GroupMembership.CONTENT_ITEM_TYPE, legacy.name, legacy.type}, null)) {
+                    if (cursor == null) throw new IllegalStateException("Cannot verify contact group memberships");
+                    while (cursor.moveToNext()) {
+                        operations.add(ContentProviderOperation.newAssertQuery(ContactsContract.Data.CONTENT_URI)
+                                .withSelection(ContactsContract.Data._ID + "=?", new String[]{Long.toString(cursor.getLong(0))})
+                                .withValue(ContactsContract.Data.RAW_CONTACT_ID, cursor.getLong(1))
+                                .withValue(ContactsContract.CommonDataKinds.GroupMembership.GROUP_ROW_ID, cursor.getLong(2))
+                                .withExpectedCount(1).build());
+                    }
+                }
+                // Keep row IDs and memberships unchanged; failed assertions roll back both moves.
+                resolver.applyBatch(ContactsContract.AUTHORITY, operations);
+                if (getSystemAccountRowIds(resolver, groupsUri, legacy).isEmpty()
+                        && getSystemAccountRowIds(resolver, rawContactsUri, legacy).isEmpty()
+                        && getStableSystemAccountOwnerId(manager, replacement) == ownerId
+                        && getUniqueLegacySystemAccountOwnerId(legacy.name) == ownerId) {
+                    manager.removeAccountExplicitly(legacy);
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
+    }
+
+    private static ArrayList<Long> getSystemAccountRowIds(ContentResolver resolver, Uri uri, Account account) {
+        ArrayList<Long> ids = new ArrayList<>();
+        try (Cursor cursor = resolver.query(uri, new String[]{BaseColumns._ID}, SYSTEM_ACCOUNT_SELECTION,
+                new String[]{account.name, account.type}, null)) {
+            if (cursor == null) throw new IllegalStateException("Cannot verify contact account rows");
+            while (cursor.moveToNext()) ids.add(cursor.getLong(0));
+        }
+        return ids;
+    }
+
+    private static void addSystemAccountMove(ArrayList<ContentProviderOperation> operations, Uri uri,
+                                             Account legacy, Account replacement, ArrayList<Long> ids) {
+        operations.add(ContentProviderOperation.newUpdate(uri)
+                .withSelection(SYSTEM_ACCOUNT_SELECTION, new String[]{legacy.name, legacy.type})
+                .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, replacement.name)
+                .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, replacement.type)
+                .withExpectedCount(ids.size()).build());
+        if (!ids.isEmpty()) {
+            operations.add(ContentProviderOperation.newAssertQuery(uri)
+                    .withSelection(BaseColumns._ID + " IN (" + TextUtils.join(",", ids) + ")", null)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_NAME, replacement.name)
+                    .withValue(ContactsContract.RawContacts.ACCOUNT_TYPE, replacement.type)
+                    .withExpectedCount(ids.size()).build());
+        }
+        operations.add(ContentProviderOperation.newAssertQuery(uri)
+                .withSelection(SYSTEM_ACCOUNT_SELECTION, new String[]{legacy.name, legacy.type})
+                .withExpectedCount(0).build());
     }
 
     public void deleteUnknownAppAccounts() {
@@ -451,17 +587,8 @@ public class ContactsController extends BaseController {
 
                     }
                 } else {
-                    boolean found = false;
-                    for (int b = 0; b < UserConfig.MAX_ACCOUNT_COUNT; b++) {
-                        TLRPC.User user = UserConfig.getInstance(b).getCurrentUser();
-                        if (user != null) {
-                            if (acc.name.equals(formatName(user.first_name, user.last_name))) {
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found) {
+                    long ownerId = getStableSystemAccountOwnerId(am, acc);
+                    if (ownerId != 0 && !isActiveSystemAccountOwner(ownerId)) {
                         try {
                             am.removeAccount(accounts[a], null, null);
                         } catch (Exception ignore) {
@@ -527,24 +654,17 @@ public class ContactsController extends BaseController {
                     try {
                         Account[] accounts = am.getAccountsByType(BuildConfig.APPLICATION_ID);
                         systemAccount = null;
-                        for (int a = 0; a < accounts.length; a++) {
-                            Account acc = accounts[a];
-                            for (int b = 0; b < UserConfig.MAX_ACCOUNT_COUNT; b++) {
-                                TLRPC.User user = UserConfig.getInstance(b).getCurrentUser();
-                                if (user != null) {
-                                    if (acc.name.equals("" + user.id)) {
-                                        am.removeAccount(acc, null, null);
-                                        break;
-                                    }
-                                }
-                            }
+                        long ownerId = getUserConfig().getClientUserId();
+                        for (Account acc : accounts) {
+                            if (ownerId > 0 && getStableSystemAccountOwnerId(am, acc) == ownerId) am.removeAccountExplicitly(acc);
                         }
                     } catch (Throwable ignore) {
 
                     }
                     try {
-                        systemAccount = new Account("" + getUserConfig().getClientUserId(), BuildConfig.APPLICATION_ID);
-                        am.addAccountExplicitly(systemAccount, "", null);
+                        if (!NekoConfig.disableSystemAccount.Bool()) {
+                            systemAccount = ensureSystemAccount(am, getUserConfig().getClientUserId());
+                        }
                     } catch (Exception ignore) {
 
                     }
@@ -2042,7 +2162,9 @@ public class ContactsController extends BaseController {
             }
             final ContentResolver contentResolver = ApplicationLoader.applicationContext.getContentResolver();
             Uri rawContactUri = ContactsContract.RawContacts.CONTENT_URI;
-            cursor = contentResolver.query(rawContactUri, new String[]{BaseColumns._ID, ContactsContract.RawContacts.SYNC2}, null, null, null);
+            cursor = contentResolver.query(rawContactUri, new String[]{BaseColumns._ID, ContactsContract.RawContacts.SYNC2},
+                    ContactsContract.RawContacts.ACCOUNT_NAME + "=? AND " + ContactsContract.RawContacts.ACCOUNT_TYPE + "=?",
+                    new String[]{account.name, account.type}, null);
             LongSparseArray<Long> bookContacts = new LongSparseArray<>();
             if (cursor != null) {
                 while (cursor.moveToNext()) {

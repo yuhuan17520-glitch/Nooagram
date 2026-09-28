@@ -6,6 +6,7 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -248,13 +249,20 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
 
     protected void addDefaultLongClickOptions(ItemOptions options, String prefix, String key, String value) {
         options.add(R.drawable.msg_link2, getString(R.string.CopyLink), () -> {
-            AndroidUtilities.addToClipboard(String.format(Locale.getDefault(), "https://%s/nasettings/%s?r=%s", getMessagesController().linkPrefix, prefix, key));
+            AndroidUtilities.addToClipboard(settingsLink(prefix, key, null));
             BulletinFactory.of(this).createCopyLinkBulletin().show();
         });
         options.addIf(value != null && !value.isEmpty(), R.drawable.msg_copy, getString(R.string.BackupSettings), () -> {
-            AndroidUtilities.addToClipboard(String.format(Locale.getDefault(), "https://%s/nasettings/%s?r=%s&v=%s", getMessagesController().linkPrefix, prefix, key, value));
+            AndroidUtilities.addToClipboard(settingsLink(prefix, key, value));
             BulletinFactory.of(this).createCopyLinkBulletin().show();
         });
+    }
+
+    private String settingsLink(String prefix, String key, String value) {
+        Uri.Builder builder = new Uri.Builder().scheme("https").authority(getMessagesController().linkPrefix)
+                .appendPath("nasettings").appendPath(prefix).appendQueryParameter("r", key);
+        if (value != null) builder.appendQueryParameter("v", value);
+        return builder.build().toString();
     }
 
     protected void showDefaultLongClickOptions(View view, String prefix, int position) {
@@ -354,6 +362,8 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
             builder.setPositiveButton(getString(R.string.Import), (dialogInter, i) -> {
                 config.changed(new_value);
                 config.saveConfig();
+                CellGroup group = getCellGroup();
+                if (group != null) group.runCallback(config.getKey(), new_value);
                 updateRows();
                 scrollToRow(key, unknown);
             });

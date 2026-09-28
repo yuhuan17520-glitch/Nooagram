@@ -110,6 +110,7 @@ public class NotificationCenter {
     public static final int reloadInlineHints = totalEvents++;
     public static final int reloadGuestBotHints = totalEvents++;
     public static final int regexFiltersUpdated = totalEvents++;
+    public static final int nooagramPinnedHiderChanged = totalEvents++;
     public static final int loadedAiComposeTones = totalEvents++;
     public static final int updatedChatbot = totalEvents++;
     public static final int activeAccountChanged = totalEvents++;

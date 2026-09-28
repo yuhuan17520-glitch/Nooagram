@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.AssetManager;
 import android.os.Build;
+import android.os.Process;
 import android.util.Log;
 
 import com.chaquo.python.Python;
@@ -48,9 +49,10 @@ public class AndroidPlatform extends Python.Platform {
         try {
             buildJson = new JSONObject(streamToString(am.open("chaquopy/build.json")));
             loadNativeLibs();
-            for (String abi : Build.SUPPORTED_ABIS) {
-                try {
-                    am.open("chaquopy/" + Common.assetZip(Common.ASSET_STDLIB, abi));
+            String[] processAbis = Process.is64Bit() ? Build.SUPPORTED_64_BIT_ABIS : Build.SUPPORTED_32_BIT_ABIS;
+            ABI = null;
+            for (String abi : processAbis) {
+                try (InputStream ignored = am.open("chaquopy/" + Common.assetZip(Common.ASSET_STDLIB, abi))) {
                     ABI = abi;
                     break;
                 } catch (IOException ignored) {
@@ -59,7 +61,7 @@ public class AndroidPlatform extends Python.Platform {
             if (ABI != null) {
                 return;
             }
-            throw new RuntimeException("None of this device's ABIs " + Arrays.toString(Build.SUPPORTED_ABIS) + " are supported by this app.");
+            throw new RuntimeException("None of this process's ABIs " + Arrays.toString(processAbis) + " are supported by this app.");
         } catch (IOException | JSONException e) {
             Log.e("chaquopy", "Failed to initialize Python runtime", e);
             throw new RuntimeException(e);

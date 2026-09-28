@@ -912,6 +912,11 @@ public class ChatActivity extends BaseFragment implements
     private int[] currentPinnedMessageIndex = new int[1];
     private int forceNextPinnedMessageId;
     private boolean forceScrollToFirst;
+    private int pinnedJumpLoadIndex = -1;
+    private int messageJumpGeneration;
+    private final HashSet<Integer> supersededMessageJumpLoads = new HashSet<>();
+    private RecyclerView.ItemAnimator suspendedPinnedItemAnimator;
+    private androidx.core.view.OneShotPreDrawListener pinnedItemAnimatorRestore;
     private int loadedPinnedMessagesCount;
     private int totalPinnedMessagesCount;
     public boolean loadingPinnedMessagesList;
@@ -1477,9 +1482,8 @@ public class ChatActivity extends BaseFragment implements
     };
 
     private final DialogInterface.OnCancelListener postponedScrollCancelListener = dialog -> {
-        postponedScrollIsCanceled = true;
-        postponedScrollMessageId = 0;
-        nextScrollToMessageId = 0;
+        messageJumpGeneration++;
+        cancelPendingMessageJump();
         forceNextPinnedMessageId = 0;
         invalidateMessagesVisiblePart();
         showPinnedProgress(false);
@@ -3355,6 +3359,7 @@ public class ChatActivity extends BaseFragment implements
             .add(NotificationCenter.botForumDraftDelete)
             .add(NotificationCenter.joinedGroup)
             .add(NotificationCenter.regexFiltersUpdated)
+            .add(NotificationCenter.nooagramPinnedHiderChanged)
             .add(AyuConstants.MESSAGES_DELETED_NOTIFICATION)
             .add(AyuConstants.HISTORY_FLUSHED_NOTIFICATION)
             .add(AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION);
@@ -3731,6 +3736,9 @@ public class ChatActivity extends BaseFragment implements
 
     @Override
     public void onFragmentDestroy() {
+        messageJumpGeneration++;
+        cancelPendingMessageJump();
+        restorePinnedItemAnimator();
         super.onFragmentDestroy();
         AndroidUtilities.cancelRunOnUIThread(loadNextNewerFeedPage);
         AndroidUtilities.cancelRunOnUIThread(retryFailedFeedLoad);
@@ -12606,7 +12614,7 @@ public class ChatActivity extends BaseFragment implements
                 if (!forceScrollToFirst) {
                     forceNextPinnedMessageId = -forceNextPinnedMessageId;
                 }
-                scrollToMessageId(currentPinned, 0, true, 0, true, forceNextPinnedMessageId);
+                scrollToMessageId(currentPinned, 0, true, 0, true, forceNextPinnedMessageId, null, null, null, true);
                 updateMessagesVisiblePart(false);
             }
         });
@@ -13672,6 +13680,9 @@ public class ChatActivity extends BaseFragment implements
         if (messages.isEmpty()) {
             return;
         }
+        messageJumpGeneration++;
+        cancelPendingMessageJump();
+        restorePinnedItemAnimator();
         MessageObject firstMessage = messages.get(0);
         MessageObject lastMessage = messages.get(messages.size() - 1);
         if (firstMessage.messageOwner.date >= date && lastMessage.messageOwner.date <= date || lastMessage.messageOwner.date >= date && endReached[0]) {
@@ -16986,7 +16997,7 @@ public class ChatActivity extends BaseFragment implements
             if (currentEncryptedChat != null) {
                 getMessagesController().markMessageAsRead(dialog_id, messageObject.messageOwner.random_id, ttl);
             } else {
-                getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, ttl, 0, delete);
+                getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, ttl, 0, delete, force);
             }
             return null;
         } else {
@@ -17000,7 +17011,7 @@ public class ChatActivity extends BaseFragment implements
                 if (currentEncryptedChat != null) {
                     getMessagesController().markMessageAsRead(dialog_id, messageObject.messageOwner.random_id, ttl);
                 } else {
-                    getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, ttl, 0, delete);
+                    getMessagesController().markMessageAsRead2(dialog_id, messageObject.getId(), null, ttl, 0, delete, force);
                 }
             };
         }
@@ -17084,6 +17095,9 @@ public class ChatActivity extends BaseFragment implements
         if (chatListView.isFastScrollAnimationRunning()) {
             return;
         }
+        messageJumpGeneration++;
+        cancelPendingMessageJump();
+        restorePinnedItemAnimator();
         forceNextPinnedMessageId = 0;
         nextScrollToMessageId = 0;
         forceScrollToFirst = false;
@@ -18212,11 +18226,6 @@ public class ChatActivity extends BaseFragment implements
 
     private AlertDialog progressDialog;
     private int nextScrollToMessageId;
-    private int nextScrollFromMessageId;
-    private boolean nextScrollSelect;
-    private int nextScrollLoadIndex;
-    private boolean nextScrollForce;
-    private int nextScrollForcePinnedMessageId;
 
     public static final int PROGRESS_REPLY = 0;
     public static final int PROGRESS_LINK = 1;
@@ -18239,12 +18248,71 @@ public class ChatActivity extends BaseFragment implements
         progressDialogBotButtonUrl = null;
         progressDialogCurrent = null;
 
-        sideControlsButtonsLayout.setButtonLoading(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, false, true);
+        if (sideControlsButtonsLayout != null) {
+            sideControlsButtonsLayout.setButtonLoading(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, false, true);
+        }
     }
 
     public static final boolean SCROLL_DEBUG_DELAY = false;
     private boolean pinnedProgressIsShowing;
     Runnable updatePinnedProgressRunnable;
+
+    private void cancelPendingMessageJump() {
+        if (postponedScrollToLastMessageQueryIndex > 0) {
+            supersededMessageJumpLoads.removeIf(index -> index < lastLoadIndex - 128);
+            supersededMessageJumpLoads.add(postponedScrollToLastMessageQueryIndex);
+            waitingForLoad.remove(Integer.valueOf(postponedScrollToLastMessageQueryIndex));
+            startLoadFromMessageId = 0;
+            showScrollToMessageError = false;
+            if (progressDialog != null) {
+                progressDialog.dismiss();
+            }
+            showPinnedProgress(false);
+            resetProgressDialogLoading();
+            if (chatListView != null) chatListView.invalidateViews();
+        }
+        postponedScrollToLastMessageQueryIndex = 0;
+        postponedScrollMessageId = 0;
+        postponedScrollIsCanceled = true;
+        pinnedJumpLoadIndex = -1;
+        nextScrollToMessageId = 0;
+    }
+
+    private void restorePinnedItemAnimator() {
+        if (pinnedItemAnimatorRestore != null) {
+            pinnedItemAnimatorRestore.removeListener();
+            pinnedItemAnimatorRestore = null;
+        }
+        if (suspendedPinnedItemAnimator != null) {
+            if (chatListView != null && chatListView.getItemAnimator() == null) {
+                chatListView.setItemAnimator(suspendedPinnedItemAnimator);
+            }
+            suspendedPinnedItemAnimator = null;
+        }
+    }
+
+    private void scrollPinnedWithoutAnimation(int position, int offset) {
+        restorePinnedItemAnimator();
+        chatScrollHelperCallback.scrollTo = null;
+        chatScrollHelperCallback.position = position;
+        chatScrollHelperCallback.offset = offset;
+        chatScrollHelperCallback.bottom = false;
+        final RecyclerView.ItemAnimator itemAnimator = chatListView.getItemAnimator();
+        if (itemAnimator != null) {
+            suspendedPinnedItemAnimator = itemAnimator;
+            chatListView.setItemAnimator(null);
+            itemAnimator.endAnimations();
+        }
+        chatScrollHelperCallback.suppressPositionCorrection = true;
+        try {
+            chatScrollHelper.scrollToPositionNow(position, offset, false);
+        } finally {
+            chatScrollHelperCallback.suppressPositionCorrection = false;
+        }
+        if (itemAnimator != null) {
+            pinnedItemAnimatorRestore = androidx.core.view.OneShotPreDrawListener.add(chatListView, this::restorePinnedItemAnimator);
+        }
+    }
 
     public void scrollToMessageId(int id, int fromMessageId, boolean select, int loadIndex, boolean forceScroll, int forcePinnedMessageId) {
         scrollToMessageId(id, fromMessageId, select, loadIndex, forceScroll, forcePinnedMessageId, null, null);
@@ -18255,24 +18323,25 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public void scrollToMessageId(int id, int fromMessageId, boolean select, int loadIndex, boolean forceScroll, int forcePinnedMessageId, Integer taskId, byte[] pollOptionId, Runnable inCaseLoading) {
-        if (waitingForGetDifference) {
+        scrollToMessageId(id, fromMessageId, select, loadIndex, forceScroll, forcePinnedMessageId, taskId, pollOptionId, inCaseLoading, forcePinnedMessageId != 0);
+    }
+
+    private void scrollToMessageId(int id, int fromMessageId, boolean select, int loadIndex, boolean forceScroll, int forcePinnedMessageId, Integer taskId, byte[] pollOptionId, Runnable inCaseLoading, boolean pinnedJump) {
+        if (waitingForGetDifference || id == 0 || getParentActivity() == null) {
             return;
         }
-        if (id == 0 || NotificationCenter.getInstance(currentAccount).isAnimationInProgress() || getParentActivity() == null) {
-            if (NotificationCenter.getInstance(currentAccount).isAnimationInProgress()) {
-                nextScrollToMessageId = id;
-                nextScrollFromMessageId = fromMessageId;
-                nextScrollSelect = select;
-                nextScrollLoadIndex = loadIndex;
-                nextScrollForce = forceScroll;
-                nextScrollForcePinnedMessageId = forcePinnedMessageId;
-                NotificationCenter.getInstance(currentAccount).doOnIdle(() -> {
-                    if (nextScrollToMessageId != 0) {
-                        scrollToMessageId(nextScrollToMessageId, nextScrollFromMessageId, nextScrollSelect, nextScrollLoadIndex, nextScrollForce, nextScrollForcePinnedMessageId);
-                        nextScrollToMessageId = 0;
-                    }
-                });
-            }
+        final int generation = ++messageJumpGeneration;
+        cancelPendingMessageJump();
+        restorePinnedItemAnimator();
+        if (NotificationCenter.getInstance(currentAccount).isAnimationInProgress()) {
+            nextScrollToMessageId = id;
+            final int requestedMessageId = id;
+            NotificationCenter.getInstance(currentAccount).doOnIdle(() -> {
+                if (generation == messageJumpGeneration && nextScrollToMessageId != 0) {
+                    nextScrollToMessageId = 0;
+                    scrollToMessageId(requestedMessageId, fromMessageId, select, loadIndex, forceScroll, forcePinnedMessageId, taskId, pollOptionId, inCaseLoading, pinnedJump);
+                }
+            });
             return;
         }
 
@@ -18373,32 +18442,30 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (scrollY != 0) {
                             scrollByTouch = false;
-                            if (forcePinnedMessageId != 0) {
-                                // Pinned jumps must land in one layout pass. Animating this short
-                                // distance lets the list settle and visually rebound afterwards.
-                                chatScrollHelperCallback.scrollTo = null;
-                                chatScrollHelper.scrollToPosition(chatLayoutManager.getPosition(view), getScrollOffsetForMessage(view.getHeight()) - offsetY, false, false);
+                            if (pinnedJump) {
+                                scrollPinnedWithoutAnimation(chatLayoutManager.getPosition(view), getScrollOffsetForMessage(view.getHeight()) - offsetY);
                             } else {
                                 chatListView.smoothScrollBy(0, scrollY);
                             }
                             chatListView.setOverScrollMode(RecyclerListView.OVER_SCROLL_NEVER);
+                        } else if (pinnedJump) {
+                            scrollPinnedWithoutAnimation(chatLayoutManager.getPosition(view), yOffset);
                         }
                         break;
                     }
                 }
                 if (!found) {
                     int yOffset = getScrollOffsetForMessage(object);
-                    boolean smoothPinnedScroll = forcePinnedMessageId == 0;
-                    if (smoothPinnedScroll) {
+                    if (pinnedJump) {
+                        scrollPinnedWithoutAnimation(position, yOffset);
+                    } else {
                         chatScrollHelperCallback.scrollTo = object;
                         chatScrollHelperCallback.lastBottom = false;
                         chatScrollHelperCallback.lastItemOffset = yOffset;
                         chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
                         chatScrollHelper.setScrollDirection(scrollDirection);
-                    } else {
-                        chatScrollHelperCallback.scrollTo = null;
+                        chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = position, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, true);
                     }
-                    chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = position, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, smoothPinnedScroll);
                     canShowPagedownButton = true;
                     updatePagedownButtonVisibility(true);
                 }
@@ -18440,6 +18507,7 @@ public class ChatActivity extends BaseFragment implements
             postponedScrollIsCanceled = false;
             waitingForLoad.add(lastLoadIndex);
             postponedScrollToLastMessageQueryIndex = lastLoadIndex;
+            pinnedJumpLoadIndex = pinnedJump ? lastLoadIndex : -1;
             fakePostponedScroll = false;
             postponedScrollMinMessageId = minMessageId[0];
             postponedScrollMessageId = id;
@@ -22185,6 +22253,9 @@ public class ChatActivity extends BaseFragment implements
         } else {
             doNotRemoveLoadIndex = false;
         }
+        if (supersededMessageJumpLoads.contains(queryLoadIndex)) {
+            return;
+        }
         if (!doNotRemoveLoadIndex && !fragmentBeginToShow && !paused) {
             int[] alowedNotifications = new int[]{NotificationCenter.messagesDidLoad, NotificationCenter.chatInfoDidLoad, NotificationCenter.groupCallUpdated, NotificationCenter.dialogsNeedReload, NotificationCenter.scheduledMessagesUpdated,
                     NotificationCenter.closeChats, NotificationCenter.botKeyboardDidLoad, NotificationCenter.userInfoDidLoad, NotificationCenter.pinnedInfoDidLoad, NotificationCenter.needDeleteDialog/*, NotificationCenter.botInfoDidLoad*/};
@@ -22200,10 +22271,12 @@ public class ChatActivity extends BaseFragment implements
         int mode = (Integer) args[14];
         boolean isCache = (Boolean) args[3];
         boolean postponedScroll = postponedScrollToLastMessageQueryIndex > 0 && queryLoadIndex == postponedScrollToLastMessageQueryIndex;
+        final boolean pinnedJump = postponedScroll && pinnedJumpLoadIndex == queryLoadIndex;
         boolean fakePostponedScroll = this.fakePostponedScroll;
         this.fakePostponedScroll = false;
         if (postponedScroll) {
             postponedScrollToLastMessageQueryIndex = 0;
+            pinnedJumpLoadIndex = -1;
         }
         ArrayList<MessageObject> messArr = (ArrayList<MessageObject>) args[2];
 
@@ -22381,6 +22454,7 @@ public class ChatActivity extends BaseFragment implements
         if (postponedScroll) {
             if (load_type == 0 && isCache && messArr.size() < count) {
                 postponedScrollToLastMessageQueryIndex = lastLoadIndex;
+                pinnedJumpLoadIndex = pinnedJump ? lastLoadIndex : -1;
                 waitingForLoad.add(lastLoadIndex);
                 getMessagesController().loadMessages(dialog_id, mergeDialogId, false, count, 0, 0, false, 0, classGuid, 0, 0, chatMode, threadMessageId, replyMaxReadId, lastLoadIndex++, isTopic);
                 return;
@@ -23442,16 +23516,15 @@ public class ChatActivity extends BaseFragment implements
                         }
 
                         int yOffset = getScrollOffsetForMessage(object);
-                        boolean smoothPinnedScroll = forceNextPinnedMessageId == 0;
-                        if (smoothPinnedScroll) {
+                        if (pinnedJump) {
+                            scrollPinnedWithoutAnimation(chatAdapter.messagesStartRow + k, yOffset);
+                        } else {
                             chatScrollHelperCallback.scrollTo = object;
                             chatScrollHelperCallback.lastBottom = false;
                             chatScrollHelperCallback.lastItemOffset = yOffset;
                             chatScrollHelperCallback.lastPadding = (int) chatListViewPaddingTop;
-                        } else {
-                            chatScrollHelperCallback.scrollTo = null;
+                            chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = chatAdapter.messagesStartRow + k, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, true);
                         }
-                        chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = chatAdapter.messagesStartRow + k, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, smoothPinnedScroll);
                     }
                 }
             }
@@ -26397,6 +26470,9 @@ public class ChatActivity extends BaseFragment implements
             } catch (Exception e) {
                 FileLog.e(e);
             }
+        }
+        else if (id == NotificationCenter.nooagramPinnedHiderChanged) {
+            updatePinnedMessageView(false);
         }
         else if (id == NotificationCenter.regexFiltersUpdated) {
             if (chatAdapter != null) {
@@ -31955,6 +32031,9 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        if (pinnedMessageView != null) {
+            updatePinnedMessageView(false);
+        }
         cachedIsGestureNavigation = AndroidUtil.isGestureNavigation(getContext());
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
@@ -35662,7 +35741,6 @@ public class ChatActivity extends BaseFragment implements
                 presentFragment(new AyuMessageHistory(selectedObject));
                 break;
             case AyuConstants.OPTION_TTL:
-                AyuState.setAllowReadPacket(true, 1);
                 if (selectedObject.messageOwner.ttl == 0x7FFFFFFF) {
                     selectedObject.messageOwner.ttl = 1;
                 }
@@ -45477,6 +45555,7 @@ public class ChatActivity extends BaseFragment implements
     public class ChatScrollCallback extends RecyclerAnimationScrollHelper.AnimationCallback {
 
         private MessageObject scrollTo;
+        private boolean suppressPositionCorrection;
         private int position = 0;
         private boolean bottom = true;
         private int offset = 0;
@@ -45495,7 +45574,9 @@ public class ChatActivity extends BaseFragment implements
 
         @Override
         public void onEndAnimation() {
-            if (scrollTo != null) {
+            if (suppressPositionCorrection) {
+                scrollTo = null;
+            } else if (scrollTo != null) {
                 chatAdapter.updateRowsSafe();
                 int lastItemPosition = chatAdapter.messagesStartRow + messages.indexOf(scrollTo);
                 if (lastItemPosition >= 0) {

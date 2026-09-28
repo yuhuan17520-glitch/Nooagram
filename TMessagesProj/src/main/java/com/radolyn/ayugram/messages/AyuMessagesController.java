@@ -13,7 +13,6 @@ import android.os.Environment;
 import android.text.TextUtils;
 
 import com.radolyn.ayugram.AyuConstants;
-import com.radolyn.ayugram.AyuUtils;
 import com.radolyn.ayugram.database.AyuData;
 import com.radolyn.ayugram.database.dao.DeletedMessageDao;
 import com.radolyn.ayugram.database.dao.EditedMessageDao;
@@ -21,12 +20,14 @@ import com.radolyn.ayugram.database.entities.DeletedMessage;
 import com.radolyn.ayugram.database.entities.DeletedMessageFull;
 import com.radolyn.ayugram.database.entities.DeletedMessageReaction;
 import com.radolyn.ayugram.database.entities.EditedMessage;
+import com.radolyn.ayugram.utils.AyuAttachmentStore;
 import com.radolyn.ayugram.utils.AyuMessageUtils;
 import com.radolyn.ayugram.utils.AyuState;
 import com.radolyn.ayugram.utils.LastSeenHelper;
 
 import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -40,12 +41,13 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_iv;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,12 +56,19 @@ import java.util.function.Consumer;
 
 
 import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.utils.FileUtil;
 import xyz.nextalone.nagram.NaConfig;
 
 public class AyuMessagesController {
     public static final String attachmentsSubfolder = "Saved Attachments";
-    public static File attachmentsPath = getDefaultAttachmentsPath();
+    private static final String ATTACHMENTS_OWNER_KEY = "ayuAttachmentsOwnerId";
+    private static AyuAttachmentStore attachmentStore;
+    private static File attachmentParent;
+    public static volatile File attachmentsPath;
+
+    static {
+        syncAttachmentsPathWithConfig();
+    }
+
     public static final long[] ATTACHMENT_SIZE_LIMIT_PRESETS = new long[]{
             300L * 1024L * 1024L,
             1024L * 1024L * 1024L,
@@ -96,7 +105,7 @@ public class AyuMessagesController {
         return new File(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), AyuConstants.APP_NAME), attachmentsSubfolder);
     }
 
-    private static File resolveConfiguredAttachmentsPath() {
+    private static File resolveConfiguredAttachmentsParent() {
         String configuredPath = NaConfig.INSTANCE.getAttachmentFolderPath().String();
         if (TextUtils.isEmpty(configuredPath)) {
             return getDefaultAttachmentsPath();
@@ -105,31 +114,56 @@ public class AyuMessagesController {
     }
 
     public static synchronized void syncAttachmentsPathWithConfig() {
-        attachmentsPath = resolveConfiguredAttachmentsPath();
+        File parent = resolveConfiguredAttachmentsParent().getAbsoluteFile();
+        if (attachmentStore != null && parent.equals(attachmentParent)) {
+            return;
+        }
+        try {
+            attachmentStore = createAttachmentStore(parent);
+            attachmentStore.prepare();
+            attachmentParent = parent;
+            attachmentsPath = attachmentStore.getDirectory();
+        } catch (IOException e) {
+            FileLog.e("syncAttachmentsPathWithConfig", e);
+            attachmentStore = null;
+            // Never fall back to writing into the selected parent on a resolution failure.
+            attachmentsPath = new File(ApplicationLoader.getFilesDirFixed(), "ayu-attachments-unavailable");
+        }
     }
 
-    public static synchronized void setAttachmentFolderPath(File path) {
-        String newPath = path == null ? "" : path.getAbsolutePath();
+    private static AyuAttachmentStore createAttachmentStore(File parent) throws IOException {
+        String ownerId = NekoConfig.getPreferences().getString(ATTACHMENTS_OWNER_KEY, "");
+        if (TextUtils.isEmpty(ownerId)) {
+            ownerId = UUID.randomUUID().toString();
+            if (!NekoConfig.getPreferences().edit().putString(ATTACHMENTS_OWNER_KEY, ownerId).commit()) {
+                throw new IOException("Cannot persist attachment ownership identity");
+            }
+        }
+        return new AyuAttachmentStore(parent,
+                new File(ApplicationLoader.getFilesDirFixed(), "ayu-attachment-ownership"), ownerId);
+    }
+
+    public static synchronized void setAttachmentFolderPath(File path) throws IOException {
+        File parent = path == null ? getDefaultAttachmentsPath() : path.getAbsoluteFile();
+        AyuAttachmentStore store = createAttachmentStore(parent);
+        store.prepare();
+        if (!store.getDirectory().canWrite()) {
+            throw new IOException("Attachment directory is not writable");
+        }
+        String newPath = path == null ? "" : parent.getAbsolutePath();
         NaConfig.INSTANCE.getAttachmentFolderPath().setConfigString(newPath);
-        syncAttachmentsPathWithConfig();
-        initializeAttachmentsFolder();
+        attachmentParent = parent;
+        attachmentStore = store;
+        attachmentsPath = store.getDirectory();
         AyuData.loadSizes(null);
     }
 
-    public static boolean isManagedAttachmentPath(String path) {
+    public static synchronized boolean isManagedAttachmentPath(String path) {
         if (TextUtils.isEmpty(path)) {
             return false;
         }
         syncAttachmentsPathWithConfig();
-        try {
-            String folderPath = attachmentsPath.getCanonicalPath();
-            String filePath = new File(path).getCanonicalPath();
-            return filePath.equals(folderPath) || filePath.startsWith(folderPath + File.separator);
-        } catch (Exception e) {
-            FileLog.e("isManagedAttachmentPath", e);
-            String folderPath = attachmentsPath.getAbsolutePath();
-            return path.equals(folderPath) || path.startsWith(folderPath + File.separator);
-        }
+        return attachmentStore != null && attachmentStore.owns(new File(path));
     }
 
     private static void clearAttachmentPathReferences(String mediaPath) {
@@ -234,29 +268,11 @@ public class AyuMessagesController {
         return null;
     }
 
-    private static void initializeAttachmentsFolder() {
+    private static synchronized void initializeAttachmentsFolder() {
         try {
             syncAttachmentsPathWithConfig();
-            if (!attachmentsPath.exists()) {
-                return;
-            }
-            File nomediaFile = new File(attachmentsPath, ".nomedia");
-            if (attachmentsPath.exists()) {
-                AndroidUtilities.createEmptyFile(nomediaFile);
-            }
-            if (!nomediaFile.exists()) {
-                File randomFile = new File(attachmentsPath, AyuUtils.generateRandomString(4));
-                AndroidUtilities.createEmptyFile(randomFile);
-                if (!randomFile.renameTo(nomediaFile)) {
-                    if (!randomFile.delete()) {
-                        randomFile.deleteOnExit();
-                    }
-                    FileLog.e("Failed to rename random .nomedia file to the correct name");
-                } else {
-                    FileLog.d("Created .nomedia file in attachments folder by renaming a random file");
-                }
-            } else {
-                FileLog.d(".nomedia file already exists in attachments folder");
+            if (attachmentStore != null) {
+                attachmentStore.prepare();
             }
         } catch (Exception e) {
             FileLog.e("initializeAttachmentsFolder", e);
@@ -296,48 +312,14 @@ public class AyuMessagesController {
     public static synchronized long trimAttachmentsFolderToLimit(File keepFile) {
         try {
             initializeAttachmentsFolder();
-            long limit = getConfiguredAttachmentSizeLimit();
-            if (limit == Long.MAX_VALUE) {
+            if (attachmentStore == null) {
                 return 0L;
             }
-
-            File[] attachmentFiles = attachmentsPath.listFiles(file ->
-                    file != null && file.isFile() && !".nomedia".equals(file.getName()));
-            if (attachmentFiles == null || attachmentFiles.length == 0) {
-                return 0L;
+            if (keepFile != null) {
+                attachmentStore.remember(keepFile);
             }
-
-            Arrays.sort(attachmentFiles, Comparator.comparingLong(File::lastModified));
-
-            long currentSize = 0L;
-            for (File file : attachmentFiles) {
-                currentSize += Math.max(0L, file.length());
-            }
-
-            String keepPath = keepFile == null ? null : keepFile.getAbsolutePath();
-            long deletedSize = 0L;
-            for (File file : attachmentFiles) {
-                if (currentSize <= limit) {
-                    break;
-                }
-                if (keepPath != null && keepPath.equals(file.getAbsolutePath())) {
-                    continue;
-                }
-
-                long fileLength = Math.max(0L, file.length());
-                if (!file.exists()) {
-                    currentSize -= fileLength;
-                    continue;
-                }
-                if (file.delete()) {
-                    currentSize -= fileLength;
-                    deletedSize += fileLength;
-                    clearAttachmentPathReferences(file.getAbsolutePath());
-                } else {
-                    FileLog.e("Failed to delete old attachment " + file.getAbsolutePath());
-                }
-            }
-
+            long deletedSize = attachmentStore.trim(getConfiguredAttachmentSizeLimit(), keepFile,
+                    file -> clearAttachmentPathReferences(file.getAbsolutePath()));
             if (deletedSize > 0L) {
                 AyuData.loadSizes(null);
             }
@@ -389,7 +371,9 @@ public class AyuMessagesController {
                     () -> editedMessageDao().getLastRevision(prefs.getUserId(), prefs.getDialogId(), prefs.getMessageId())
             );
 
-            if (lastRevision != null && !TextUtils.equals(revision.mediaPath, lastRevision.mediaPath) && lastRevision.mediaPath != null && !isManagedAttachmentPath(lastRevision.mediaPath)) {
+            if (lastRevision != null && !TextUtils.equals(revision.mediaPath, lastRevision.mediaPath)
+                    && lastRevision.mediaPath != null && !new File(lastRevision.mediaPath).isFile()
+                    && !isManagedAttachmentPath(lastRevision.mediaPath)) {
                 // update previous revisions to reflect media change
                 // like, there's no previous file, so replace it with one we copied before...
                 withDaoRetry(
@@ -1117,15 +1101,12 @@ public class AyuMessagesController {
 
     public static synchronized void clearAttachments() {
         syncAttachmentsPathWithConfig();
-        FileUtil.deleteDirectory(attachmentsPath);
-        initializeAttachmentsFolder();
-        // 文件都没了，库里的 mediaPath 必须一起清掉，
-        // 否则这些记录会渲染成点不开的空附件气泡
         try {
-            deletedMessageDao().clearAllMediaPaths();
-            editedMessageDao().clearAllMediaPaths();
+            if (attachmentStore != null) {
+                attachmentStore.clear(file -> clearAttachmentPathReferences(file.getAbsolutePath()));
+            }
         } catch (Exception e) {
-            FileLog.e("clearAttachments#clearMediaPaths", e);
+            FileLog.e("clearAttachments", e);
         }
         AyuData.loadSizes(null);
     }

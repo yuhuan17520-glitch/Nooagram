@@ -23,9 +23,29 @@ public class CustomElementHandler implements HTMLTagAttributesHandler.TagHandler
     private record PreMarker(String language) {
     }
 
+    private record LinkMarker(String url, int entityIndex) {
+    }
+
     @Override
     public boolean handleTag(boolean opening, String tag, Editable output, Attributes attributes) {
-        if (tag.equalsIgnoreCase("tg-emoji")) {
+        if (tag.equalsIgnoreCase("a")) {
+            if (opening) {
+                String index = HTMLTagAttributesHandler.getValue(attributes, "data-nooagram-entity");
+                if (index != null) {
+                    try {
+                        start(output, new LinkMarker(HTMLTagAttributesHandler.getValue(attributes, "href"), Integer.parseInt(index)));
+                        return true;
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            } else {
+                LinkMarker marker = getLast(output, LinkMarker.class);
+                if (marker != null) {
+                    end(output, LinkMarker.class, new HTMLKeeper.EntityURLSpan(marker.url, marker.entityIndex));
+                    return true;
+                }
+            }
+        } else if (tag.equalsIgnoreCase("tg-emoji")) {
             if (opening) {
                 String emojiIdString = HTMLTagAttributesHandler.getValue(attributes, "emoji-id");
                 if (emojiIdString != null) {

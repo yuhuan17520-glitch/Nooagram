@@ -8,7 +8,7 @@ param(
     [switch]$Install,
     [string]$Device,
     [switch]$SkipSubmodules,
-    [int]$LocalVersionCode = 125000000,
+    [int]$LocalVersionCode = 0,
 
     [string]$LocalPropertiesPath
 )
@@ -16,6 +16,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'nooagram-release.ps1')
+$version = Get-NooagramVersion -RepositoryPath $repo -VersionCode $LocalVersionCode
 $gradlew = Join-Path $repo "gradlew.bat"
 $keystore = Join-Path $repo "TMessagesProj\release.keystore"
 $localKeystore = Join-Path $repo "..\nooagram-secrets\nooagram-release.keystore"
@@ -67,32 +69,38 @@ $env:LOCAL_PROPERTIES = [Convert]::ToBase64String(
 )
 
 $env:BUILD_TIMESTAMP = [string][System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$env:COMMIT_ID = (git -C $repo rev-parse HEAD).Trim()
+$env:COMMIT_ID = $version.Commit
 $env:NATIVE_TARGET = $Abi
 $env:NOOAGRAM_KEYSTORE = (Resolve-Path $localKeystore).Path
-$env:NOOAGRAM_LOCAL_VERSION_CODE = [string]$LocalVersionCode
+$env:NOOAGRAM_LOCAL_VERSION_CODE = [string]$version.VersionCode
+$env:NOOAGRAM_VERSION_CODE = [string]$version.VersionCode
+$env:NOOAGRAM_VERSION_NAME = $version.VersionName
 
 $task = "TMessagesProj:assembleNormal$BuildType"
-Write-Host "Building $task for $Abi..." -ForegroundColor Cyan
+Write-Host "Building $task for $Abi, $($version.VersionName) ($($version.VersionCode))..." -ForegroundColor Cyan
 
-& $gradlew $task -x uploadCrashlyticsMappingFileNormalRelease --build-cache
-if ($LASTEXITCODE -ne 0) {
-    throw "Gradle build failed."
+Push-Location -LiteralPath $repo
+try {
+    & $gradlew $task -x uploadCrashlyticsMappingFileNormalRelease --build-cache
+    if ($LASTEXITCODE -ne 0) {
+        throw "Gradle build failed."
+    }
+} finally {
+    Pop-Location
 }
 
 $outputDir = Join-Path $repo "TMessagesProj\build\outputs\apk\normal\$($BuildType.ToLowerInvariant())"
-$apk = Get-ChildItem $outputDir -Recurse -Filter "*$Abi*.apk" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-
-if (-not $apk) {
-    throw "No $Abi APK found under $outputDir."
-}
+$apk = Get-NooagramApk -OutputDirectory $outputDir -Abi $Abi -Version $version
 
 $localDir = Join-Path $repo "build-local"
 New-Item -ItemType Directory -Force $localDir | Out-Null
-$localApk = Join-Path $localDir "Nooagram-$($BuildType.ToLowerInvariant())-$Abi.apk"
+$localApk = Join-Path $localDir "Nooagram-v$($version.VersionName)-$($BuildType.ToLowerInvariant())-$Abi.apk"
+if ((Test-Path -LiteralPath $localApk) -and
+    (Get-FileHash -LiteralPath $localApk -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $apk.FullName -Algorithm SHA256).Hash) {
+    throw "A different APK already uses $($version.VersionName). Choose a larger -LocalVersionCode for the new delivery."
+}
 Copy-Item $apk.FullName $localApk -Force
+$version | ConvertTo-Json | Set-Content -LiteralPath "$localApk.json" -Encoding utf8
 
 Write-Host ""
 Write-Host "APK: $localApk" -ForegroundColor Green

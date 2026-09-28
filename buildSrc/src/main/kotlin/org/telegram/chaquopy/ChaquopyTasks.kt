@@ -158,7 +158,8 @@ abstract class ChaquopyClangLink @Inject constructor() : DefaultTask() {
         }
         val args = mutableListOf(
             clang.absolutePath, "--target=${targetTriple.get()}",
-            "-shared", "-fPIC", "-O2", "-DNDEBUG", "-Wno-deprecated-declarations"
+            "-shared", "-fPIC", "-O2", "-DNDEBUG", "-Wno-deprecated-declarations",
+            "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384"
         )
         includeDirs.files.forEach { args.addAll(listOf("-I", it.absolutePath)) }
         sources.files.sortedBy { it.absolutePath }.forEach { args.add(it.absolutePath) }

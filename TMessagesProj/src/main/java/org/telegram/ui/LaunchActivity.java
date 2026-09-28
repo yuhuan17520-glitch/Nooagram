@@ -3649,15 +3649,23 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                     if (cursor != null) {
                                         if (cursor.moveToFirst()) {
                                             long userId = cursor.getLong(cursor.getColumnIndex(ContactsContract.Data.DATA4));
-                                            int accountId = Utilities.parseInt(cursor.getString(cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_NAME)));
-                                            for (int a = -1; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
-                                                int i = a == -1 ? intentAccount[0] : a;
-                                                if ((a == -1 && MessagesStorage.getInstance(i).containsLocalDialog(userId)) || UserConfig.getInstance(i).getClientUserId() == accountId) {
-                                                    intentAccount[0] = i;
-                                                    switchToAccount(intentAccount[0], true);
+                                            int accountNameColumn = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_NAME);
+                                            int accountTypeColumn = cursor.getColumnIndex(ContactsContract.RawContacts.ACCOUNT_TYPE);
+                                            if (accountNameColumn < 0 || accountTypeColumn < 0) return false;
+                                            long accountId = ContactsController.getSystemAccountOwnerId(
+                                                    cursor.getString(accountNameColumn), cursor.getString(accountTypeColumn));
+                                            if (accountId <= 0) return false;
+                                            int contactAccount = -1;
+                                            for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
+                                                if (UserConfig.getInstance(i).isClientActivated()
+                                                        && UserConfig.getInstance(i).getClientUserId() == accountId) {
+                                                    contactAccount = i;
                                                     break;
                                                 }
                                             }
+                                            if (contactAccount == -1) return false;
+                                            intentAccount[0] = contactAccount;
+                                            switchToAccount(contactAccount, true);
                                             NotificationCenter.getInstance(intentAccount[0]).postNotificationName(NotificationCenter.closeChats);
                                             push_user_id = userId;
                                             String mimeType = cursor.getString(cursor.getColumnIndex(ContactsContract.Data.MIMETYPE));

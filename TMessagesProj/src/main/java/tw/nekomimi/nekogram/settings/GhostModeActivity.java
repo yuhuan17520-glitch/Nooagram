@@ -468,9 +468,6 @@ public class GhostModeActivity extends BaseNekoXSettingsActivity {
             ConfigItem lockedItem = getGhostModeLockedItem(checkBox);
             if (lockedItem != null && lockedItem.Bool()) return;
             checkBox.onClick((CheckBoxCell) view);
-            if (checkBox.getBindConfig() == invSendReadMessagePackets) {
-                AyuState.setAllowReadPacket(false, -1);
-            }
             if (checkBox.getBindConfig() == sendOfflinePacketAfterOnlineItem && currentViewingAccount >= 0) {
                 if (currentSettings.sendOfflinePacketAfterOnline && currentSettings.isGhostModeActive()) {
                     AyuWorker.setOnline(currentViewingAccount, true);
@@ -489,7 +486,6 @@ public class GhostModeActivity extends BaseNekoXSettingsActivity {
             currentSettings.markReadAfterSend = !currentSettings.markReadAfterSend;
             currentSettings.save();
             ((TextCheckCell) view).setChecked(currentSettings.markReadAfterSend);
-            AyuState.setAllowReadPacket(false, -1);
             if (currentSettings.markReadAfterSend && currentSettings.useScheduledMessages) {
                 currentSettings.useScheduledMessages = false;
                 currentSettings.save();

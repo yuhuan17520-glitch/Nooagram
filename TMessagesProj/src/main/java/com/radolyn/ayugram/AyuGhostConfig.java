@@ -200,15 +200,14 @@ public abstract class AyuGhostConfig {
         if (account < 0) {
             return;
         }
-        if (enabled) {
-            if (isSendOfflinePacketAfterOnline(account) && !isSendOfflinePacketAfterOnlineLocked(account)) {
-                AyuWorker.setOnline(account, true);
-            }
-            AyuGhostUtils.performStatusRequest(account, true);
+        GhostModeSettings effectiveSettings = getGhostModeSettingsForAccount(account);
+        if (effectiveSettings.sendOfflinePacketAfterOnline) {
+            AyuWorker.setOnline(account, true);
         } else {
             AyuWorker.clearOnline(account);
-            AyuGhostUtils.performStatusRequest(account, false);
         }
+        // Locked settings can differ from the requested master switch state.
+        AyuGhostUtils.performStatusRequest(account, !effectiveSettings.sendOnlinePackets);
         NotificationCenter.getInstance(account)
                 .postNotificationName(NotificationCenter.mainUserInfoChanged);
     }

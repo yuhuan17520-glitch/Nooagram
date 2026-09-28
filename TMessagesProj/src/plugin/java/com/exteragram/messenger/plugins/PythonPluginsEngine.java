@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
-import android.os.Build;
 import android.text.TextUtils;
 import android.view.View;
 
@@ -80,6 +79,8 @@ import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import tw.nekomimi.nekogram.helpers.AppRestartHelper;
+
 public class PythonPluginsEngine implements PluginsController.PluginsEngine {
     private static final java.util.regex.Pattern VERSION_REQUIREMENT_PATTERN =
             java.util.regex.Pattern.compile("^\\s*(>=|<=|==|!=|>|<)?\\s*v?(\\d+(?:\\.\\d+)*)\\s*$");
@@ -99,6 +100,9 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
     public PyObject debuggerListener;
     private PyObject devServerClass;
     public static volatile boolean sdkInitialized;
+    // Python survives engine shutdown, including partially imported SDK modules.
+    private static volatile boolean sdkImportStarted;
+    private static volatile boolean sdkUpdateStagedThisProcess;
     private volatile Python python;
 
     public final ConcurrentHashMap<String, PyObject> pluginInstances = new ConcurrentHashMap<>();
@@ -159,8 +163,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 return null;
             }
         }
-        initSdk();
-        return python;
+        return initSdk() ? python : null;
     }
 
     private void initPython() {
@@ -209,6 +212,13 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
 
     private void initOnPluginsQueue(Runnable runnable) {
         long initStart = System.currentTimeMillis();
+        if ((sdkImportStarted || sdkUpdateStagedThisProcess) && Updater.isRestartRequired()) {
+            Updater.restartApp();
+            if (runnable != null) {
+                AndroidUtilities.runOnUIThread(runnable);
+            }
+            return;
+        }
         if (getPython() == null) {
             if (runnable != null) {
                 AndroidUtilities.runOnUIThread(runnable);
@@ -255,8 +265,21 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
     }
 
     private synchronized boolean initSdk() {
-        if (python == null || sdkInitialized) {
-            return sdkInitialized;
+        if (python == null) {
+            return false;
+        }
+        if (sdkInitialized) {
+            if (basePluginClass == null && !ExteraConfig.pluginsSafeMode) {
+                try {
+                    requireBasePluginClass();
+                } catch (Exception e) {
+                    FileLog.e("Failed to load BasePlugin class", e);
+                }
+            }
+            return true;
+        }
+        if (sdkImportStarted || sdkUpdateStagedThisProcess) {
+            return false;
         }
         if (SDK_DIR == null) {
             SDK_DIR = new File(new File(ApplicationLoader.getFilesDirFixed(), "chaquopy"), "plugins-sdk");
@@ -331,6 +354,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
         if (!preparePythonCompatShims()) {
             FileLog.e("Failed to prepare plugin SDK Python shims");
         }
+        sdkImportStarted = true;
         try {
             PyObject sys = python.getModule("sys");
             PyObject sysPath = sys.get("path");
@@ -384,6 +408,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             }
             return sdkInitialized;
         } catch (Throwable t) {
+            sdkInitialized = false;
             FileLog.e("Failed to initialize Python SDK bootstrap", t);
             try {
                 Updater.restoreSdkFromApk();
@@ -986,7 +1011,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
 
     @Override
     public void shutdown(Runnable runnable) {
-        if (getPython() == null) {
+        if (python == null) {
             if (runnable != null) {
                 runnable.run();
             }
@@ -1007,7 +1032,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 removePluginPathsFromSysPath();
                 python = null;
                 basePluginClass = null;
-                sdkInitialized = false;
+                // Keep the process SDK state: pending archives wait for a full app restart.
             }
             FileLog.d("Python plugin engine shut down.");
         } catch (Exception e) {
@@ -1155,8 +1180,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             return;
         }
         if (shouldEnable) {
-            createPluginInstance(pluginId, plugin, dependencyDelegate);
-            setPluginEnabledInternal(pluginId, true, null, notifyPlugins);
+            setPluginEnabledInternal(pluginId, true, dependencyDelegate, notifyPlugins);
         } else if (dependencyDelegate != null) {
             installPluginDependencies(pluginId, plugin, dependencyDelegate);
         }
@@ -1309,11 +1333,24 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
 
     @Override
     public void setPluginEnabled(String pluginId, boolean enabled, Utilities.Callback<String> callback) {
-        setPluginEnabledInternal(pluginId, enabled, callback, true);
+        try {
+            setPluginEnabledInternal(pluginId, enabled, null, true);
+        } catch (Throwable t) {
+            if (callback != null) {
+                AndroidUtilities.runOnUIThread(() -> callback.run(stackTraceToString(t)));
+            }
+            return;
+        }
+        if (callback != null) {
+            AndroidUtilities.runOnUIThread(() -> callback.run(null));
+        }
     }
 
-    private void setPluginEnabledInternal(String pluginId, boolean enabled, Utilities.Callback<String> callback, boolean notify) {
+    private void setPluginEnabledInternal(String pluginId, boolean enabled, PipController.InstallerDelegate dependencyDelegate, boolean notify) throws Exception {
         try {
+            if (!enabled) {
+                getPluginsController().preferences.edit().putBoolean(PluginsController.PREF_PLUGIN_ENABLED_KEY_PREFIX + pluginId, false).apply();
+            }
             Plugin plugin = getPluginsController().plugins.get(pluginId);
             if (plugin == null) {
                 throw new Exception("Plugin not found: " + pluginId);
@@ -1331,22 +1368,16 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 if (notify) {
                     getPluginsController().notifyPluginsChanged();
                 }
-                if (callback != null) {
-                    AndroidUtilities.runOnUIThread(() -> callback.run(null));
-                }
                 return;
             }
             if (enabled && instance == null) {
-                createPluginInstance(pluginId, plugin, null);
+                createPluginInstance(pluginId, plugin, dependencyDelegate);
                 instance = pluginInstances.get(pluginId);
                 if (instance == null) {
                     throw new Exception("Failed to create plugin instance: " + pluginId);
                 }
             }
-            if (PyObjectUtils.getBoolean(instance, "initialized", false) == enabled && !plugin.hasError()) {
-                if (callback != null) {
-                    AndroidUtilities.runOnUIThread(() -> callback.run(null));
-                }
+            if (enabled && PyObjectUtils.getBoolean(instance, "initialized", false) && !plugin.hasError()) {
                 return;
             }
 
@@ -1368,16 +1399,11 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             } else {
                 // Disabling drops the instance and the imported module: re-enabling must behave like
                 // a fresh load, so the teardown goes through unloadPlugin instead of a partial cleanup.
-                getPluginsController().preferences.edit().putBoolean(PluginsController.PREF_PLUGIN_ENABLED_KEY_PREFIX + pluginId, false).apply();
                 unloadPlugin(pluginId);
             }
 
             if (notify) {
                 getPluginsController().notifyPluginsChanged();
-            }
-
-            if (callback != null) {
-                AndroidUtilities.runOnUIThread(() -> callback.run(null));
             }
         } catch (Throwable t) {
             FileLog.e("Unexpected error setting enabled state for " + pluginId, t);
@@ -1387,16 +1413,20 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                     plugin.setEnabled(false);
                     plugin.setError(t);
                 }
-                PyObject instance = pluginInstances.get(pluginId);
-                if (instance != null) {
-                    instance.put("error_message", t.getMessage());
-                }
                 getPluginsController().preferences.edit().putBoolean(PluginsController.PREF_PLUGIN_ENABLED_KEY_PREFIX + pluginId, false).apply();
-                unloadPlugin(pluginId);
+                try {
+                    unloadPlugin(pluginId);
+                } catch (Throwable cleanupError) {
+                    t.addSuppressed(cleanupError);
+                }
             }
-            if (callback != null) {
-                AndroidUtilities.runOnUIThread(() -> callback.run(stackTraceToString(t)));
+            if (notify) {
+                getPluginsController().notifyPluginsChanged();
             }
+            if (t instanceof Exception) {
+                throw (Exception) t;
+            }
+            throw new Exception("Failed to set enabled state for " + pluginId, t);
         }
     }
 
@@ -1410,6 +1440,9 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             File targetFile = null;
             File backupFile = null;
             boolean hadPreviousVersion = false;
+            boolean previouslyEnabled = false;
+            boolean hadEnabledPreference = false;
+            boolean backedUp = false;
             boolean copiedToTarget = false;
             Plugin resolvedPlugin = plugin;
             try {
@@ -1423,18 +1456,21 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
 
                 pluginId = resolvedPlugin.getId();
                 targetFile = new File(getPluginsController().pluginsDir, pluginId + ".py");
+                String enabledKey = PluginsController.PREF_PLUGIN_ENABLED_KEY_PREFIX + pluginId;
+                hadEnabledPreference = getPluginsController().preferences.contains(enabledKey);
+                previouslyEnabled = getPluginsController().preferences.getBoolean(enabledKey, false);
 
                 if (targetFile.exists()) {
                     hadPreviousVersion = true;
                     unloadPlugin(pluginId);
                     backupFile = new File(getPluginsController().pluginsDir, pluginId + ".py.bak");
-                    if (backupFile.exists()) {
-                        //noinspection ResultOfMethodCallIgnored
-                        backupFile.delete();
+                    if (backupFile.exists() && !backupFile.delete()) {
+                        throw new IOException("Failed to remove old plugin backup.");
                     }
                     if (!targetFile.renameTo(backupFile)) {
                         throw new IOException("Failed to backup existing plugin file.");
                     }
+                    backedUp = true;
                 }
 
                 try (FileInputStream input = new FileInputStream(sourceFilePath);
@@ -1460,23 +1496,29 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             } catch (Throwable t) {
                 FileLog.e("Unexpected error loading plugin from file: " + sourceFilePath, t);
                 boolean cancelled = t instanceof PipController.InstallationCancelledException;
-                if (!TextUtils.isEmpty(pluginId)) {
+                if (!TextUtils.isEmpty(pluginId) && !hadPreviousVersion) {
                     PipController.INSTANCE.uninstallDependencies(pluginId);
                 }
 
-                if (hadPreviousVersion && backupFile != null && backupFile.exists() && targetFile != null) {
-                    if (targetFile.exists()) {
-                        //noinspection ResultOfMethodCallIgnored
-                        targetFile.delete();
-                    }
-                    if (backupFile.renameTo(targetFile)) {
-                        try {
-                            loadPlugin(pluginId, targetFile.getAbsolutePath());
-                        } catch (Exception e) {
-                            FileLog.e("Failed to reload original plugin after update failure for " + pluginId, e);
+                if (hadPreviousVersion && targetFile != null) {
+                    try {
+                        unloadPlugin(pluginId);
+                        if (backedUp) {
+                            if (targetFile.exists() && !targetFile.delete()) {
+                                throw new IOException("Failed to remove unsuccessful plugin update for " + pluginId);
+                            }
+                            if (!backupFile.renameTo(targetFile)) {
+                                throw new IOException("Failed to restore backup for plugin " + pluginId);
+                            }
                         }
-                    } else {
-                        FileLog.e("Failed to restore backup for plugin " + pluginId);
+                        restorePluginEnabledPreference(pluginId, hadEnabledPreference, previouslyEnabled);
+                        loadPlugin(pluginId, targetFile.getAbsolutePath());
+                    } catch (Throwable rollbackError) {
+                        t.addSuppressed(rollbackError);
+                        FileLog.e("Failed to reload original plugin after update failure for " + pluginId, rollbackError);
+                    } finally {
+                        // A failed rollback activation must not overwrite the user's prior choice.
+                        restorePluginEnabledPreference(pluginId, hadEnabledPreference, previouslyEnabled);
                     }
                 } else if (!TextUtils.isEmpty(pluginId)) {
                     getPluginsController().cleanupPlugin(pluginId);
@@ -1528,6 +1570,17 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 }
             }
         });
+    }
+
+    private void restorePluginEnabledPreference(String pluginId, boolean hadPreference, boolean enabled) {
+        SharedPreferences.Editor editor = getPluginsController().preferences.edit();
+        String key = PluginsController.PREF_PLUGIN_ENABLED_KEY_PREFIX + pluginId;
+        if (hadPreference) {
+            editor.putBoolean(key, enabled);
+        } else {
+            editor.remove(key);
+        }
+        editor.apply();
     }
 
     public PluginsController.PluginValidationResult validatePluginFromFile(String filePath) {
@@ -2521,7 +2574,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 boolean sdkVersionNewer = version == null || isSdkVersionNewer(version, "beta".equals(channel));
                 return appVersionCompatible && appVersionCodeCompatible && sdkVersionNewer
                         && document != null
-                        && abi != null && abi.equals(Build.SUPPORTED_ABIS[0]);
+                        && abi != null && abi.equals(AndroidPlatform.ABI);
             }
 
             public TLRPC.Message getMessage() {
@@ -2596,14 +2649,14 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 case STATUS_DOWNLOADING:
                     return LocaleController.getString(R.string.LoadingUpdate);
                 case STATUS_READY:
-                    return LocaleController.getString(R.string.RestartPluginSystemToApplyUpdate);
+                    return LocaleController.getString(R.string.RestartAppToTakeEffect);
                 default:
                     return getVersion();
             }
         }
 
         public static boolean isRestartRequired() {
-            return getPythonSdkUpdateFile().exists();
+            return getPythonSdkUpdateFile().exists() || requestSdkFromApkFile().exists();
         }
 
         public static File getPythonSdkUpdateFile() {
@@ -2619,16 +2672,11 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
         }
 
         public static InputStream sdkFromApk() throws IOException {
-            IOException lastError = null;
-            for (String abi : Build.SUPPORTED_ABIS) {
-                try {
-                    return ApplicationLoader.applicationContext.getAssets()
-                            .open("plugins_pysdk/sdk-" + abi + ".zip");
-                } catch (IOException e) {
-                    lastError = e;
-                }
+            String abi = AndroidPlatform.ABI;
+            if (abi == null) {
+                throw new IOException("Python process ABI has not been selected");
             }
-            throw new IOException("No bundled plugin SDK for ABIs " + Arrays.toString(Build.SUPPORTED_ABIS), lastError);
+            return ApplicationLoader.applicationContext.getAssets().open("plugins_pysdk/sdk-" + abi + ".zip");
         }
 
         public static boolean isSdkFromApk() {
@@ -2702,7 +2750,11 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
         }
 
         public static void restoreSdkFromApk() {
-            touchFile(requestSdkFromApkFile());
+            synchronized (INSTANCE) {
+                touchFile(requestSdkFromApkFile());
+                sdkUpdateStagedThisProcess = true;
+            }
+            updateStatus(STATUS_READY);
         }
 
         private static void touchFile(File file) {
@@ -2882,18 +2934,20 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             }
         }
 
-        private static void copyArchiveToPluginsDirectory(TLRPC.Document document, boolean autoRestartEngine) {
+        private static void copyArchiveToPluginsDirectory(TLRPC.Document document, boolean restartApp) {
             File updateFile = getPythonSdkUpdateFile();
             try {
                 File pathToAttach = FileLoader.getInstance(UserConfig.selectedAccount).getPathToAttach(document);
                 if (pathToAttach == null || !pathToAttach.exists()) {
                     throw new IOException("Downloaded Python SDK archive is missing");
                 }
-                copyFile(pathToAttach, updateFile);
-                if (autoRestartEngine) {
-                    PluginsController.getInstance().restart();
-                } else {
-                    updateStatus(STATUS_READY);
+                synchronized (INSTANCE) {
+                    copyFile(pathToAttach, updateFile);
+                    sdkUpdateStagedThisProcess = true;
+                }
+                updateStatus(STATUS_READY);
+                if (restartApp) {
+                    restartApp();
                 }
             } catch (IOException e) {
                 FileLog.e("Failed to copy plugins-sdk file", e);
@@ -2906,12 +2960,18 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
             }
         }
 
+        private static void restartApp() {
+            AndroidUtilities.runOnUIThread(() -> AppRestartHelper.triggerRebirth(
+                    ApplicationLoader.applicationContext,
+                    new Intent(ApplicationLoader.applicationContext, LaunchActivity.class)));
+        }
+
         public static void savePythonSdkArchive(TLRPC.Message msg, TLRPC.Document document) {
             savePythonSdkArchive(msg, document, false);
         }
 
         @SuppressWarnings("unused")
-        public static void savePythonSdkArchive(TLRPC.Message msg, TLRPC.Document document, boolean autoRestartEngine) {
+        public static void savePythonSdkArchive(TLRPC.Message msg, TLRPC.Document document, boolean restartApp) {
             if (isLoading || msg == null || document == null) {
                 return;
             }
@@ -2932,7 +2992,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
 
                             @Override
                             public void onSuccessDownload(String fileName) {
-                                copyArchiveToPluginsDirectory(document, autoRestartEngine);
+                                copyArchiveToPluginsDirectory(document, restartApp);
                             }
 
                             @Override
@@ -2950,7 +3010,7 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                         });
                 return;
             }
-            copyArchiveToPluginsDirectory(document, autoRestartEngine);
+            copyArchiveToPluginsDirectory(document, restartApp);
         }
     }
 

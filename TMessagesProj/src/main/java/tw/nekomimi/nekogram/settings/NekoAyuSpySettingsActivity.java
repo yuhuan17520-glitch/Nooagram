@@ -733,7 +733,8 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     }
 
     private File resolveTreeUriToFile(Uri treeUri) {
-        if (treeUri == null) {
+        if (treeUri == null || !"content".equals(treeUri.getScheme())
+                || !"com.android.externalstorage.documents".equals(treeUri.getAuthority())) {
             return null;
         }
         String treeDocumentId;
@@ -749,23 +750,39 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
         String[] split = treeDocumentId.split(":", 2);
         String volume = split[0];
         String relativePath = split.length > 1 ? split[1] : "";
+        if (!volume.matches("[a-zA-Z0-9-]+") || relativePath.startsWith("/") || relativePath.contains("\\")) {
+            return null;
+        }
+        for (String component : relativePath.split("/")) {
+            if ("..".equals(component) || ".".equals(component)) {
+                return null;
+            }
+        }
+        File baseDir;
         if ("primary".equalsIgnoreCase(volume)) {
-            File baseDir = Environment.getExternalStorageDirectory();
-            return TextUtils.isEmpty(relativePath) ? baseDir : new File(baseDir, relativePath);
+            baseDir = Environment.getExternalStorageDirectory();
+        } else if ("home".equalsIgnoreCase(volume)) {
+            baseDir = new File(Environment.getExternalStorageDirectory(), "Documents");
+        } else {
+            baseDir = resolveVolumeBaseDir(volume);
         }
-        if ("home".equalsIgnoreCase(volume)) {
-            File baseDir = new File(Environment.getExternalStorageDirectory(), "Documents");
-            return TextUtils.isEmpty(relativePath) ? baseDir : new File(baseDir, relativePath);
-        }
-        File directPath = new File("/storage/" + treeDocumentId.replace(':', '/'));
-        if (directPath.exists()) {
-            return directPath;
-        }
-        File baseDir = resolveVolumeBaseDir(volume);
         if (baseDir == null) {
             return null;
         }
-        return TextUtils.isEmpty(relativePath) ? baseDir : new File(baseDir, relativePath);
+        try {
+            File canonicalBase = baseDir.getCanonicalFile();
+            File folder = TextUtils.isEmpty(relativePath) ? canonicalBase : new File(canonicalBase, relativePath);
+            File canonicalFolder = folder.getCanonicalFile();
+            if (!folder.equals(canonicalFolder) || !canonicalFolder.isDirectory()
+                    || (!canonicalFolder.equals(canonicalBase)
+                    && !canonicalFolder.getPath().startsWith(canonicalBase.getPath() + File.separator))) {
+                return null;
+            }
+            return canonicalFolder;
+        } catch (IOException e) {
+            FileLog.e(e);
+            return null;
+        }
     }
 
     private File resolveVolumeBaseDir(String volume) {

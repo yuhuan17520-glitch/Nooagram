@@ -127,6 +127,12 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
                 notifyRowChanged(deletedMessagesPreviewRow);
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.reloadInterface);
             } else if (key.equals(NekoConfig.localPremium.getKey())) {
+                for (int account = 0; account < UserConfig.MAX_ACCOUNT_COUNT; account++) {
+                    UserConfig userConfig = UserConfig.getInstance(account);
+                    if (userConfig.isClientActivated()) {
+                        org.telegram.messenger.MessagesController.getInstance(account).updatePremium(userConfig.isPremium());
+                    }
+                }
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.mainUserInfoChanged);
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.reloadInterface);
             } else if (key.equals(NekoConfig.disableAds.getKey())) {

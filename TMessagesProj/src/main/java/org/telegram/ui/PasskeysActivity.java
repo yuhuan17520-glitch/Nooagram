@@ -21,6 +21,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.PasskeysController;
@@ -89,7 +90,7 @@ public class PasskeysActivity extends BaseFragment {
         contentView.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         actionBar.setAdaptiveBackground(listView);
 
-        if (passkeys.isEmpty()) {
+        if (passkeys.isEmpty() && BuildVars.SUPPORTS_PASSKEYS) {
             AndroidUtilities.runOnUIThread(() -> {
                 if (getContext() != null) {
                     showLearnSheet(getContext(), currentAccount, resourceProvider, true);
@@ -110,7 +111,7 @@ public class PasskeysActivity extends BaseFragment {
             final TL_account.Passkey passkey = passkeys.get(i);
             items.add(PasskeyCell.Factory.of(passkey, this::openMenu));
         }
-        if (passkeys.size() + 1 <= getMessagesController().config.passkeysAccountPasskeysMax.get()) {
+        if (BuildVars.SUPPORTS_PASSKEYS && passkeys.size() + 1 <= getMessagesController().config.passkeysAccountPasskeysMax.get()) {
             addPasskeyRow = items.size();
             items.add(UItem.asButton(-1, R.drawable.menu_passkey_add, getString(R.string.PasskeyAdd)).accent());
         }
@@ -373,6 +374,12 @@ public class PasskeysActivity extends BaseFragment {
         button.setText(getString(R.string.PasskeyFeatureButton), false);
         button.setOnClickListener(v -> {
             if (button.isLoading()) return;
+            if (!BuildVars.SUPPORTS_PASSKEYS) {
+                new AlertDialog.Builder(context)
+                        .setTitle(getString(R.string.PasskeyUnsupportedTitle))
+                        .setPositiveButton(getString(R.string.OK), null).show();
+                return;
+            }
             button.setLoading(true);
             PasskeysController.create(context, currentAccount, (passkey, error) -> {
                 button.setLoading(false);

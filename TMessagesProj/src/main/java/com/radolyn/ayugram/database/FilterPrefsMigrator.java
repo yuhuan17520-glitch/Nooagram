@@ -15,8 +15,8 @@ import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 import xyz.nextalone.nagram.NaConfig;
@@ -25,13 +25,13 @@ public final class FilterPrefsMigrator {
 
     private static final String MIGRATION_PREFS = "ayu_filter_migration";
     private static final String KEY_DONE = "jsonToRoomDone";
-    private static final int MIGRATION_VERSION = 2;
+    private static final int MIGRATION_VERSION = 3;
     private static final String KEY_VERSION = "version";
 
     private FilterPrefsMigrator() {
     }
 
-    public static void runIfNeeded() {
+    public static synchronized void runIfNeeded() {
         Context ctx = ApplicationLoader.applicationContext;
         if (ctx == null) {
             return;
@@ -47,6 +47,7 @@ public final class FilterPrefsMigrator {
                 NaConfig.INSTANCE.init();
             } catch (Exception e) {
                 FileLog.e("FilterPrefsMigrator: NaConfig.init failed", e);
+                return;
             }
 
             RegexFilterDao dao = AyuData.getRegexFilterDao();
@@ -58,76 +59,84 @@ public final class FilterPrefsMigrator {
             String chatJson = NaConfig.INSTANCE.getRegexChatFiltersData().String();
             String exclusionsJson = NaConfig.INSTANCE.getRegexFiltersExcludedEntriesData().String();
 
-            int existingCount = dao.getCount();
-            if (existingCount > 0) {
-                prefs.edit().putBoolean(KEY_DONE, true).putInt(KEY_VERSION, MIGRATION_VERSION).apply();
+            RegexFilterDao.Snapshot legacy = parseLegacy(sharedJson, chatJson, exclusionsJson);
+            if (!dao.migrateLegacy(legacy.filters, legacy.exclusions)) {
                 return;
             }
-
-            Gson gson = new Gson();
-
-            ArrayList<LegacyFilterModel> shared = readList(gson, sharedJson, new TypeToken<ArrayList<LegacyFilterModel>>(){}.getType());
-            if (shared != null) {
-                for (LegacyFilterModel m : shared) {
-                    if (m == null) continue;
-                    RegexFilter row = new RegexFilter();
-                    row.id = !isEmpty(m.id) ? m.id : UUID.randomUUID().toString();
-                    row.text = m.regex;
-                    row.dialogId = null;
-                    row.enabled = m.enabled;
-                    row.caseInsensitive = m.caseInsensitive;
-                    row.reversed = m.reversed;
-                    dao.insert(row);
-                }
+            if (!prefs.edit().putBoolean(KEY_DONE, true).putInt(KEY_VERSION, MIGRATION_VERSION).commit()) {
+                FileLog.e("FilterPrefsMigrator: completion marker could not be saved; migration will retry");
+                return;
             }
-
-            ArrayList<LegacyChatFilterEntry> chats = readList(gson, chatJson, new TypeToken<ArrayList<LegacyChatFilterEntry>>(){}.getType());
-            if (chats != null) {
-                for (LegacyChatFilterEntry entry : chats) {
-                    if (entry == null || entry.filters == null) continue;
-                    for (LegacyFilterModel m : entry.filters) {
-                        if (m == null) continue;
-                        RegexFilter row = new RegexFilter();
-                        row.id = !isEmpty(m.id) ? m.id : UUID.randomUUID().toString();
-                        row.text = m.regex;
-                        row.dialogId = entry.dialogId;
-                        row.enabled = m.enabled;
-                        row.caseInsensitive = m.caseInsensitive;
-                        row.reversed = m.reversed;
-                        dao.insert(row);
-                    }
-                }
-            }
-
-            ArrayList<LegacyExcludedFilterEntry> exclusions = readList(gson, exclusionsJson, new TypeToken<ArrayList<LegacyExcludedFilterEntry>>(){}.getType());
-            if (exclusions != null) {
-                for (LegacyExcludedFilterEntry e : exclusions) {
-                    if (e == null || e.dialogId == 0L || isEmpty(e.filterId)) continue;
-                    RegexFilterGlobalExclusion row = new RegexFilterGlobalExclusion();
-                    row.dialogId = e.dialogId;
-                    row.filterId = e.filterId;
-                    dao.insertExclusion(row);
-                }
-            }
-
-            prefs.edit().putBoolean(KEY_DONE, true).putInt(KEY_VERSION, MIGRATION_VERSION).apply();
             FileLog.d("FilterPrefsMigrator: legacy JSON filters imported into Room");
         } catch (Exception e) {
             FileLog.e("FilterPrefsMigrator: migration failed", e);
         }
     }
 
+    static RegexFilterDao.Snapshot parseLegacy(String sharedJson, String chatJson, String exclusionsJson) {
+        Gson gson = new Gson();
+        ArrayList<RegexFilter> filters = new ArrayList<>();
+        ArrayList<RegexFilterGlobalExclusion> exclusionRows = new ArrayList<>();
+        ArrayList<LegacyFilterModel> shared = readList(gson, sharedJson, new TypeToken<ArrayList<LegacyFilterModel>>(){}.getType());
+        if (shared != null) {
+            for (LegacyFilterModel model : shared) {
+                if (model != null && model.regex != null) filters.add(legacyRow(model, null));
+            }
+        }
+        ArrayList<LegacyChatFilterEntry> chats = readList(gson, chatJson, new TypeToken<ArrayList<LegacyChatFilterEntry>>(){}.getType());
+        if (chats != null) {
+            for (LegacyChatFilterEntry entry : chats) {
+                if (entry == null || entry.filters == null) continue;
+                for (LegacyFilterModel model : entry.filters) {
+                    if (model != null && model.regex != null) filters.add(legacyRow(model, entry.dialogId));
+                }
+            }
+        }
+        ArrayList<LegacyExcludedFilterEntry> exclusions = readList(gson, exclusionsJson, new TypeToken<ArrayList<LegacyExcludedFilterEntry>>(){}.getType());
+        if (exclusions != null) {
+            for (LegacyExcludedFilterEntry entry : exclusions) {
+                if (entry == null || entry.dialogId == 0L || isEmpty(entry.filterId)) continue;
+                RegexFilterGlobalExclusion row = new RegexFilterGlobalExclusion();
+                row.dialogId = entry.dialogId;
+                row.filterId = entry.filterId;
+                exclusionRows.add(row);
+            }
+        }
+        return new RegexFilterDao.Snapshot(filters, exclusionRows);
+    }
+
+    private static RegexFilter legacyRow(LegacyFilterModel model, Long dialogId) {
+        RegexFilter row = new RegexFilter();
+        row.id = legacyId(model, dialogId);
+        row.text = model.regex;
+        row.dialogId = dialogId;
+        row.enabled = legacyEnabled(model, dialogId == null ? 0L : dialogId);
+        row.caseInsensitive = model.caseInsensitive;
+        row.reversed = model.reversed;
+        return row;
+    }
+
     private static <T> ArrayList<T> readList(Gson gson, String json, Type type) {
         if (isEmpty(json)) {
             return null;
         }
-        try {
-            ArrayList<T> list = gson.fromJson(json, type);
-            return list;
-        } catch (Exception e) {
-            FileLog.e("FilterPrefsMigrator.readList", e);
-            return null;
-        }
+        // Parse all inputs before starting the transaction. Invalid JSON must not
+        // mark a partial migration complete.
+        return gson.fromJson(json, type);
+    }
+
+    private static String legacyId(LegacyFilterModel model, Long dialogId) {
+        if (!isEmpty(model.id)) return model.id;
+        String key = "legacy-filter:" + dialogId + ":" + model.caseInsensitive + ":"
+                + model.reversed + ":" + model.regex;
+        return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private static boolean legacyEnabled(LegacyFilterModel model, long dialogId) {
+        if (model.enabledGroups == null && model.disabledGroups == null) return model.enabled;
+        boolean defaultEnabled = model.enabledGroups != null && model.enabledGroups.contains(0L);
+        return defaultEnabled ? model.disabledGroups == null || !model.disabledGroups.contains(dialogId)
+                : model.enabledGroups != null && model.enabledGroups.contains(dialogId);
     }
 
     private static boolean isEmpty(String s) {

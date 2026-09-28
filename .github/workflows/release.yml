@@ -8,9 +8,18 @@ on:
       - '**.md'
       - '.github/workflows/sync-upstream.yml'
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact rebased commit to build (set by upstream sync)
+        required: false
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: nooagram-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -26,6 +35,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          fetch-depth: 0
           submodules: recursive
 
       - name: Set up JDK
@@ -73,21 +84,24 @@ jobs:
         run: printf '%s' "$NOOAGRAM_KEYSTORE_BASE64" | base64 -d > TMessagesProj/release.keystore
 
       - name: Prepare version
+        shell: pwsh
         run: |
-          NOOAGRAM_RUN="${{ github.run_number }}"
-          UPSTREAM_TAG=$(gh release view --repo Keeperorowner/NagramXF --json tagName --jq .tagName)
-          APP_VERSION_NAME=$(sed -n 's/^APP_VERSION_NAME=//p' gradle.properties | head -n1 | tr -d '\r')
-          NOOAGRAM_VERSION_CODE=$((125000000 + NOOAGRAM_RUN))
-          NOOAGRAM_VERSION="1.1.2-${APP_VERSION_NAME}.${UPSTREAM_TAG}"
-          sed -i "s#^def verName = .*#def verName = \"${NOOAGRAM_VERSION}\"#" TMessagesProj/build.gradle
-          sed -i "s#^def verCode = .*#def verCode = ${NOOAGRAM_VERSION_CODE}#" TMessagesProj/build.gradle
-          {
-            echo "APP_VERSION_NAME=${APP_VERSION_NAME}"
-            echo "UPSTREAM_TAG=${UPSTREAM_TAG}"
-            echo "NOOAGRAM_RUN=${NOOAGRAM_RUN}"
-            echo "NOOAGRAM_VERSION_CODE=${NOOAGRAM_VERSION_CODE}"
-            echo "NOOAGRAM_VERSION=${NOOAGRAM_VERSION}"
-          } >> "$GITHUB_ENV"
+          . ./Tools/nooagram-release.ps1
+          $version = Get-NooagramVersion -RepositoryPath . -RunNumber ([long]$env:GITHUB_RUN_NUMBER)
+          $version | ConvertTo-Json | Set-Content -LiteralPath release-version.json -Encoding utf8
+          @(
+            "UPSTREAM_TAG=$($version.UpstreamTag)"
+            "NOOAGRAM_VERSION_CODE=$($version.VersionCode)"
+            "NOOAGRAM_VERSION_NAME=$($version.VersionName)"
+            "COMMIT_ID=$($version.Commit)"
+          ) | Add-Content -LiteralPath $env:GITHUB_ENV
+
+      - name: Test release metadata
+        shell: pwsh
+        run: ./Tools/test-nooagram-release.ps1
+
+      - name: Test normal debug regressions
+        run: ./gradlew :TMessagesProj:testNormalDebugUnitTest
 
       - name: Build release APKs
         env:
@@ -96,117 +110,49 @@ jobs:
           BUILD_TIMESTAMP: ${{ vars.NOOAGRAM_BUILD_TIMESTAMP }}
         run: |
           export BUILD_TIMESTAMP="${BUILD_TIMESTAMP:-$(date +%s)}"
-          export COMMIT_ID="${GITHUB_SHA}"
           ./gradlew TMessagesProj:assembleNormalRelease --build-cache
 
       - name: Collect APKs
+        shell: pwsh
         run: |
-          OUT="TMessagesProj/build/outputs/apk/normal/release"
-          APK64_PATH=$(find "$OUT" -name '*arm64-v8a*.apk' -print -quit)
-          APK32_PATH=$(find "$OUT" -name '*armeabi-v7a*.apk' -print -quit)
-          if [ -z "$APK64_PATH" ]; then
-            echo "No arm64-v8a APK found" >&2
-            exit 1
-          fi
-          VERSION="${{ env.NOOAGRAM_VERSION }}"
-          cp "$APK64_PATH" "Nooagram-v${VERSION}-arm64-v8a.apk"
-          if [ -n "$APK32_PATH" ]; then
-            cp "$APK32_PATH" "Nooagram-v${VERSION}-armeabi-v7a.apk"
-          fi
-          sha256sum "Nooagram-v${VERSION}-arm64-v8a.apk" > SHA256SUMS.txt
-          {
-            echo "APK64=Nooagram-v${VERSION}-arm64-v8a.apk"
-            if [ -n "$APK32_PATH" ]; then
-              echo "APK32=Nooagram-v${VERSION}-armeabi-v7a.apk"
-            fi
-          } >> "$GITHUB_ENV"
+          . ./Tools/nooagram-release.ps1
+          $version = Get-Content -LiteralPath release-version.json -Raw | ConvertFrom-Json
+          $timestamp = [long](git show -s --format=%ct HEAD)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read build timestamp.' }
+          $changelog = git log -1 --format=%s
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read changelog.' }
+          Export-NooagramReleaseAssets -OutputDirectory TMessagesProj/build/outputs/apk/normal/release `
+            -Destination release-assets -Repository $env:GITHUB_REPOSITORY -Version $version `
+            -Timestamp $timestamp -Changelog $changelog
 
       - name: Publish GitHub release
         run: |
-          VERSION="${{ env.NOOAGRAM_VERSION }}"
+          VERSION="$NOOAGRAM_VERSION_NAME"
           TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Refusing to overwrite an existing release: $TAG" >&2
+            exit 1
+          fi
+          # Concurrency is not FIFO: never make a lower versionCode the latest release.
+          LATEST_TAG=$(gh release view --json tagName --jq .tagName)
+          mkdir previous-release
+          gh release download "$LATEST_TAG" --pattern update.json --dir previous-release
+          PREVIOUS_CODE=$(jq -er '.version_code | numbers' previous-release/update.json)
+          if [ "$NOOAGRAM_VERSION_CODE" -le "$PREVIOUS_CODE" ]; then
+            echo "Version code must exceed the latest release ($PREVIOUS_CODE); raise version_code_floor." >&2
+            exit 1
+          fi
           CHANGELOG_SUBJECT=$(git log -1 --format='%s')
           {
             echo "## Nooagram ${VERSION}"
             echo
-            echo "- NagramXF release tag: ${{ env.UPSTREAM_TAG }}"
+            echo "- NagramXF release tag: $UPSTREAM_TAG"
+            echo "- Build commit: $COMMIT_ID"
             echo "- ${CHANGELOG_SUBJECT}"
           } > release-notes.md
-          ASSETS=("${{ env.APK64 }}")
-          if [ -n "${{ env.APK32 }}" ]; then
-            ASSETS+=("${{ env.APK32 }}")
-          fi
-          publish_release() {
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" "${ASSETS[@]}" SHA256SUMS.txt --clobber
-              gh release edit "$TAG" --notes-file release-notes.md
-            else
-              gh release create "$TAG" \
-                --target "$GITHUB_SHA" \
-                --title "Nooagram ${VERSION}" \
-                --notes-file release-notes.md \
-                "${ASSETS[@]}" SHA256SUMS.txt
-            fi
-          }
-          published=0
-          for attempt in 1 2 3 4 5; do
-            if publish_release; then
-              published=1
-              break
-            fi
-            echo "GitHub release publish failed (attempt ${attempt}); retrying after server error."
-            sleep "$((attempt * 15))"
-          done
-          if [ "$published" -ne 1 ]; then
-            echo "GitHub release publish failed after 5 attempts." >&2
-            exit 1
-          fi
-
-      - name: Publish update manifest
-        run: |
-          VERSION="${{ env.NOOAGRAM_VERSION }}"
-          TAG="v${VERSION}"
-          APK64="${{ env.APK64 }}"
-          APK32="${{ env.APK32 }}"
-          SHA256=$(sha256sum "$APK64" | awk '{print $1}')
-          CHANGELOG=$(git log -1 --format='%s')
-          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/"
-          export VERSION NOOAGRAM_VERSION_CODE SHA256 CHANGELOG BASE_URL APK64 APK32
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.parse
-
-          manifest = {
-              "version": os.environ["VERSION"],
-              "version_code": int(os.environ["NOOAGRAM_VERSION_CODE"]),
-              "timestamp": int(__import__("time").time()),
-              "can_not_skip": False,
-              "changelog": os.environ["CHANGELOG"],
-              "download_url": os.environ["BASE_URL"] + urllib.parse.quote(os.environ["APK64"]),
-              "sha256": os.environ["SHA256"],
-              "size": os.path.getsize(os.environ["APK64"]),
-          }
-          if os.environ.get("APK32"):
-              manifest["download_url_32"] = os.environ["BASE_URL"] + urllib.parse.quote(os.environ["APK32"])
-              manifest["size_32"] = os.path.getsize(os.environ["APK32"])
-
-          with open("update.json", "w", encoding="utf-8") as stream:
-              json.dump(manifest, stream, ensure_ascii=False, indent=2)
-          PY
-          upload_manifest() {
-            gh release upload "$TAG" update.json --clobber
-          }
-          manifest_uploaded=0
-          for attempt in 1 2 3 4 5; do
-            if upload_manifest; then
-              manifest_uploaded=1
-              break
-            fi
-            echo "Update manifest upload failed (attempt ${attempt}); retrying after server error."
-            sleep "$((attempt * 15))"
-          done
-          if [ "$manifest_uploaded" -ne 1 ]; then
-            echo "Update manifest upload failed after 5 attempts." >&2
-            exit 1
-          fi
+          gh release create "$TAG" --draft \
+            --target "$COMMIT_ID" \
+            --title "Nooagram ${VERSION}" \
+            --notes-file release-notes.md \
+            release-assets/*.apk release-assets/SHA256SUMS.txt release-assets/update.json
+          gh release edit "$TAG" --draft=false --latest
