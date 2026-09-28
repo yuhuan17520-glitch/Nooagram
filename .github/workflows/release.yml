@@ -39,6 +39,14 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Fetch pinned upstream tag
+        run: |
+          TAG=$(sed -n 's/.*"upstream_tag"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' nooagram-version.json)
+          COMMIT=$(sed -n 's/.*"upstream_commit"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' nooagram-version.json)
+          test -n "$TAG" && test -n "$COMMIT"
+          git fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$COMMIT"
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
