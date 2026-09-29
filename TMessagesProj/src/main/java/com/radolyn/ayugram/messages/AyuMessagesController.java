@@ -102,7 +102,13 @@ public class AyuMessagesController {
     }
 
     private static File getDefaultAttachmentsPath() {
-        return new File(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), AyuConstants.APP_NAME), attachmentsSubfolder);
+        return AyuAttachmentPaths.defaultParent(
+                NekoConfig.enableCustomSavePath.Bool(),
+                NekoConfig.getCustomSavePath(),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                ApplicationLoader.applicationContext == null ? null
+                        : ApplicationLoader.applicationContext.getExternalFilesDir(null),
+                ApplicationLoader.getFilesDirFixed());
     }
 
     private static File resolveConfiguredAttachmentsParent() {
