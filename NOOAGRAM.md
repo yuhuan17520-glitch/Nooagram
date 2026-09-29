@@ -25,7 +25,7 @@ The `assets` map contains architecture-specific URLs, sizes and checksums. Legac
 
 `Tools/build-nooagram.ps1` uses the same version source as CI and checks the generated APK metadata. Supply a larger `-LocalVersionCode` for a subsequent local delivery. The package remains `fork.yuhuan.nooagram` and signed updates preserve app data.
 
-The version format is `1.2.0-12.10.1.1251+125000043`: app version, pinned upstream version and tag, then Android build code as SemVer build metadata. Commit provenance is recorded separately.
+The version format is `1.2.1-12.10.1.1251+125000043`: app version, pinned upstream version and tag, then Android build code as SemVer build metadata. Commit provenance is recorded separately.
 
 ## Attachment storage
 

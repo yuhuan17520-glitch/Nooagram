@@ -66,13 +66,13 @@ Nooagram automatically rebases onto the latest release tag of [Nagram XF](https:
 Nooagram follows Semantic Versioning 2.0.0. The version name uses the format:
 
 ```text
-1.2.0-<NagramXF version>.<NagramXF release tag>+<Android build code>
+1.2.1-<NagramXF version>.<NagramXF release tag>+<Android build code>
 ```
 
 For example:
 
 ```text
-1.2.0-12.10.1.1251+125000043
+1.2.1-12.10.1.1251+125000043
 ```
 
 `nooagram-version.json` records the app version and the exact upstream release commit. Build metadata keeps successive deliveries distinct without changing the upstream version label. Local and CI builds use the same source; existing releases are never overwritten.
