@@ -51,15 +51,15 @@ public class UserConfig {
 package org.telegram.messenger;
 import java.util.*;
 public class NotificationCenter {
- public static final int appDidLogout = 1, regexFiltersUpdated = 2, blockedUsersDidLoad = 3;
+ public static final int appDidLogout = 1, regexFiltersUpdated = 2, blockedUsersDidLoad = 3, messagesDeleted = 4, replaceMessagesObjects = 5;
  public interface NotificationCenterDelegate { void didReceivedNotification(int id, int account, Object... args); }
  public static final NotificationCenter[] instances = {new NotificationCenter(0), new NotificationCenter(1)};
  final int account; final Map<Integer, List<NotificationCenterDelegate>> observers = new HashMap<>();
  NotificationCenter(int account) { this.account = account; }
  public static NotificationCenter getInstance(int account) { return instances[account]; }
  public void addObserver(NotificationCenterDelegate observer, int id) { observers.computeIfAbsent(id, k -> new ArrayList<>()).add(observer); }
- public void postNotificationName(int id) {
-  for (var observer : new ArrayList<>(observers.getOrDefault(id, List.of()))) observer.didReceivedNotification(id, account);
+ public void postNotificationName(int id, Object... args) {
+  for (var observer : new ArrayList<>(observers.getOrDefault(id, List.of()))) observer.didReceivedNotification(id, account, args);
  }
 }
 '@
@@ -78,7 +78,7 @@ import java.util.*;
 public class TLRPC {
  public static class Message {
   public int id, date, edit_date, send_state; public long dialog_id;
-  public boolean unread, out; public Object action; public Reply reply_to; public Message replyMessage;
+  public boolean unread, out, hide; public Object action; public Reply reply_to; public Message replyMessage;
   public static Message TLdeserialize(NativeByteBuffer data, int constructor, boolean exception) { return data.message; }
   public void readAttachPath(NativeByteBuffer data, long userId) {}
  }
@@ -87,7 +87,7 @@ public class TLRPC {
  public static class TL_messageActionChatMigrateTo {}
  public static class TL_messageActionChannelCreate {}
  public static class User {}
- public static class Chat { public boolean megagroup = true; }
+ public static class Chat { public boolean megagroup = true, channel = true; }
  public static class InputPeer { public long dialog; }
  public static class TL_messages_getHistory { public InputPeer peer; public int limit, offset_id; }
  public static class messages_Messages {
@@ -121,6 +121,7 @@ package org.telegram.messenger;
 import org.telegram.tgnet.TLRPC;
 public class MessageObject {
  public final int currentAccount; public final TLRPC.Message messageOwner;
+ public boolean skipAyuFiltering;
  public MessageObject(int account, TLRPC.Message message, boolean layout, boolean media) { currentAccount = account; messageOwner = message; }
  public int getId() { return messageOwner.id; }
  public long getDialogId() { return messageOwner.dialog_id; }
@@ -130,7 +131,10 @@ public class MessageObject {
     'org/telegram/messenger/ChatObject.java' = @'
 package org.telegram.messenger;
 import org.telegram.tgnet.TLRPC;
-public class ChatObject { public static boolean isMegagroup(TLRPC.Chat chat) { return chat != null && chat.megagroup; } }
+public class ChatObject {
+ public static boolean isMegagroup(TLRPC.Chat chat) { return chat != null && chat.megagroup; }
+ public static boolean isChannel(TLRPC.Chat chat) { return chat != null && chat.channel; }
+}
 '@
     'org/telegram/messenger/DialogObject.java' = @'
 package org.telegram.messenger;
@@ -145,7 +149,7 @@ public class MessagesController {
  public static final MessagesController instance = new MessagesController();
  public final TLRPC.Chat chat = new TLRPC.Chat();
  public static MessagesController getInstance(int account) { return instance; }
- public TLRPC.Chat getChat(long id) { return chat; }
+ public TLRPC.Chat getChat(long id) { return id > 0 ? chat : null; }
  public void putUsers(ArrayList<TLRPC.User> users, boolean fromCache) {}
  public void putChats(ArrayList<TLRPC.Chat> chats, boolean fromCache) {}
  public TLRPC.InputPeer getInputPeer(long dialog) { var peer = new TLRPC.InputPeer(); peer.dialog = dialog; return peer; }
@@ -238,7 +242,7 @@ public class AyuFilter {
  public static boolean hideRegex = true, hideBlocked = true;
  public static boolean shouldHideFilteredMessages() { return hideRegex; }
  public static boolean shouldHideIgnoredBlockedMessages() { return hideBlocked; }
- public static boolean isFiltered(MessageObject message, Object group) { return regex.contains(message.getId()); }
+ public static boolean isFiltered(MessageObject message, Object group) { return !message.skipAyuFiltering && regex.contains(message.getId()); }
  public static boolean isIgnoredBlockedMessage(MessageObject message) { return blocked.contains(message.getId()); }
 }
 '@
@@ -253,8 +257,12 @@ public class DialogCell {
  public boolean isAttachedToWindow() { return attached; }
  public void refreshFilteredPreview() {
   refreshes++;
-  applied = NooagramDialogPreviewFilter.isHidden(account, dialog, source)
-   ? NooagramDialogPreviewFilter.resolve(this, account, dialog, source) : source;
+  if (NooagramDialogPreviewFilter.isHidden(account, dialog, source)) {
+   applied = NooagramDialogPreviewFilter.resolve(this, account, dialog, source);
+  } else {
+   applied = source;
+   NooagramDialogPreviewFilter.rememberVisible(account, dialog, source);
+  }
  }
 }
 '@

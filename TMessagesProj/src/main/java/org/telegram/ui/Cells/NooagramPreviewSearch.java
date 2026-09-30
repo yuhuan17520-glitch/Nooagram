@@ -66,6 +66,11 @@ final class NooagramPreviewSearch {
         if (loading || now < retryAt) {
             return 0;
         }
+        // The cap bounds one pass, not the entire lifetime of this source message.
+        // Keep the offset so a later pass can reach older, unfiltered messages.
+        if (needsHistoryContinuation()) {
+            historyPages = 0;
+        }
         loading = true;
         return ++token;
     }
@@ -87,10 +92,19 @@ final class NooagramPreviewSearch {
     void invalidate() {
         ++token;
         loading = false;
+        retryAt = 0;
     }
 
     boolean canLoadHistory() {
         return !historyEnd && historyPages < MAX_HISTORY_PAGES;
+    }
+
+    boolean needsHistoryContinuation() {
+        return !historyEnd && historyPages >= MAX_HISTORY_PAGES;
+    }
+
+    static int previewDate(int previewDate, int sourceDate, int dialogDate) {
+        return previewDate > 0 ? previewDate : sourceDate > 0 ? sourceDate : Math.max(0, dialogDate);
     }
 
     int historyOffset() {

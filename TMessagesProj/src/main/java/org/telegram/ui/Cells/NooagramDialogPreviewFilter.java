@@ -19,28 +19,118 @@ import org.telegram.tgnet.TLRPC;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import tw.nekomimi.nekogram.filters.AyuFilter;
 
 final class NooagramDialogPreviewFilter {
     private static final int MAX_STATES = 256;
+    private static final int MAX_REMEMBERED_MESSAGES = 4;
+    static final int SEARCHING = 0;
+    static final int UNAVAILABLE = 1;
+    static final int EXHAUSTED = 2;
     private static final long REQUEST_TIMEOUT_MS = 30000;
     // These collections and request transitions are confined to the UI thread.
     private static final Map<NooagramPreviewSearch.Key, State> STATES = new LinkedHashMap<>(64, 0.75f, true);
+    private static final Map<NooagramPreviewSearch.Key, ArrayList<MessageObject>> VISIBLE_PREVIEWS =
+            new LinkedHashMap<>(64, 0.75f, true);
     private static final Account[] ACCOUNTS = new Account[UserConfig.MAX_ACCOUNT_COUNT];
     private static long nextGeneration;
 
     private NooagramDialogPreviewFilter() {}
 
     static boolean isHidden(int account, long dialogId, MessageObject message) {
-        return message != null && (
-                AyuFilter.shouldHideIgnoredBlockedMessages()
+        if (message == null || message.messageOwner == null) {
+            return false;
+        }
+        if (message.messageOwner.hide) {
+            return true;
+        }
+        // A chat's temporary "show filtered" flag must not bypass dialog filtering.
+        boolean skipFiltering = message.skipAyuFiltering;
+        try {
+            message.skipAyuFiltering = false;
+            return AyuFilter.shouldHideIgnoredBlockedMessages()
                         && ChatObject.isMegagroup(MessagesController.getInstance(account).getChat(-dialogId))
                         && AyuFilter.isIgnoredBlockedMessage(message)
-                || AyuFilter.shouldHideFilteredMessages() && AyuFilter.isFiltered(message, null));
+                    || AyuFilter.shouldHideFilteredMessages() && AyuFilter.isFiltered(message, null);
+        } finally {
+            message.skipAyuFiltering = skipFiltering;
+        }
+    }
+
+    static void rememberVisible(int account, long dialogId, MessageObject message) {
+        Account owner = account(account);
+        if (owner.userId == 0 || !validMessage(account, dialogId, message) || isHidden(account, dialogId, message)) {
+            return;
+        }
+        NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
+        remember(key, message);
+        // A new visible top message makes an older filtered-source request obsolete.
+        State previous = STATES.remove(key);
+        if (previous != null) {
+            previous.dispose();
+        }
+    }
+
+    private static boolean validMessage(int account, long dialogId, MessageObject message) {
+        return message != null && message.messageOwner != null
+                && !(message.messageOwner instanceof TLRPC.TL_messageEmpty)
+                && message.messageOwner.date > 0 && message.getId() != Integer.MAX_VALUE
+                && message.currentAccount == account && message.getDialogId() == dialogId;
+    }
+
+    private static void remember(NooagramPreviewSearch.Key key, MessageObject message) {
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+        if (remembered == null) {
+            remembered = new ArrayList<>();
+            VISIBLE_PREVIEWS.put(key, remembered);
+        }
+        remembered.removeIf(previous -> previous.getId() == message.getId());
+        remembered.add(message);
+        remembered.sort((left, right) -> {
+            int date = Integer.compare(right.messageOwner.date, left.messageOwner.date);
+            return date != 0 ? date : Integer.compare(right.getId(), left.getId());
+        });
+        while (remembered.size() > MAX_REMEMBERED_MESSAGES) {
+            remembered.remove(remembered.size() - 1);
+        }
+        if (VISIBLE_PREVIEWS.size() > MAX_STATES) {
+            Iterator<NooagramPreviewSearch.Key> iterator = VISIBLE_PREVIEWS.keySet().iterator();
+            iterator.next();
+            iterator.remove();
+        }
+    }
+
+    private static void forget(NooagramPreviewSearch.Key key, int messageId) {
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+        if (remembered != null) {
+            remembered.removeIf(message -> message.getId() == messageId);
+            if (remembered.isEmpty()) {
+                VISIBLE_PREVIEWS.remove(key);
+            }
+        }
+    }
+
+    private static MessageObject rememberedPreview(State state) {
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(state.key);
+        if (remembered == null) {
+            return null;
+        }
+        remembered.removeIf(message -> !validMessage(state.key.account, state.key.dialogId, message)
+                || isHidden(state.key.account, state.key.dialogId, message));
+        return NooagramPreviewSearch.latestEligible(remembered, message -> eligible(state, message));
+    }
+
+    static int getStatus(int account, long dialogId) {
+        Account owner = account(account);
+        State state = STATES.get(new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId));
+        return state != null ? state.status : SEARCHING;
     }
 
     static MessageObject resolve(DialogCell cell, int account, long dialogId, MessageObject source) {
@@ -55,6 +145,7 @@ final class NooagramDialogPreviewFilter {
                 state.dispose();
             }
             state = new State(key, owner.loginTime, source);
+            state.replacement = rememberedPreview(state);
             STATES.put(key, state);
             if (STATES.size() > MAX_STATES) {
                 Iterator<State> iterator = STATES.values().iterator();
@@ -64,20 +155,23 @@ final class NooagramDialogPreviewFilter {
         }
         state.watch(cell);
         if (state.replacement != null && !eligible(state, state.replacement)) {
-            state.replacement = null;
+            forget(state.key, state.replacement.getId());
+            state.replacement = rememberedPreview(state);
+            state.clearRequest(true);
+            state.cancelScheduledRefresh();
+            state.search.invalidate();
         }
         long token = state.search.begin(SystemClock.elapsedRealtime());
         if (token != 0) {
+            state.status = SEARCHING;
+            state.cancelScheduledRefresh();
             loadLocal(state, token, 0, 0, 0);
         }
         return state.replacement;
     }
 
     private static boolean eligible(State state, MessageObject candidate) {
-        return candidate != null && candidate.messageOwner != null
-                && !(candidate.messageOwner instanceof TLRPC.TL_messageEmpty)
-                && candidate.currentAccount == state.key.account
-                && candidate.getDialogId() == state.key.dialogId
+        return validMessage(state.key.account, state.key.dialogId, candidate)
                 && candidate.getId() != state.search.sourceId
                 && !isHidden(state.key.account, state.key.dialogId, candidate);
     }
@@ -92,6 +186,8 @@ final class NooagramDialogPreviewFilter {
             center.addObserver(owner, NotificationCenter.appDidLogout);
             center.addObserver(owner, NotificationCenter.regexFiltersUpdated);
             center.addObserver(owner, NotificationCenter.blockedUsersDidLoad);
+            center.addObserver(owner, NotificationCenter.messagesDeleted);
+            center.addObserver(owner, NotificationCenter.replaceMessagesObjects);
         }
         if (owner.userId != config.getClientUserId() || owner.loginTime != config.loginTime) {
             owner.reset(false);
@@ -221,6 +317,9 @@ final class NooagramDialogPreviewFilter {
                     Log.e("NooagramPreview", "Cannot recheck preview replacement", error);
                     finish(state, token, null, true);
                     return;
+                }
+                if (result == null) {
+                    forget(state.key, state.replacement.getId());
                 }
                 state.replacement = result;
                 if (result == null && !DialogObject.isEncryptedDialog(state.key.dialogId) && state.search.canLoadHistory()) {
@@ -415,14 +514,25 @@ final class NooagramDialogPreviewFilter {
         if (!failed || state.replacement == null || !eligible(state, state.replacement)) {
             state.replacement = result;
         }
+        if (state.replacement != null) {
+            remember(state.key, state.replacement);
+        }
+        state.status = failed ? UNAVAILABLE
+                : state.replacement == null && state.search.needsHistoryContinuation() ? SEARCHING : EXHAUSTED;
         // Complete shared state even if every waiting cell was rebound or destroyed.
         refresh(state);
-        if (failed && state.search.shouldRetryAutomatically()) {
-            AndroidUtilities.runOnUIThread(() -> {
-                if (state.sessionCurrent() && STATES.get(state.key) == state) {
+        boolean retryFailure = failed && state.search.shouldRetryAutomatically();
+        boolean continueHistory = !failed && state.replacement == null && state.search.needsHistoryContinuation();
+        if (retryFailure || continueHistory) {
+            state.cancelScheduledRefresh();
+            state.scheduledRefresh = () -> {
+                state.scheduledRefresh = null;
+                if (state.sessionCurrent() && STATES.get(state.key) == state && state.hasAttachedCells()) {
                     refresh(state);
                 }
-            }, NooagramPreviewSearch.RETRY_MS);
+            };
+            AndroidUtilities.runOnUIThread(state.scheduledRefresh,
+                    retryFailure ? NooagramPreviewSearch.RETRY_MS : NooagramPreviewSearch.REFRESH_MS);
         }
     }
 
@@ -436,6 +546,91 @@ final class NooagramDialogPreviewFilter {
         }
     }
 
+    private static void invalidateEdited(int account, Object[] args) {
+        if (args.length < 2 || !(args[0] instanceof Number) || !(args[1] instanceof List<?>)
+                || args.length > 2 && Boolean.TRUE.equals(args[2])) {
+            return;
+        }
+        long dialogId = ((Number) args[0]).longValue();
+        Account owner = account(account);
+        NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
+        Set<Integer> ids = new HashSet<>();
+        for (Object replacement : (List<?>) args[1]) {
+            if (!(replacement instanceof MessageObject)) {
+                continue;
+            }
+            MessageObject message = (MessageObject) replacement;
+            if (!validMessage(account, dialogId, message)) {
+                continue;
+            }
+            ids.add(message.getId());
+            ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+            if (remembered != null && remembered.removeIf(previous -> previous.getId() == message.getId())) {
+                if (!isHidden(account, dialogId, message)) {
+                    remember(key, message);
+                }
+            }
+        }
+        State state = STATES.get(key);
+        if (state != null && (ids.contains(state.search.sourceId)
+                || state.replacement != null && ids.contains(state.replacement.getId()))) {
+            STATES.remove(key);
+            state.dispose();
+            AndroidUtilities.runOnUIThread(() -> refresh(state));
+        }
+    }
+
+    private static boolean isDeletedDialog(int account, long dialogId, long channelId) {
+        return channelId != 0 ? dialogId == -channelId
+                : !ChatObject.isChannel(MessagesController.getInstance(account).getChat(-dialogId));
+    }
+
+    private static boolean invalidateDeleted(int account, Object[] args) {
+        if (args.length < 2 || !(args[0] instanceof List<?>) || !(args[1] instanceof Number)) {
+            return false;
+        }
+        if (args.length > 2 && Boolean.TRUE.equals(args[2])) {
+            return true; // Scheduled-message deletion does not affect the main dialog preview.
+        }
+        Set<Integer> ids = new HashSet<>();
+        for (Object id : (List<?>) args[0]) {
+            if (id instanceof Number) {
+                ids.add(((Number) id).intValue());
+            }
+        }
+        long channelId = ((Number) args[1]).longValue();
+        Iterator<Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>>> previews = VISIBLE_PREVIEWS.entrySet().iterator();
+        while (previews.hasNext()) {
+            Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>> entry = previews.next();
+            if (entry.getKey().account == account && isDeletedDialog(account, entry.getKey().dialogId, channelId)) {
+                entry.getValue().removeIf(message -> ids.contains(message.getId()));
+                if (entry.getValue().isEmpty()) {
+                    previews.remove();
+                }
+            }
+        }
+        ArrayList<State> removed = new ArrayList<>();
+        Iterator<State> states = STATES.values().iterator();
+        while (states.hasNext()) {
+            State state = states.next();
+            if (state.key.account == account && isDeletedDialog(account, state.key.dialogId, channelId)
+                    && (ids.contains(state.search.sourceId)
+                    || state.replacement != null && ids.contains(state.replacement.getId()))) {
+                state.dispose();
+                removed.add(state);
+                states.remove();
+            }
+        }
+        if (!removed.isEmpty()) {
+            AndroidUtilities.runOnUIThread(() -> {
+                for (State state : removed) {
+                    refresh(state);
+                }
+            });
+        }
+        return true;
+    }
+
     private static final class Account implements NotificationCenter.NotificationCenterDelegate {
         final int account;
         long userId;
@@ -447,7 +642,28 @@ final class NooagramDialogPreviewFilter {
         }
 
         void reset(boolean refresh) {
+            reset(refresh, refresh);
+        }
+
+        void reset(boolean refresh, boolean keepVisible) {
             generation = ++nextGeneration;
+            ArrayList<MessageObject> remembered = new ArrayList<>();
+            Iterator<Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>>> previews = VISIBLE_PREVIEWS.entrySet().iterator();
+            while (previews.hasNext()) {
+                Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>> entry = previews.next();
+                if (entry.getKey().account == account) {
+                    if (keepVisible && entry.getKey().userId == userId) {
+                        remembered.addAll(entry.getValue());
+                    }
+                    previews.remove();
+                }
+            }
+            for (MessageObject message : remembered) {
+                if (validMessage(account, message.getDialogId(), message)
+                        && !isHidden(account, message.getDialogId(), message)) {
+                    remember(new NooagramPreviewSearch.Key(account, userId, generation, message.getDialogId()), message);
+                }
+            }
             ArrayList<State> removed = new ArrayList<>();
             Iterator<State> iterator = STATES.values().iterator();
             while (iterator.hasNext()) {
@@ -469,7 +685,15 @@ final class NooagramDialogPreviewFilter {
 
         @Override
         public void didReceivedNotification(int id, int account, Object... args) {
-            reset(id != NotificationCenter.appDidLogout);
+            if (id == NotificationCenter.replaceMessagesObjects) {
+                invalidateEdited(account, args);
+                return;
+            }
+            if (id == NotificationCenter.messagesDeleted && invalidateDeleted(account, args)) {
+                return;
+            }
+            reset(id != NotificationCenter.appDidLogout,
+                    id == NotificationCenter.regexFiltersUpdated || id == NotificationCenter.blockedUsersDidLoad);
             if (id == NotificationCenter.appDidLogout) {
                 userId = 0;
             }
@@ -483,8 +707,10 @@ final class NooagramDialogPreviewFilter {
         final ArrayList<WeakReference<DialogCell>> cells = new ArrayList<>();
         volatile boolean disposed;
         MessageObject replacement;
+        int status = SEARCHING;
         int requestId;
         Runnable timeout;
+        Runnable scheduledRefresh;
 
         State(NooagramPreviewSearch.Key key, int loginTime, MessageObject source) {
             this.key = key;
@@ -511,6 +737,24 @@ final class NooagramDialogPreviewFilter {
             cells.add(new WeakReference<>(cell));
         }
 
+        boolean hasAttachedCells() {
+            for (WeakReference<DialogCell> reference : cells) {
+                DialogCell cell = reference.get();
+                if (cell != null && cell.isAttachedToWindow() && cell.getCurrentAccount() == key.account
+                        && cell.getDialogId() == key.dialogId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void cancelScheduledRefresh() {
+            if (scheduledRefresh != null) {
+                AndroidUtilities.cancelRunOnUIThread(scheduledRefresh);
+                scheduledRefresh = null;
+            }
+        }
+
         void clearRequest(boolean cancel) {
             if (cancel && requestId != 0) {
                 ConnectionsManager.getInstance(key.account).cancelRequest(requestId, true);
@@ -526,6 +770,7 @@ final class NooagramDialogPreviewFilter {
             disposed = true;
             search.invalidate();
             clearRequest(true);
+            cancelScheduledRefresh();
             replacement = null;
         }
     }

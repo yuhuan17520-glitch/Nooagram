@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="NooagramPreviewSearching">正在查找上一条未过滤消息…</string>
+    <string name="NooagramPreviewUnavailable">暂时无法加载上一条消息</string>
+    <string name="NooagramFilteredPreview">消息已过滤</string>
     <string name="NooagramRestoreLegacyPinned">恢复旧版置顶隐藏清单</string>
     <string name="NooagramRestoreLegacyPinnedInfo">旧版清单未记录账号归属。请确认以下聊天属于当前账号后再恢复。</string>
     <string name="XChannel">Nagram X 频道</string>

@@ -167,15 +167,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     public static final int SENT_STATE_PROGRESS = 0;
     public static final int SENT_STATE_SENT = 1;
     public static final int SENT_STATE_READ = 2;
-    private static final MessageObject[] filteredDummyMessages = new MessageObject[UserConfig.MAX_ACCOUNT_COUNT];
+    private MessageObject filteredPreviewPlaceholder;
 
-    static {
-        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
-            TLRPC.TL_message dummy = new TLRPC.TL_message();
-            dummy.id = Integer.MAX_VALUE;
-            filteredDummyMessages[i] = new MessageObject(i, dummy, false, false);
-        }
-    }
     public boolean drawAvatar = true;
     public boolean drawMonoforumAvatar = false;
     private boolean drawCommunityAvatar;
@@ -940,6 +933,27 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return currentAccount;
     }
 
+    private MessageObject getFilteredPreviewPlaceholder(MessageObject source, TLRPC.Dialog dialog) {
+        int date = NooagramPreviewSearch.previewDate(0, source.messageOwner.date, dialog.last_message_date);
+        int status = NooagramDialogPreviewFilter.getStatus(currentAccount, dialog.id);
+        String text = getString(status == NooagramDialogPreviewFilter.EXHAUSTED ? R.string.NooagramFilteredPreview
+                : status == NooagramDialogPreviewFilter.UNAVAILABLE ? R.string.NooagramPreviewUnavailable
+                : R.string.NooagramPreviewSearching);
+        // A placeholder belongs to this cell/dialog, never to every dialog in an account.
+        if (filteredPreviewPlaceholder == null || filteredPreviewPlaceholder.currentAccount != currentAccount
+                || filteredPreviewPlaceholder.getDialogId() != dialog.id
+                || filteredPreviewPlaceholder.messageOwner.date != date
+                || !TextUtils.equals(filteredPreviewPlaceholder.messageOwner.message, text)) {
+            TLRPC.TL_message placeholder = new TLRPC.TL_message();
+            placeholder.id = Integer.MAX_VALUE;
+            placeholder.dialog_id = dialog.id;
+            placeholder.date = date;
+            placeholder.message = text;
+            filteredPreviewPlaceholder = new MessageObject(currentAccount, placeholder, false, false);
+        }
+        return filteredPreviewPlaceholder;
+    }
+
     void refreshFilteredPreview() {
         updateHelper.lastDrawnMessageId = Long.MIN_VALUE;
         update(0, false);
@@ -1009,7 +1023,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         if (botVerification != null) {
             botVerification.attach();
         }
-        if (isDialogCell && message == filteredDummyMessages[currentAccount]) {
+        if (isDialogCell && filteredPreviewPlaceholder != null && message == filteredPreviewPlaceholder) {
             refreshFilteredPreview();
         }
     }
@@ -2142,7 +2156,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 timeString = LocaleController.stringForMessageListDate(draftMessage.date);
             } else if (lastMessageDate != 0) {
                 timeString = LocaleController.stringForMessageListDate(lastMessageDate);
-            } else if (message != null) {
+            } else if (message != null && message.messageOwner.date > 0) {
                 timeString = LocaleController.stringForMessageListDate(message.messageOwner.date);
             }
 
@@ -3333,10 +3347,12 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                             if (NooagramDialogPreviewFilter.isHidden(currentAccount, dialog.id, message)) {
                                 MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
                                 if (replacement == null) {
-                                    replacement = filteredDummyMessages[currentAccount];
+                                    replacement = getFilteredPreviewPlaceholder(message, dialog);
                                 }
                                 message = replacement;
                                 groupMessages = null;
+                            } else {
+                                NooagramDialogPreviewFilter.rememberVisible(currentAccount, dialog.id, message);
                             }
                         }
                         // Message filter end
@@ -5784,13 +5800,15 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         if (lastMessageDate == 0) {
             lastDate = message.messageOwner.date;
         }
-        String date = LocaleController.formatDateAudio(lastDate, true);
-        if (message.isOut()) {
-            sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, date));
-        } else {
-            sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, date));
+        if (lastDate > 0) {
+            String date = LocaleController.formatDateAudio(lastDate, true);
+            if (message.isOut()) {
+                sb.append(LocaleController.formatString("AccDescrSentDate", R.string.AccDescrSentDate, date));
+            } else {
+                sb.append(LocaleController.formatString("AccDescrReceivedDate", R.string.AccDescrReceivedDate, date));
+            }
+            sb.append(". ");
         }
-        sb.append(". ");
         if (chat != null && !message.isOut() && message.isFromUser() && message.messageOwner.action == null) {
             TLRPC.User fromUser = MessagesController.getInstance(currentAccount).getUser(message.messageOwner.from_id.user_id);
             if (fromUser != null) {

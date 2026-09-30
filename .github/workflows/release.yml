@@ -111,6 +111,10 @@ jobs:
       - name: Test normal debug regressions
         run: ./gradlew :TMessagesProj:testNormalDebugUnitTest
 
+      - name: Test dialog preview regressions
+        shell: pwsh
+        run: ./TMessagesProj/src/test/run-preview-regressions.ps1
+
       - name: Build release APKs
         env:
           LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}

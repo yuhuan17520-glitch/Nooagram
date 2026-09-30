@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="NooagramPreviewSearching">Finding the previous unfiltered message…</string>
+    <string name="NooagramPreviewUnavailable">Could not load the previous message</string>
+    <string name="NooagramFilteredPreview">Messages filtered</string>
     <string name="NooagramRestoreLegacyPinned">Restore old hidden pins list</string>
     <string name="NooagramRestoreLegacyPinnedInfo">The old list did not record its account owner. Restore the following chats only if they belong to this account.</string>
     <string name="NagramX" translatable="false">Nagram X</string>

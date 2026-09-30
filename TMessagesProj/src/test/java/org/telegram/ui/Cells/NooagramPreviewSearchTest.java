@@ -135,6 +135,56 @@ public class NooagramPreviewSearchTest {
     }
 
     @Test
+    public void pageBudgetRenewsWithoutResettingTheOlderOffset() {
+        NooagramPreviewSearch search = search();
+        long request = search.begin(0);
+        for (int page = 0; page < NooagramPreviewSearch.MAX_HISTORY_PAGES; page++) {
+            assertTrue(search.historyStored(request, 80, 1000 - page * 80));
+        }
+        assertFalse(search.canLoadHistory());
+        assertTrue(search.needsHistoryContinuation());
+        assertTrue(search.complete(request, 10, false));
+        assertEquals(0, search.begin(10));
+        int offset = search.historyOffset();
+        request = search.begin(10 + NooagramPreviewSearch.REFRESH_MS);
+        assertNotEquals(0, request);
+        assertTrue(search.canLoadHistory());
+        assertEquals(offset, search.historyOffset());
+        assertTrue(search.historyStored(request, 80, offset - 80));
+        assertEquals(offset - 80, search.historyOffset());
+    }
+
+    @Test
+    public void exhaustedHistoryDoesNotRestartAfterCooldown() {
+        NooagramPreviewSearch search = search();
+        long request = search.begin(0);
+        search.historyStored(request, 0, 0);
+        search.complete(request, 10, false);
+        assertFalse(search.needsHistoryContinuation());
+        assertNotEquals(0, search.begin(10 + NooagramPreviewSearch.REFRESH_MS));
+        assertFalse(search.canLoadHistory());
+    }
+
+    @Test
+    public void previewDateUsesRealSourceOrDialogDatesInsteadOfZero() {
+        assertEquals(100, NooagramPreviewSearch.previewDate(100, 200, 300));
+        assertEquals(200, NooagramPreviewSearch.previewDate(0, 200, 300));
+        assertEquals(300, NooagramPreviewSearch.previewDate(0, 0, 300));
+        assertEquals(0, NooagramPreviewSearch.previewDate(0, 0, 0));
+        assertEquals(0, NooagramPreviewSearch.previewDate(-1, -2, -3));
+    }
+
+    @Test
+    public void invalidatingAReplacementCanSearchImmediatelyInsteadOfWaitingForCooldown() {
+        NooagramPreviewSearch search = search();
+        long request = search.begin(0);
+        assertTrue(search.complete(request, 10, false));
+        assertEquals(0, search.begin(10));
+        search.invalidate();
+        assertNotEquals(0, search.begin(10));
+    }
+
+    @Test
     public void successfulCompletionDoesNotCreateARefreshLoop() {
         NooagramPreviewSearch search = search();
         long request = search.begin(0);
