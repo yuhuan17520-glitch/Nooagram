@@ -401,6 +401,7 @@ import tw.nekomimi.nekogram.RecentDialogsStore;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.MainTabsHelper;
 import tw.nekomimi.nekogram.filters.AyuFilter;
+import tw.nekomimi.nekogram.filters.NooagramChatRowVisibility;
 import tw.nekomimi.nekogram.filters.RegexChatFiltersListActivity;
 import tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity;
 import tw.nekomimi.nekogram.filters.RegexFilterEditActivity;
@@ -40976,60 +40977,26 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     messages = ChatActivity.this.messages;
                 }
-                // return messages.get(position - messagesStartRow).contentType;
-                // Message filter start
-                var msg = messages.get(position - messagesStartRow);
-                if (msg == null || msg.messageOwner != null && msg.messageOwner.hide) {
+                int messageIndex = position - messagesStartRow;
+                MessageObject msg = messages.get(messageIndex);
+                if (isMessageHiddenForAdapter(msg)) {
                     return -1000;
                 }
-                msg.skipAyuFiltering = !hideFilteredMessages;
-                if (msg.replyMessageObject != null) {
-                    msg.replyMessageObject.skipAyuFiltering = !hideFilteredMessages;
-                }
-                if (hideFilteredMessages) {
-                    if (AyuFilter.shouldHideIgnoredBlockedMessages() && ChatObject.isMegagroup(currentChat) && AyuFilter.isIgnoredBlockedMessage(msg)) {
-                        revealShowFilteredMenuItem();
-                        return -1000;
-                    }
-                    {
-                        var filterGroup = getGroup(msg.getGroupId());
-                        if (filterGroup == null) {
-                            filterGroup = getValidGroupedMessage(msg);
-                        }
-                        var filterMsg = filterGroup != null ? filterGroup.findPrimaryMessageObject() : null;
-                        if (filterMsg == null) {
-                            filterMsg = msg;
-                        }
-                        if (AyuFilter.shouldHideFilteredMessage(filterMsg, filterGroup)) {
-                            revealShowFilteredMenuItem();
-                            return -1000;
-                        }
-                    }
+                // Date rows are synthetic: keep them only while their day has visible content.
+                // Discussion headers and video-conversion notices also set isDateObject,
+                // but are not date separators.
+                if (msg.isDateObject && msg != replyMessageHeaderObject && !msg.isVideoConversionObject
+                        && !NooagramChatRowVisibility.hasVisibleMessageForDate(messages, messageIndex,
+                        reversed, this::isMessageHiddenForAdapter)) {
+                    return -1000;
                 }
                 if (msg.contentType == 2) { // ChatUnreadCell
-                    int scanIndex = position - messagesStartRow - 1;
                     boolean hasVisibleAfter = false;
-                    for (int i = scanIndex; i >= 0; i--) {
-                        var m = messages.get(i);
-                        if (m == null) continue;
-                        if (m.messageOwner != null && m.messageOwner.hide) {
+                    for (int i = messageIndex - 1; i >= 0; i--) {
+                        MessageObject candidate = messages.get(i);
+                        if (candidate == null || candidate.isDateObject || candidate.contentType == 2
+                                || isMessageHiddenForAdapter(candidate)) {
                             continue;
-                        }
-                        if (hideFilteredMessages) {
-                            if (AyuFilter.shouldHideIgnoredBlockedMessages() && ChatObject.isMegagroup(currentChat) && AyuFilter.isIgnoredBlockedMessage(m)) {
-                                continue;
-                            }
-                            var g = getGroup(m.getGroupId());
-                            if (g == null) {
-                                g = getValidGroupedMessage(m);
-                            }
-                            var fm = g != null ? g.findPrimaryMessageObject() : null;
-                            if (fm == null) {
-                                fm = m;
-                            }
-                            if (AyuFilter.shouldHideFilteredMessage(fm, g)) {
-                                continue;
-                            }
                         }
                         hasVisibleAfter = true;
                         break;
@@ -41039,7 +41006,6 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
                 return msg.contentType;
-                // Message filter end
             } else if (position == botInfoRow) {
                 return 3;
             } else if (position == userInfoRow) {
@@ -41050,6 +41016,37 @@ public class ChatActivity extends BaseFragment implements
                 return 8;
             }
             return 4;
+        }
+
+        private boolean isMessageHiddenForAdapter(MessageObject msg) {
+            if (msg == null || msg.messageOwner != null && msg.messageOwner.hide) {
+                return true;
+            }
+            msg.skipAyuFiltering = !hideFilteredMessages;
+            if (msg.replyMessageObject != null) {
+                msg.replyMessageObject.skipAyuFiltering = !hideFilteredMessages;
+            }
+            if (!hideFilteredMessages) {
+                return false;
+            }
+            if (AyuFilter.shouldHideIgnoredBlockedMessages() && ChatObject.isMegagroup(currentChat)
+                    && AyuFilter.isIgnoredBlockedMessage(msg)) {
+                revealShowFilteredMenuItem();
+                return true;
+            }
+            MessageObject.GroupedMessages group = getGroup(msg.getGroupId());
+            if (group == null) {
+                group = getValidGroupedMessage(msg);
+            }
+            MessageObject primary = group != null ? group.findPrimaryMessageObject() : null;
+            if (primary == null) {
+                primary = msg;
+            }
+            if (AyuFilter.shouldHideFilteredMessage(primary, group)) {
+                revealShowFilteredMenuItem();
+                return true;
+            }
+            return false;
         }
 
         @Override

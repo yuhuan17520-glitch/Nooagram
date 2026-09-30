@@ -27,12 +27,14 @@ $filterSources = @(
     'TMessagesProj/src/main/java/com/radolyn/ayugram/database/dao/RegexFilterDao.java',
     'TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilter.java',
     'TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/AyuFilterCache.java',
+    'TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/NooagramChatRowVisibility.java',
     'TMessagesProj/src/main/java/tw/nekomimi/nekogram/filters/RegexFiltersSettingActivity.java',
     'TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/MessageHelper.java',
     'TMessagesProj/src/main/java/tw/nekomimi/nekogram/helpers/NooagramQuickFilter.java',
     'TMessagesProj/src/test/java/com/radolyn/ayugram/database/dao/RegexFilterMergeTest.java',
     'TMessagesProj/src/test/java/com/radolyn/ayugram/database/FilterPrefsMigratorTest.java',
     'TMessagesProj/src/test/java/tw/nekomimi/nekogram/filters/AyuFilterCacheTest.java',
+    'TMessagesProj/src/test/java/tw/nekomimi/nekogram/filters/NooagramChatRowVisibilityTest.java',
     'TMessagesProj/src/test/java/tw/nekomimi/nekogram/helpers/MessageFilterTextTest.java',
     'TMessagesProj/src/test/java/tw/nekomimi/nekogram/helpers/NooagramQuickFilterTest.java'
 )
@@ -50,6 +52,7 @@ $filterRunArgs = Join-Path $filterOutput 'java.args'
     'com.radolyn.ayugram.database.dao.RegexFilterMergeTest',
     'com.radolyn.ayugram.database.FilterPrefsMigratorTest',
     'tw.nekomimi.nekogram.filters.AyuFilterCacheTest',
+    'tw.nekomimi.nekogram.filters.NooagramChatRowVisibilityTest',
     'tw.nekomimi.nekogram.helpers.MessageFilterTextTest',
     'tw.nekomimi.nekogram.helpers.NooagramQuickFilterTest'), [Text.UTF8Encoding]::new($false))
 & java ('@' + $filterRunArgs)
