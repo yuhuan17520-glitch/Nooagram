@@ -914,6 +914,7 @@ public class ChatActivity extends BaseFragment implements
     private int forceNextPinnedMessageId;
     private boolean forceScrollToFirst;
     private int pinnedJumpLoadIndex = -1;
+    private boolean suppressPinnedHeaderUpdate;
     private int messageJumpGeneration;
     private final HashSet<Integer> supersededMessageJumpLoads = new HashSet<>();
     private RecyclerView.ItemAnimator suspendedPinnedItemAnimator;
@@ -12616,7 +12617,6 @@ public class ChatActivity extends BaseFragment implements
                     forceNextPinnedMessageId = -forceNextPinnedMessageId;
                 }
                 scrollToMessageId(currentPinned, 0, true, 0, true, forceNextPinnedMessageId, null, null, null, true);
-                updateMessagesVisiblePart(false);
             }
         });
         pinnedMessageView.setEnabled(!isInPreviewMode());
@@ -17950,7 +17950,7 @@ public class ChatActivity extends BaseFragment implements
                 currentPinnedMessageId = previousPinnedMessageId;
             }
             boolean animated = (fromPullingDownTransition && fragmentView.getVisibility() == View.VISIBLE) || (openAnimationStartTime != 0 && SystemClock.elapsedRealtime() >= openAnimationStartTime + 150);
-            if (previousPinnedMessageId != currentPinnedMessageId) {
+            if (!suppressPinnedHeaderUpdate && previousPinnedMessageId != currentPinnedMessageId) {
                 int animateToNext;
                 if (previousPinnedMessageId == 0) {
                     animateToNext = 0;
@@ -17963,11 +17963,11 @@ public class ChatActivity extends BaseFragment implements
                 AndroidUtilities.runOnUIThread(() -> {
                     updatePinnedMessageView(animated, animateToNext);
                 });
-            } else if (isTopic && currentPinnedMessageId != 0 && (pinnedMessageView == null || pinnedMessageView.getTag() != null)) {
+            } else if (!suppressPinnedHeaderUpdate && isTopic && currentPinnedMessageId != 0 && (pinnedMessageView == null || pinnedMessageView.getTag() != null)) {
                 AndroidUtilities.runOnUIThread(() -> {
                     updatePinnedMessageView(animated, 0);
                 });
-            } else {
+            } else if (!suppressPinnedHeaderUpdate) {
                 updatePinnedListButton(animated);
             }
         }
@@ -18276,6 +18276,7 @@ public class ChatActivity extends BaseFragment implements
         postponedScrollMessageId = 0;
         postponedScrollIsCanceled = true;
         pinnedJumpLoadIndex = -1;
+        suppressPinnedHeaderUpdate = false;
         nextScrollToMessageId = 0;
     }
 
@@ -18310,8 +18311,17 @@ public class ChatActivity extends BaseFragment implements
         } finally {
             chatScrollHelperCallback.suppressPositionCorrection = false;
         }
-        if (itemAnimator != null) {
-            pinnedItemAnimatorRestore = androidx.core.view.OneShotPreDrawListener.add(chatListView, this::restorePinnedItemAnimator);
+        // The visible-part calculation depends on the final child geometry. Running it before
+        // the requested layout is drawn can briefly leave a message cell with stale clip bounds.
+        if (chatListView != null) {
+            pinnedItemAnimatorRestore = androidx.core.view.OneShotPreDrawListener.add(chatListView, () -> {
+                restorePinnedItemAnimator();
+                if (chatListView != null) {
+                    updateMessagesVisiblePart(false);
+                }
+                suppressPinnedHeaderUpdate = false;
+                updatePinnedMessageView(false, 0);
+            });
         }
     }
 
@@ -18334,6 +18344,7 @@ public class ChatActivity extends BaseFragment implements
         final int generation = ++messageJumpGeneration;
         cancelPendingMessageJump();
         restorePinnedItemAnimator();
+        suppressPinnedHeaderUpdate = pinnedJump;
         if (NotificationCenter.getInstance(currentAccount).isAnimationInProgress()) {
             nextScrollToMessageId = id;
             final int requestedMessageId = id;
@@ -23469,7 +23480,10 @@ public class ChatActivity extends BaseFragment implements
 
         if (postponedScroll && !fakePostponedScroll) {
             if (!universalNotify && chatAdapter != null) {
-                chatAdapter.notifyDataSetChanged(true);
+                // A pinned jump is completed synchronously below. Enabling the chat item animator
+                // while rebinding the loaded page leaves the old and new cell geometries visible
+                // for one frame, producing the stretched/overlapping flash on the target message.
+                chatAdapter.notifyDataSetChanged(!pinnedJump);
             }
             if (progressDialog != null) {
                 progressDialog.dismiss();
@@ -30572,6 +30586,9 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void updatePinnedMessageView(boolean animated, int animateToNext) {
+        if (suppressPinnedHeaderUpdate) {
+            return;
+        }
         if (currentEncryptedChat != null || chatMode != 0) {
             return;
         }
