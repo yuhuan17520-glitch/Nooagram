@@ -4,6 +4,7 @@ on:
     branches: [nooagram-nagram-migration]
     paths-ignore:
       - '**.md'
+      - 'nooagram-version.json'
       - 'Tools/nooagram-release.ps1'
       - 'Tools/test-nooagram-release.ps1'
       - '.github/workflows/release.yml'

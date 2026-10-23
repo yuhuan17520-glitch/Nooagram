@@ -6,5 +6,5 @@
   "upstream_commit": "87863c8a57854c739e1452e56591c07ea52415d3",
   "version_code_floor": 125001000,
   "previous_release_version_code": 125000081,
-  "migration_ready": false
+  "migration_ready": true
 }
