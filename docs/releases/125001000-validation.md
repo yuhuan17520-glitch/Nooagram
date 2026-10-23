@@ -53,3 +53,10 @@ SHA1   A112541EF0BDCF65D78004DF6CACE9C85F7D65DD
 - 未创建正式 release、未更新 latest/update.json、未改变默认 ayu 分支，未启用自动上游合并或自动发布。
 
 只有完成必要验证并审核剩余风险后才更新 migration_ready 并公开发布。不要为绕过闸门临时设为 true；不要用卸载正式版来解决升级失败。
+
+## 后续真机连接及发布流程准备
+
+- 前一部手机已确认旧正式版仍登录，但系统日志明确报告 Input event injection failed，未完成导出备份或安装。随后该设备断开。
+- 新连接设备 PMA110 / Android 17 安装的仍为旧正式版 125000081。系统目前因 1% 低电量进入应急保护模式，拒绝启动应用；等待充电后继续。本机没有覆盖该设备正式版，也没有导出其数据。
+- 新增正式 release 变体的三架构构建流程，以及更新清单、校验和和版本闸门的隔离测试。流程仅生成私有草稿，公开发布前仍需安装并测试实际最终 APK。真实 metadata 的 migration_ready 保持 false。
+- CarVoiceAttachmentTest 的两项 Windows 失败已获得明确 FileProvider 异常：配置根目录无法匹配 Windows 缓存路径。AndroidX core 1.16.0 的 belongsToRoot 使用硬编码斜杠拼接根目录，而 Windows canonical path 使用反斜杠。加入直接断言以显露异常，不修改生产 FileProvider。Linux CI 加入该组十项测试；结果待验证，不能据此宣称通过。其余五项原生环境失败也未改称通过。

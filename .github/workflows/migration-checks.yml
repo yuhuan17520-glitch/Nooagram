@@ -1,5 +1,12 @@
 name: Nooagram migration checks
 on:
+  push:
+    branches: [nooagram-nagram-migration]
+    paths:
+      - '.github/workflows/migration-checks.yml'
+      - '.github/workflows/release.yml'
+      - 'Tools/*nooagram-release.ps1'
+      - 'TMessagesProj/src/test/java/org/telegram/messenger/car/**'
   pull_request:
   workflow_dispatch:
 permissions:
@@ -28,8 +35,11 @@ jobs:
       - name: Validate upstream/version pin
         shell: pwsh
         run: ./Tools/check-nagram-migration.ps1
+      - name: Validate release assets and publication guard in isolated fixtures
+        shell: pwsh
+        run: ./Tools/test-nooagram-release.ps1
       - name: Compile Java/Kotlin and run migration unit tests
-        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --console=plain
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'org.telegram.messenger.car.CarVoiceAttachmentTest' --console=plain
       - name: Validate upstream proposal script without network or pushes
         run: node Tools/nagram-sync-regression/test.cjs
       - name: Validate release shrinking and reflection contracts without packaging

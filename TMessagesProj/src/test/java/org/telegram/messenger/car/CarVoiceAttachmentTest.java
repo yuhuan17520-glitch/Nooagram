@@ -63,6 +63,9 @@ public class CarVoiceAttachmentTest {
 
         Uri uri = CarVoiceAttachment.resolveUri(context, authority, voiceFile, true, false);
 
+        // Surface provider configuration/platform failures instead of only the
+        // wrapper's intentionally swallowed exception and null fallback.
+        assertEquals(FileProvider.getUriForFile(context, authority, voiceFile), uri);
         assertNotNull(state, uri);
         assertEquals("content", uri.getScheme());
         assertEquals(authority, uri.getAuthority());

@@ -2,6 +2,13 @@ name: Nooagram signed release candidate
 on:
   push:
     branches: [nooagram-nagram-migration]
+    paths-ignore:
+      - '**.md'
+      - 'Tools/nooagram-release.ps1'
+      - 'Tools/test-nooagram-release.ps1'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/migration-checks.yml'
+      - 'TMessagesProj/src/test/**'
   workflow_dispatch:
 permissions:
   contents: read

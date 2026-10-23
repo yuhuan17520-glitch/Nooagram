@@ -1,0 +1,171 @@
+name: Nooagram signed release build
+on:
+  push:
+    branches: [ayu, nooagram-nagram-migration]
+    paths: [nooagram-version.json, .github/workflows/release.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nooagram-release
+  cancel-in-progress: false
+jobs:
+  metadata:
+    if: github.repository == 'yuhuan17520-glitch/Nooagram'
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.version.outputs.ready }}
+      name: ${{ steps.version.outputs.name }}
+      code: ${{ steps.version.outputs.code }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate readiness and exact version
+        id: version
+        shell: pwsh
+        run: |
+          $meta = Get-Content nooagram-version.json -Raw | ConvertFrom-Json
+          if (!$meta.migration_ready) {
+            'ready=false' >> $env:GITHUB_OUTPUT
+            Write-Output 'Release remains blocked pending migration validation.'
+            exit 0
+          }
+          . ./Tools/nooagram-release.ps1
+          $version = Get-NooagramVersion -RepositoryPath .
+          'ready=true' >> $env:GITHUB_OUTPUT
+          "name=$($version.VersionName)" >> $env:GITHUB_OUTPUT
+          "code=$($version.VersionCode)" >> $env:GITHUB_OUTPUT
+          "tag=$($version.ReleaseTag)" >> $env:GITHUB_OUTPUT
+      - name: Test release asset generation
+        shell: pwsh
+        run: ./Tools/test-nooagram-release.ps1
+  build:
+    needs: metadata
+    if: needs.metadata.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    env:
+      COMPILE_NATIVE: '1'
+      NATIVE_TARGET: ${{ matrix.abi }}
+      NOOAGRAM_VERSION_CODE: ${{ needs.metadata.outputs.code }}
+      NOOAGRAM_VERSION_NAME: ${{ needs.metadata.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;36.0.0 platforms;android-36 ndk;27.2.12479018 cmake;3.22.1'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare pinned native sources
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm
+          chmod +x gradlew
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cd TMessagesProj/jni
+          git -C tgcalls apply --check ../patches/tgcalls-0001-feat-custom-group-voip-audio-bitrate.patch
+          git -C tgcalls apply ../patches/tgcalls-0001-feat-custom-group-voip-audio-bitrate.patch
+      - name: Validate release pin
+        shell: pwsh
+        run: ./Tools/check-nagram-migration.ps1 -RequireReleaseReady
+      - name: Prepare protected signing
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+          NOOAGRAM_KEYSTORE_BASE64: ${{ secrets.NOOAGRAM_KEYSTORE_BASE64 }}
+        run: java Tools/PrepareNooagramSigning.java
+      - name: Migration regression tests
+        if: matrix.abi == 'arm64-v8a'
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --no-daemon --max-workers=2
+      - name: Build actual release variant
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        run: ./gradlew :TMessagesProj:assembleRelease --no-daemon --max-workers=2 -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g'
+      - name: Verify APK and optimized Room contracts
+        shell: pwsh
+        run: |
+          $apks = @(Get-ChildItem TMessagesProj/build/outputs/apk/release/*.apk)
+          if ($apks.Count -ne 1) { throw 'Expected one release APK per ABI' }
+          ./Tools/check-migration-native-signer.ps1 -Apk $apks[0].FullName -AndroidSdk $env:ANDROID_HOME
+          node Tools/check-ayu-release-dex.cjs
+          $signer = "$env:ANDROID_HOME/build-tools/36.0.0/apksigner"
+          $certs = @(& $signer verify --print-certs $apks[0].FullName)
+          if ($LASTEXITCODE -ne 0 -or ($certs -join "`n") -notmatch '(?i)Signer #1 certificate SHA-256 digest: a6ff043a4808dc097b9c62cb3939536a055b4567441a7ea61a78b443640f8088') { throw 'Production certificate mismatch' }
+      - name: Remove signing material
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/nooagram-candidate.keystore"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.abi }}-${{ github.sha }}
+          path: |
+            TMessagesProj/build/outputs/apk/release/*.apk
+            TMessagesProj/build/outputs/apk/release/output-metadata.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.abi == 'arm64-v8a'
+        with:
+          name: release-unit-test-reports
+          path: TMessagesProj/build/reports/tests/
+  draft:
+    needs: [metadata, build]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+      RELEASE_NAME: ${{ needs.metadata.outputs.name }}
+      RELEASE_CODE: ${{ needs.metadata.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*-${{ github.sha }}
+          path: release-inputs
+      - name: Collect all verified release architectures
+        shell: pwsh
+        run: |
+          . ./Tools/nooagram-release.ps1
+          $version = Get-NooagramVersion -RepositoryPath .
+          $timestamp = [long](git show -s --format=%ct HEAD)
+          if ($LASTEXITCODE -ne 0) { throw 'Missing source timestamp' }
+          $changelog = Get-Content docs/releases/1.3.0.md -Raw
+          Export-NooagramReleaseAssets -OutputDirectory release-inputs -Destination release-assets -Version $version -Timestamp $timestamp -Changelog $changelog
+          $version | ConvertTo-Json | Set-Content release-version.json -Encoding utf8
+      - name: Refuse duplicate or obsolete releases, then create private draft
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > existing-releases.json
+          if jq -e --arg tag "$RELEASE_TAG" 'any(.[]; .tag_name == $tag)' existing-releases.json >/dev/null; then
+            echo 'Refusing to replace an existing release.' >&2
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/latest" > latest-release.json
+          latest_tag=$(jq -er .tag_name latest-release.json)
+          mkdir previous-release
+          gh release download "$latest_tag" --pattern update.json --dir previous-release
+          previous_code=$(jq -er '.version_code | numbers' previous-release/update.json)
+          test "$RELEASE_CODE" -gt "$previous_code"
+          gh release create "$RELEASE_TAG" --draft --target "$GITHUB_SHA" \
+            --title "Nooagram $RELEASE_NAME" --notes-file docs/releases/1.3.0.md \
+            release-assets/*.apk release-assets/SHA256SUMS.txt release-assets/update.json release-version.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ github.sha }}
+          path: release-assets/
+          if-no-files-found: error
+      # Publication is deliberately separate: install/test these exact release APKs
+      # and verify upgrade data before changing the draft to public/latest.
