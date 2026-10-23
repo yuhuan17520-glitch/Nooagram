@@ -1,10 +1,16 @@
 package org.telegram.messenger.car;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
+import android.content.res.XmlResourceParser;
 import android.net.Uri;
 
 import androidx.core.content.FileProvider;
@@ -20,6 +26,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
+import java.nio.file.Path;
 import java.util.Map;
 
 /**
@@ -36,18 +44,14 @@ public class CarVoiceAttachmentTest {
 
     @Before
     public void setUp() throws Exception {
-        // FileProvider memoises a PathStrategy per authority in a static map, and the
-        // strategy holds absolute roots. Robolectric hands each test method its own data
-        // directory, so a strategy cached by an earlier test points at a directory this one
-        // does not use, and getUriForFile then rejects a perfectly valid file. Production
-        // never sees this: there, the data directory is fixed for the process lifetime.
-        clearFileProviderCache();
-
         context = ApplicationProvider.getApplicationContext();
         authority = context.getPackageName() + ".provider";
-        // provider_paths.xml maps cache-media to the cache directory's media/ subtree.
-        File mediaDir = new File(context.getCacheDir(), "media");
+        File mediaDir = resolveConfiguredCacheMediaRoot();
         assertEquals(true, mediaDir.mkdirs() || mediaDir.isDirectory());
+        clearFileProviderCache();
+        if (File.separatorChar == '\\') {
+            installPortablePathStrategy(mediaDir);
+        }
         voiceFile = new File(mediaDir, "voice.ogg");
         writeBytes(voiceFile, 32);
     }
@@ -69,6 +73,17 @@ public class CarVoiceAttachmentTest {
         assertNotNull(state, uri);
         assertEquals("content", uri.getScheme());
         assertEquals(authority, uri.getAuthority());
+    }
+
+    @Test
+    public void providerConfigurationServesCacheMedia() throws Exception {
+        ProviderInfo provider = context.getPackageManager()
+                .resolveContentProvider(authority, PackageManager.GET_META_DATA);
+        assertNotNull(provider);
+        assertFalse(provider.exported);
+        assertTrue(provider.grantUriPermissions);
+        assertEquals(new File(context.getCacheDir(), "media").getCanonicalFile(),
+                resolveConfiguredCacheMediaRoot());
     }
 
     @Test
@@ -112,6 +127,11 @@ public class CarVoiceAttachmentTest {
         writeBytes(unserved, 16);
         assertEquals(true, unserved.exists());
 
+        try {
+            FileProvider.getUriForFile(context, authority, unserved);
+            fail("FileProvider accepted a file outside cache-media");
+        } catch (IllegalArgumentException expected) {
+        }
         assertNull(CarVoiceAttachment.resolveUri(context, authority, unserved, true, false));
     }
 
@@ -148,9 +168,83 @@ public class CarVoiceAttachmentTest {
         }
     }
 
+    private File resolveConfiguredCacheMediaRoot() throws Exception {
+        PackageManager packageManager = context.getPackageManager();
+        ProviderInfo provider = packageManager.resolveContentProvider(authority, PackageManager.GET_META_DATA);
+        assertNotNull(provider);
+        XmlResourceParser parser = provider.loadXmlMetaData(
+                packageManager, "android.support.FILE_PROVIDER_PATHS");
+        assertNotNull(parser);
+        try {
+            int event;
+            while ((event = parser.next()) != XmlResourceParser.END_DOCUMENT) {
+                if (event == XmlResourceParser.START_TAG
+                        && "cache-path".equals(parser.getName())
+                        && "cache-media".equals(parser.getAttributeValue(null, "name"))) {
+                    return new File(context.getCacheDir(), parser.getAttributeValue(null, "path"));
+                }
+            }
+        } finally {
+            parser.close();
+        }
+        throw new AssertionError("provider_paths.xml is missing cache-media");
+    }
+
+    /**
+     * androidx FileProvider uses '/' when checking canonical roots. Android canonical paths use
+     * '/', but Robolectric on Windows returns '\', so a valid configured cache root is rejected.
+     * Install an equivalent strategy rooted from the real provider_paths.xml for this JVM test.
+     */
+    private void installPortablePathStrategy(File mediaDir) throws Exception {
+        Path root = mediaDir.getCanonicalFile().toPath();
+        Class<?> strategyClass = Class.forName("androidx.core.content.FileProvider$PathStrategy");
+        Object strategy = Proxy.newProxyInstance(
+                strategyClass.getClassLoader(),
+                new Class<?>[]{strategyClass},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("getUriForFile")) {
+                        Path file = ((File) args[0]).getCanonicalFile().toPath();
+                        if (!file.startsWith(root)) {
+                            throw new IllegalArgumentException("File is outside cache-media: " + file);
+                        }
+                        String relative = root.relativize(file).toString().replace(File.separatorChar, '/');
+                        return Uri.parse("content://" + authority + "/cache-media/" + Uri.encode(relative, "/"));
+                    }
+                    if (method.getName().equals("getFileForUri")) {
+                        Uri uri = (Uri) args[0];
+                        String path = uri.getEncodedPath();
+                        if (!path.startsWith("/cache-media/")) {
+                            throw new IllegalArgumentException("Unknown root: " + uri);
+                        }
+                        String relative = Uri.decode(path.substring("/cache-media/".length()));
+                        File resolved = new File(mediaDir, relative.replace('/', File.separatorChar)).getCanonicalFile();
+                        if (!resolved.toPath().startsWith(root)) {
+                            throw new IllegalArgumentException("File escapes cache-media: " + resolved);
+                        }
+                        return resolved;
+                    }
+                    if (method.getName().equals("toString")) {
+                        return "PortableFileProviderStrategy[" + authority + "]";
+                    }
+                    if (method.getName().equals("hashCode")) {
+                        return System.identityHashCode(proxy);
+                    }
+                    if (method.getName().equals("equals")) {
+                        return proxy == args[0];
+                    }
+                    return null;
+                });
+        fileProviderCache().put(authority, strategy);
+    }
+
     private static void clearFileProviderCache() throws Exception {
+        fileProviderCache().clear();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<Object, Object> fileProviderCache() throws Exception {
         Field cache = FileProvider.class.getDeclaredField("sCache");
         cache.setAccessible(true);
-        ((Map<?, ?>) cache.get(null)).clear();
+        return (Map<Object, Object>) cache.get(null);
     }
 }

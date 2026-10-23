@@ -12,6 +12,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
 
 import org.telegram.messenger.ApplicationLoader;
 
@@ -21,10 +23,12 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(application = android.app.Application.class, sdk = 28)
 public class NekoSettingsActivityTest {
 
     @Before
     public void clearPreferences() {
+        ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
         for (String name : new String[]{
                 "mainconfig", "nkmrcfg", "ayughostconfig", "ayughostexclusionsconfig"
         }) {
@@ -74,8 +78,8 @@ public class NekoSettingsActivityTest {
                 "{\"mainconfig\":{"
                         + "\"enabled\":true,"
                         + "\"count\":7,"
-                        + "\"large\":9223372036854775807_long,"
-                        + "\"ratio\":0.25_float,"
+                        + "\"large_long\":9223372036854775807,"
+                        + "\"ratio_float\":0.25,"
                         + "\"label\":\"value\""
                         + "}}"
         ).getAsJsonObject();

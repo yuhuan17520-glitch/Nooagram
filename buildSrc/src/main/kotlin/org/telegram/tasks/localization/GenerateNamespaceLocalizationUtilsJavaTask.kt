@@ -148,6 +148,14 @@ abstract class GenerateNamespaceLocalizationUtilsJavaTask : DefaultTask() {
                 tagsByLanguage[language] = tag
             }
         }
+        // Android's ICU/Java locale APIs have exposed Indonesian as both
+        // "id" (BCP-47) and legacy "in". Use whichever resource exists so the
+        // language-level fallback does not silently select the English asset.
+        if (tagsByLanguage.containsKey("id")) {
+            tagsByLanguage.putIfAbsent("in", tagsByLanguage.getValue("id"))
+        } else if (tagsByLanguage.containsKey("in")) {
+            tagsByLanguage.putIfAbsent("id", tagsByLanguage.getValue("in"))
+        }
 
         for ((language, tag) in tagsByLanguage) {
             java.append("            case \"")

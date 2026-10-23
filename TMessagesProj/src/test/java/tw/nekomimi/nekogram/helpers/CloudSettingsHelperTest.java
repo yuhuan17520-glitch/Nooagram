@@ -1,6 +1,5 @@
 package tw.nekomimi.nekogram.helpers;
 
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.SparseArray;
 
@@ -8,6 +7,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
+import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.Config;
 
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.UserConfig;
@@ -22,10 +23,12 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
+@Config(application = android.app.Application.class, sdk = 28)
 public class CloudSettingsHelperTest {
 
     @Before
     public void clearSyncedTimestamp() {
+        ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
         preferences().edit().clear().commit();
     }
 
@@ -67,8 +70,9 @@ public class CloudSettingsHelperTest {
         CallbackResult result = new CallbackResult();
 
         helper.syncToCloud(storage, 0, "x", result);
-        storage.fail("neko_settings_0", "chunk failed");
-        storage.fail("neko_settings_0", "duplicate callback");
+        Utilities.Callback2<String, String> chunkCallback = storage.take("neko_settings_0");
+        chunkCallback.run(null, "chunk failed");
+        chunkCallback.run(null, "duplicate callback");
 
         assertEquals(1, result.calls);
         assertFalse(result.success);
@@ -102,8 +106,9 @@ public class CloudSettingsHelperTest {
         helper.syncToCloud(storage, 0, "x", result);
         storage.succeed("neko_settings_0");
         storage.succeed("neko_settings");
-        storage.fail("neko_settings_updated_at", "timestamp failed");
-        storage.fail("neko_settings_updated_at", "duplicate callback");
+        Utilities.Callback2<String, String> timestampCallback = storage.take("neko_settings_updated_at");
+        timestampCallback.run(null, "timestamp failed");
+        timestampCallback.run(null, "duplicate callback");
 
         assertEquals(1, result.calls);
         assertFalse(result.success);
@@ -134,7 +139,13 @@ public class CloudSettingsHelperTest {
     }
 
     private static SharedPreferences preferences() {
-        return ApplicationLoader.applicationContext.getSharedPreferences("nekocloud", Context.MODE_PRIVATE);
+        try {
+            Field field = CloudSettingsHelper.class.getDeclaredField("preferences");
+            field.setAccessible(true);
+            return (SharedPreferences) field.get(null);
+        } catch (ReflectiveOperationException error) {
+            throw new AssertionError(error);
+        }
     }
 
     private static final class CallbackResult implements Utilities.Callback2<Boolean, String> {
@@ -167,14 +178,14 @@ public class CloudSettingsHelperTest {
         }
 
         private void succeed(String key) {
-            callback(key).run("ok", null);
+            take(key).run("ok", null);
         }
 
         private void fail(String key, String error) {
-            callback(key).run(null, error);
+            take(key).run(null, error);
         }
 
-        private Utilities.Callback2<String, String> callback(String key) {
+        private Utilities.Callback2<String, String> take(String key) {
             Utilities.Callback2<String, String> callback = pending.remove(key);
             if (callback == null) {
                 throw new AssertionError("No pending callback for " + key);
