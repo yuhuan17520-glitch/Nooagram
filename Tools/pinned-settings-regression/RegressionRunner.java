@@ -39,6 +39,7 @@ public class RegressionRunner {
             sources.add(importMethods(root.resolve("com/radolyn/ayugram/settings/BaseNekoXSettingsActivity.java")));
             sources.add(cellGroupMethods(root.resolve("com/radolyn/ayugram/config/CellGroup.java")));
             sources.add(filterNotificationMethods(root.resolve("tw/nekomimi/nekogram/filters/AyuFilter.java")));
+            sources.add(experimentalSettingsMethods(root.resolve("tw/nekomimi/nekogram/settings/NekoExperimentalSettingsActivity.java")));
             if (!compiler.getTask(null, manager, null,
                     List.of("-proc:none", "-encoding", "UTF-8", "-d", output.toString()), null, sources).call()) {
                 throw new AssertionError("Probe compilation failed");
@@ -54,6 +55,60 @@ public class RegressionRunner {
         return new SimpleJavaFileObject(URI.create("string:///" + name.replace('.', '/') + ".java"), JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return content; }
         };
+    }
+
+    private static JavaFileObject experimentalSettingsMethods(Path file) throws Exception {
+        String body = methodBodies(file).get("setCanNotChange");
+        var matcher = java.util.regex.Pattern.compile("[a-zA-Z]+Row|headerStory|dividerStory").matcher(body);
+        var rows = new java.util.LinkedHashSet<String>();
+        while (matcher.find()) rows.add(matcher.group());
+        String fields = rows.stream().map(name -> "final Object " + name + " = new Object();").collect(java.util.stream.Collectors.joining());
+        return source("ExperimentalSettingsProbe", """
+                import java.util.*;
+                class ExperimentalBase { protected void setCanNotChange() {} }
+                public class ExperimentalSettingsProbe extends ExperimentalBase {
+                    static class Option {
+                        boolean value = true;
+                        boolean Bool() { return value; }
+                        void setConfigBool(boolean value) { throw new AssertionError("Page visibility wrote an option"); }
+                    }
+                    static class NaConfig {
+                        static final NaConfig INSTANCE = new NaConfig();
+                        final Option hidden = new Option();
+                        Option getShowHiddenFeature() { return hidden; }
+                        Option getShowChannelIcon() { return new Option(); }
+                        Option getForceCopy() { return new Option(); }
+                        Option getDisableFlagSecure() { return new Option(); }
+                        Option getDisableSendReadStories() { return new Option(); }
+                    }
+                    static class NekoConfig {
+                        static final Option localPremium = new Option(), hideSponsoredMessage = new Option(),
+                            ignoreBlocked = new Option(), disableChatAction = new Option(), disableChoosingSticker = new Option();
+                        static void setGhostMode(boolean value) { throw new AssertionError("Page visibility wrote ghost mode"); }
+                    }
+                    static class NekoXConfig { static boolean disableFlagSecure = true; }
+                    static class Group { final List<Object> rows = new ArrayList<>(); }
+                    final Group cellGroup = new Group();
+                    void addRowsToMap() {}
+                """ + fields + "public void setCanNotChange() " + body + """
+                    public static void verify() {
+                        for (boolean hidden : new boolean[]{false, true}) {
+                            NaConfig.INSTANCE.hidden.value = hidden;
+                            ExperimentalSettingsProbe page = new ExperimentalSettingsProbe();
+                            for (var field : ExperimentalSettingsProbe.class.getDeclaredFields()) {
+                                if (field.getType() == Object.class) {
+                                    try { page.cellGroup.rows.add(field.get(page)); }
+                                    catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+                                }
+                            }
+                            page.setCanNotChange();
+                            page.setCanNotChange();
+                            if (!NekoXConfig.disableFlagSecure) throw new AssertionError("Page reset secure-window choice");
+                            if (page.cellGroup.rows.contains(page.localPremiumRow) != hidden) throw new AssertionError("Hidden row visibility wrong");
+                        }
+                    }
+                }
+                """);
     }
 
     private static Map<String, String> methodBodies(Path file) throws Exception {
@@ -183,6 +238,17 @@ public class RegressionRunner {
     }
 
     private static void dependencyDoubles() {
+        stub("com.radolyn.ayugram.AyuConfig", """
+                public class AyuConfig {
+                    public static final AyuConfig INSTANCE = new AyuConfig();
+                    public Option getRegexFiltersEnabled() { return new Option(); }
+                    public static class Option {
+                        public void setConfigBool(boolean value) {
+                            throw new AssertionError("Page visibility wrote message-filter preference");
+                        }
+                    }
+                }
+                """);
         stub("android.content.SharedPreferences", """
                 public class SharedPreferences {
                     public final java.util.Map<String, Object> values = new java.util.HashMap<>();

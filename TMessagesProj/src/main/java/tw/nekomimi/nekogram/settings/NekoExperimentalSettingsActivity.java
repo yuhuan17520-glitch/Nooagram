@@ -581,17 +581,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             cellGroup.rows.remove(disableSendReadStoriesRow);
             cellGroup.rows.remove(dividerStory);
 
-            NekoConfig.localPremium.setConfigBool(false);
-            NekoConfig.setGhostMode(false);
-            NaConfig.INSTANCE.getForceCopy().setConfigBool(false);
-            NaConfig.INSTANCE.getDisableFlagSecure().setConfigBool(false);
-            NekoXConfig.disableFlagSecure = false;
-            NekoConfig.hideSponsoredMessage.setConfigBool(false);
-            NekoConfig.ignoreBlocked.setConfigBool(false);
-            com.radolyn.ayugram.AyuConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(false);
-            NekoConfig.disableChatAction.setConfigBool(false);
-            NekoConfig.disableChoosingSticker.setConfigBool(false);
-            NaConfig.INSTANCE.getDisableSendReadStories().setConfigBool(false);
+            // Visibility must not reset choices also exposed by AyuMoments.
         }
 
         addRowsToMap();
