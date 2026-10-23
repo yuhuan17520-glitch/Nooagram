@@ -361,6 +361,9 @@ public class TextCell extends FrameLayout {
     }
 
     public void setTextAndIcon(CharSequence text, int resId, boolean divider) {
+        if (checkBox != null) {
+            checkBox.setVisibility(GONE);
+        }
         imageLeft = 16;
         offsetFromImage = getOffsetFromImage(false);
         textView.setText(text);
@@ -401,6 +404,9 @@ public class TextCell extends FrameLayout {
     }
 
     public void setTextAndIcon(CharSequence text, Drawable drawable, boolean divider) {
+        if (checkBox != null) {
+            checkBox.setVisibility(GONE);
+        }
         offsetFromImage = 58;
         imageLeft = 18;
         textView.setText(text);
@@ -424,6 +430,9 @@ public class TextCell extends FrameLayout {
     }
 
     public void setTextAndValueAndIcon(CharSequence text, CharSequence value, Drawable drawable, boolean divider) {
+        if (checkBox != null) {
+            checkBox.setVisibility(GONE);
+        }
         offsetFromImage = 58;
         imageLeft = 18;
         textView.setText(text);

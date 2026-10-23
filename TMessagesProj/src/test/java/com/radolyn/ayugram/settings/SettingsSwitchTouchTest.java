@@ -191,6 +191,28 @@ public class SettingsSwitchTouchTest {
         assertEquals(1, clicks);
     }
 
+    @Test public void customIconNavigationClearsConstructedAndRecycledSwitch() {
+        TextCell row = new TextCell(activity, 23, false, true, null);
+        row.setTextAndIcon("Export database", 0, true);
+        assertEquals(View.GONE, row.getCheckBox().getVisibility());
+        mount(row, true);
+        tap(list, 80, cy(row));
+        assertEquals(1, clicks);
+
+        row.setTextAndCheckAndIcon("Switch", true, 0, false);
+        assertEquals(View.VISIBLE, row.getCheckBox().getVisibility());
+        row.setTextAndIcon("Import database", new android.graphics.drawable.ColorDrawable(), false);
+        assertEquals(View.GONE, row.getCheckBox().getVisibility());
+        tap(list, 80, cy(row));
+        assertEquals(2, clicks);
+
+        row.setTextAndCheckAndIcon("Switch", false, 0, false);
+        row.setTextAndValueAndIcon("Navigation", "Value", new android.graphics.drawable.ColorDrawable(), false);
+        assertEquals(View.GONE, row.getCheckBox().getVisibility());
+        tap(list, 80, cy(row));
+        assertEquals(3, clicks);
+    }
+
     @Test public void programmaticAccessibilityClickRemainsAvailable() {
         TextCheckCell row = switchRow(false);
         mount(row, true);
