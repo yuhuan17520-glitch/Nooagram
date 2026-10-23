@@ -9,6 +9,7 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/migration-checks.yml'
       - 'TMessagesProj/src/test/**'
+      - 'Tools/ayu-privacy-history-regression/**'
   workflow_dispatch:
 permissions:
   contents: read

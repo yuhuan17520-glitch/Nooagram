@@ -47,7 +47,7 @@ public class RegressionRunner {
                     "com/radolyn/ayugram/database/LockedDao.java",
                     "com/radolyn/ayugram/database/AyuDatabaseMerger.java");
             var paths = new ArrayList<>(production.stream().map(javaRoot::resolve).toList());
-            paths.add(repo.resolve("tools/ayu-privacy-history-regression/PrivacyHistoryProbe.java"));
+            paths.add(repo.resolve("Tools/ayu-privacy-history-regression/PrivacyHistoryProbe.java"));
             manager.getJavaFileObjectsFromPaths(paths).forEach(sources::add);
             STUBS.forEach((name, text) -> sources.add(source(name, text)));
             sources.add(historyMethods(compiler, javaRoot.resolve("com/radolyn/ayugram/ui/AyuMessageHistory.java")));

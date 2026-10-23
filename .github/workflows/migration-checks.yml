@@ -6,6 +6,7 @@ on:
       - '.github/workflows/migration-checks.yml'
       - '.github/workflows/release.yml'
       - 'Tools/*nooagram-release.ps1'
+      - 'Tools/ayu-privacy-history-regression/**'
       - 'TMessagesProj/src/test/java/org/telegram/messenger/car/**'
   pull_request:
   workflow_dispatch:
