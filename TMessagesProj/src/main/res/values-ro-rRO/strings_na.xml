@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Canal upstream</string>
+    <string name="UpstreamTipsChannel">Canal de sfaturi upstream</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Copiere forțată</string>
     <string name="disableSecondAddress">Dezactivează cererea de adresă secundară</string>

@@ -41,6 +41,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_iv;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -61,8 +62,10 @@ import com.radolyn.ayugram.AyuConfig;
 public class AyuMessagesController {
     public static final String attachmentsSubfolder = "Saved Attachments";
     private static final String ATTACHMENTS_OWNER_KEY = "ayuAttachmentsOwnerId";
+    private static final String ATTACHMENTS_UNAVAILABLE_MARKER = ".ayu-attachments-store-unavailable";
     private static AyuAttachmentStore attachmentStore;
     private static File attachmentParent;
+    /** Always non-null; on failure this points at a marker file, not an attachment directory. */
     public static volatile File attachmentsPath;
 
     static {
@@ -124,17 +127,42 @@ public class AyuMessagesController {
         if (attachmentStore != null && parent.equals(attachmentParent)) {
             return;
         }
+        AyuAttachmentStore candidate = null;
+        boolean directoryExisted = false;
         try {
-            attachmentStore = createAttachmentStore(parent);
-            attachmentStore.prepare();
+            candidate = createAttachmentStore(parent);
+            directoryExisted = candidate.getDirectory().exists();
+            candidate.prepare();
+            attachmentStore = candidate;
             attachmentParent = parent;
             attachmentsPath = attachmentStore.getDirectory();
         } catch (IOException e) {
             FileLog.e("syncAttachmentsPathWithConfig", e);
+            if (candidate != null && !directoryExisted) {
+                AttachmentStoragePolicy.removeEmptyPreparedDirectory(candidate.getDirectory());
+            }
             attachmentStore = null;
-            // Never fall back to writing into the selected parent on a resolution failure.
-            attachmentsPath = new File(ApplicationLoader.getFilesDirFixed(), "ayu-attachments-unavailable");
+            attachmentParent = null;
+            attachmentsPath = unavailableAttachmentsPath();
         }
+    }
+
+    private static File unavailableAttachmentsPath() {
+        File marker = new File(ApplicationLoader.getFilesDirFixed(), ATTACHMENTS_UNAVAILABLE_MARKER);
+        try {
+            if (!marker.exists() && !marker.createNewFile()) {
+                FileLog.e("Cannot create attachment availability marker");
+            }
+        } catch (IOException | SecurityException e) {
+            FileLog.e("Cannot create attachment availability marker", e);
+        }
+        return marker;
+    }
+
+    private static void markAttachmentsUnavailable() {
+        attachmentStore = null;
+        attachmentParent = null;
+        attachmentsPath = unavailableAttachmentsPath();
     }
 
     private static AyuAttachmentStore createAttachmentStore(File parent) throws IOException {
@@ -152,16 +180,64 @@ public class AyuMessagesController {
     public static synchronized void setAttachmentFolderPath(File path) throws IOException {
         File parent = path == null ? getDefaultAttachmentsPath() : path.getAbsoluteFile();
         AyuAttachmentStore store = createAttachmentStore(parent);
-        store.prepare();
-        if (!store.getDirectory().canWrite()) {
-            throw new IOException("Attachment directory is not writable");
+        boolean directoryExisted = store.getDirectory().exists();
+        boolean selected = false;
+        try {
+            store.prepare();
+            selected = AttachmentStoragePolicy.probeAndCommit(store.getDirectory(), () -> {
+                String newPath = path == null ? "" : parent.getAbsolutePath();
+                AyuConfig.INSTANCE.getAttachmentFolderPath().setConfigString(newPath);
+                attachmentParent = parent;
+                attachmentStore = store;
+                attachmentsPath = store.getDirectory();
+            });
+            if (!selected) {
+                throw new IOException("Attachment directory failed the create/write/delete probe");
+            }
+        } finally {
+            if (!selected && !directoryExisted) {
+                AttachmentStoragePolicy.removeEmptyPreparedDirectory(store.getDirectory());
+            }
         }
-        String newPath = path == null ? "" : parent.getAbsolutePath();
-        AyuConfig.INSTANCE.getAttachmentFolderPath().setConfigString(newPath);
-        attachmentParent = parent;
-        attachmentStore = store;
-        attachmentsPath = store.getDirectory();
         AyuData.loadSizes(null);
+    }
+
+    /**
+     * Returns the managed directory only when the store exists and can currently write.
+     * Writes must use this instead of the public path, which remains a non-null sentinel
+     * when storage is unavailable so read-only callers do not need null checks.
+     */
+    public static synchronized File getWritableAttachmentsDirectory() {
+        try {
+            syncAttachmentsPathWithConfig();
+            if (attachmentStore == null || attachmentsPath == null) {
+                markAttachmentsUnavailable();
+                return null;
+            }
+            attachmentStore.prepare();
+            File directory = attachmentStore.getDirectory();
+            if (!AttachmentStoragePolicy.probeWritable(directory)) {
+                markAttachmentsUnavailable();
+                return null;
+            }
+            attachmentsPath = directory;
+            return directory;
+        } catch (Exception e) {
+            FileLog.e("getWritableAttachmentsDirectory", e);
+            markAttachmentsUnavailable();
+            return null;
+        }
+    }
+
+    public static synchronized File getManagedAttachmentsDirectory() {
+        try {
+            syncAttachmentsPathWithConfig();
+            return attachmentStore == null ? null : attachmentStore.getDirectory();
+        } catch (Exception e) {
+            FileLog.e("getManagedAttachmentsDirectory", e);
+            markAttachmentsUnavailable();
+            return null;
+        }
     }
 
     public static synchronized boolean isManagedAttachmentPath(String path) {
@@ -277,11 +353,12 @@ public class AyuMessagesController {
     private static synchronized void initializeAttachmentsFolder() {
         try {
             syncAttachmentsPathWithConfig();
-            if (attachmentStore != null) {
-                attachmentStore.prepare();
+            if (attachmentStore == null || !AttachmentStoragePolicy.probeWritable(attachmentStore.getDirectory())) {
+                throw new IOException("Attachment store is unavailable");
             }
         } catch (Exception e) {
             FileLog.e("initializeAttachmentsFolder", e);
+            markAttachmentsUnavailable();
         }
     }
 
@@ -1188,5 +1265,74 @@ public class AyuMessagesController {
 
     private void cleanAttachmentsFolder() {
         clearAttachments();
+    }
+
+    public static final class AttachmentStoragePolicy {
+        private static final String PROBE_PREFIX = ".ayu-write-probe-";
+        private static final byte[] PROBE_BYTES = new byte[]{0x51};
+
+        private AttachmentStoragePolicy() {
+        }
+
+        public static boolean probeWritable(File directory) {
+            if (directory == null || !directory.isDirectory() || !directory.canWrite()) {
+                return false;
+            }
+            File probe = new File(directory, PROBE_PREFIX + UUID.randomUUID() + ".tmp");
+            boolean success = false;
+            try {
+                try (FileOutputStream output = new FileOutputStream(probe, false)) {
+                    output.write(PROBE_BYTES);
+                    output.flush();
+                }
+                success = probe.isFile() && probe.length() == PROBE_BYTES.length;
+            } catch (IOException | SecurityException e) {
+                success = false;
+            } finally {
+                if (probe.exists() && !probe.delete()) {
+                    probe.deleteOnExit();
+                    success = false;
+                }
+            }
+            return success;
+        }
+
+        public static boolean probeAndCommit(File directory, Runnable commit) {
+            if (commit == null || !probeWritable(directory)) {
+                return false;
+            }
+            commit.run();
+            return true;
+        }
+
+        public static void removeEmptyPreparedDirectory(File directory) {
+            if (directory == null) {
+                return;
+            }
+            File nomedia = new File(directory, ".nomedia");
+            if (nomedia.exists() && !nomedia.delete()) {
+                return;
+            }
+            File[] remaining = directory.listFiles();
+            if (remaining != null && remaining.length == 0 && !directory.delete()) {
+                directory.deleteOnExit();
+            }
+        }
+
+        public static File resolveTarget(File directory, String fileName) throws IOException {
+            if (directory == null || fileName == null || fileName.isEmpty()
+                    || ".".equals(fileName) || "..".equals(fileName)
+                    || fileName.indexOf('/') >= 0 || fileName.indexOf('\\') >= 0
+                    || fileName.indexOf('\0') >= 0) {
+                throw new IOException("Invalid attachment target");
+            }
+            File canonicalDirectory = directory.getCanonicalFile();
+            File target = new File(canonicalDirectory, fileName).getCanonicalFile();
+            if (!canonicalDirectory.equals(target.getParentFile())) {
+                throw new IOException("Attachment target escapes managed directory");
+            }
+            return target;
+        }
+
     }
 }

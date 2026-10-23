@@ -16,9 +16,9 @@ are written under `build/ayu-privacy-history-regression`.
 `TLRPCWrappedBypass`, `AyuData`, `LockedDao`, `AyuDataLock`, and
 `AyuDatabaseMerger` sources against offline Android/Telegram/Room doubles.
 The merger executes its production SQL against a real local SQLite database.
-History constructor, query, and observer methods are extracted using javac
-source positions and executed with a minimal fragment double. The full history
-view is not compiled by this harness.
+History constructor, queue, snapshot commit, and observer methods are extracted
+using javac source positions and executed with a minimal fragment double. The
+full history view is not compiled by this harness.
 
 Covered behaviors:
 
@@ -32,6 +32,13 @@ Covered behaviors:
 - R06: message-account binding before the first history query, correct row
   identity, observer registration/removal after account switches, and rejection
   of another account's notifications.
+- R24: history queries and attachment/media probing stay off the UI queue until
+  the storage task runs; `MessageObject` is constructed only on the UI binding
+  path; only the latest snapshot is committed; destroyed pages drop late
+  results; null attachment paths are accepted; concurrent delete permits stay
+  consistent; production v29->30->31 migrations retain `DeletedDialog` rows,
+  indexes, and schema; attachment import uses only the writable managed
+  directory and preserves its unavailable failure path.
 - R22: actual file-copy errors on the first backup file and after a partial
   backup, unchanged live database/WAL bytes, reopened DAO access, validation
   failure rollback, and successful replacement.
@@ -39,7 +46,7 @@ Covered behaviors:
   account, and media-path differences; null versus empty blobs; exact duplicate
   rows; repeat import; and older source schemas missing target columns.
 
-Recorded result on 2026-09-28: **10 cases, 302 assertions passed**.
+Recorded result on 2026-10-23: **13 cases, 4327 assertions passed**.
 
 The Room, notification, network, and worker scheduling dependencies are doubles;
 these checks do not claim Android lifecycle, native SQLite/Room migration, real

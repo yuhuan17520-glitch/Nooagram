@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Üst kaynak kanalı</string>
+    <string name="UpstreamTipsChannel">Üst kaynak ipuçları kanalı</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Kopyalamaya Zorla</string>
     <string name="disableSecondAddress">Disable Second Address Request</string>

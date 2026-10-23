@@ -65,9 +65,7 @@ public final class ProductBrandingLocalization {
                 || stringRes == R.string.NekogramRunning
                 || stringRes == R.string.PasscodeShowInSettings
                 || stringRes == R.string.ResetSettingsAlert
-                || stringRes == R.string.UnknownNekoSettingsOption
-                || stringRes == R.string.About
-                || stringRes == R.string.RemoveTitleEmoji) {
+                || stringRes == R.string.UnknownNekoSettingsOption) {
             return stringRes;
         }
         if (key == null) {
@@ -106,10 +104,6 @@ public final class ProductBrandingLocalization {
                 return R.string.ResetSettingsAlert;
             case "UnknownNekoSettingsOption":
                 return R.string.UnknownNekoSettingsOption;
-            case "About":
-                return R.string.About;
-            case "RemoveTitleEmoji":
-                return R.string.RemoveTitleEmoji;
         }
         return 0;
     }

@@ -114,6 +114,19 @@
 -keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$ExcludedFilterEntry { <fields>; }
 -keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$CustomFilteredUser { <fields>; }
 -keepclassmembers class com.radolyn.ayugram.database.FilterPrefsMigrator$* { <fields>; }
+
+# LaunchActivity restores the current custom settings page by class name and
+# no-argument constructor after process death. Keep those reflective contracts
+# narrow to classes deriving from each settings base type.
+-keepnames class com.radolyn.ayugram.settings.** extends com.radolyn.ayugram.settings.BaseNekoSettingsActivity
+-keepclassmembers class com.radolyn.ayugram.settings.** extends com.radolyn.ayugram.settings.BaseNekoSettingsActivity { <init>(); }
+-keepnames class com.radolyn.ayugram.settings.** extends com.radolyn.ayugram.settings.BaseNekoXSettingsActivity
+-keepclassmembers class com.radolyn.ayugram.settings.** extends com.radolyn.ayugram.settings.BaseNekoXSettingsActivity { <init>(); }
+-keepnames class tw.nekomimi.nekogram.settings.** extends tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity
+-keepclassmembers class tw.nekomimi.nekogram.settings.** extends tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity { <init>(); }
+-keepnames class tw.nekomimi.nekogram.settings.** extends tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity
+-keepclassmembers class tw.nekomimi.nekogram.settings.** extends tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity { <init>(); }
+
 -keepattributes Signature
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken

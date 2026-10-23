@@ -88,6 +88,8 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     private int statsDeletedDialogs = -1;
     private int statsReadMarks = -1;
     private int statsLastSeen = -1;
+    private int lifecycleGeneration;
+    private boolean fragmentDestroyed;
 
     private final CellGroup cellGroup = new CellGroup(this);
 
@@ -146,11 +148,19 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
 
     @Override
     public boolean onFragmentCreate() {
+        fragmentDestroyed = false;
         calculateTotalDeviceSize();
         super.onFragmentCreate();
         AyuData.loadSizes(this::refreshAyuDataSize);
         loadStats();
         return true;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        fragmentDestroyed = true;
+        lifecycleGeneration++;
+        super.onFragmentDestroy();
     }
 
     @Override
@@ -263,11 +273,18 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     }
 
     public void refreshAyuDataSize() {
-        notifyRowChanged(clearDataRow);
-        loadStats();
+        final int generation = lifecycleGeneration;
+        AndroidUtilities.runOnUIThread(() -> {
+            if (!isFragmentActive(generation)) {
+                return;
+            }
+            notifyRowChanged(clearDataRow);
+            loadStats();
+        });
     }
 
     private void loadStats() {
+        final int generation = lifecycleGeneration;
         Utilities.globalQueue.postRunnable(() -> {
             int deletedMessages = 0;
             int deletedDialogs = 0;
@@ -294,6 +311,9 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
             int finalReadMarks = readMarks;
             int finalLastSeen = lastSeen;
             AndroidUtilities.runOnUIThread(() -> {
+                if (!isFragmentActive(generation)) {
+                    return;
+                }
                 statsDeletedMessages = finalDeletedMessages;
                 statsDeletedDialogs = finalDeletedDialogs;
                 statsReadMarks = finalReadMarks;
@@ -571,8 +591,8 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
         builder.setApplyBottomPadding(false);
 
         SharedPreferences preferences = getClearPreferences();
-        long attachmentsSize = AyuData.getAttachmentsDirSize();
-        long ayuDatabaseSize = AyuData.getAyuDatabaseSize();
+        long attachmentsSize = AyuClearDataSizePolicy.fromCache(AyuData.attachmentsSize);
+        long ayuDatabaseSize = AyuClearDataSizePolicy.fromCache(AyuData.dbSize);
         long telegramDatabaseSize = getMessagesStorage().getDatabaseSize();
 
         LinearLayout linearLayout = new LinearLayout(context);
@@ -659,6 +679,7 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
         AlertDialog progressDialog = new AlertDialog(context, AlertDialog.ALERT_TYPE_SPINNER);
         progressDialog.setCanCancel(false);
         progressDialog.show();
+        final int generation = lifecycleGeneration;
         Utilities.globalQueue.postRunnable(() -> {
             if (clearAttachments) {
                 AyuMessagesController.clearAttachments();
@@ -667,6 +688,9 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
                 AyuMessagesController.clearDatabase();
             }
             AndroidUtilities.runOnUIThread(() -> {
+                if (!isFragmentActive(generation)) {
+                    return;
+                }
                 progressDialog.dismiss();
                 if (clearTelegramDatabase) {
                     getMessagesStorage().clearLocalDatabase(false, this::showTelegramDatabaseRestartCountdown);
@@ -858,8 +882,7 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     }
 
     private String getAttachmentFolderDisplayName() {
-        AyuMessagesController.syncAttachmentsPathWithConfig();
-        File path = AyuMessagesController.attachmentsPath;
+        File path = AyuMessagesController.getManagedAttachmentsDirectory();
         if (path == null) {
             return AyuMessagesController.attachmentsSubfolder;
         }
@@ -872,13 +895,21 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     }
 
     private void notifyRowChanged(AbstractConfigCell row) {
-        if (listAdapter == null) {
+        if (!isFragmentActive() || listAdapter == null) {
             return;
         }
         int index = cellGroup.rows.indexOf(row);
         if (index >= 0) {
             listAdapter.notifyItemChanged(index);
         }
+    }
+
+    private boolean isFragmentActive() {
+        return isFragmentActive(lifecycleGeneration);
+    }
+
+    private boolean isFragmentActive(int generation) {
+        return !fragmentDestroyed && generation == lifecycleGeneration;
     }
 
     private void showBottomSheet() {
@@ -1071,5 +1102,14 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
                 cell.setTextAndValue(getString(R.string.AyuStatsLastSeen), formatStat(statsLastSeen), false);
             }
         }
+    }
+}
+
+final class AyuClearDataSizePolicy {
+    private AyuClearDataSizePolicy() {
+    }
+
+    static long fromCache(long cachedSize) {
+        return Math.max(0L, cachedSize);
     }
 }

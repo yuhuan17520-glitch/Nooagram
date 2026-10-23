@@ -9,6 +9,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 
 import androidx.annotation.NonNull;
 
@@ -28,13 +29,20 @@ public class DeletedMessagesColorPickerCell extends View {
     private final Theme.ResourcesProvider resourcesProvider;
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ColorButton[] buttons = new ColorButton[BUTTONS_COUNT];
+    private final int touchSlop;
+    private ColorButton touchTargetButton;
     private ColorButton pressedButton;
     private int selectedColorId;
     private OnColorSelectedListener onColorSelectedListener;
+    private float touchDownX;
+    private float touchDownY;
+    private boolean gestureClaimed;
+    private boolean gestureCanceled;
 
     public DeletedMessagesColorPickerCell(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         backgroundPaint.setStyle(Paint.Style.STROKE);
         for (int i = 0; i < BUTTONS_COUNT; i++) {
             buttons[i] = new ColorButton();
@@ -95,38 +103,77 @@ public class DeletedMessagesColorPickerCell extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        ColorButton button = findButton(event.getX(), event.getY());
-        if (event.getAction() == MotionEvent.ACTION_DOWN) {
-            pressedButton = button;
-            if (pressedButton != null) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: {
+                touchDownX = event.getX();
+                touchDownY = event.getY();
+                gestureClaimed = false;
+                gestureCanceled = false;
+                touchTargetButton = findButton(touchDownX, touchDownY);
+                if (touchTargetButton == null) {
+                    return false;
+                }
+                pressedButton = touchTargetButton;
                 pressedButton.setPressed(true);
+                return true;
             }
-            if (getParent() != null) {
-                getParent().requestDisallowInterceptTouchEvent(true);
-            }
-        } else if (event.getAction() == MotionEvent.ACTION_MOVE) {
-            if (pressedButton != button) {
-                if (pressedButton != null) {
-                    pressedButton.setPressed(false);
+            case MotionEvent.ACTION_MOVE: {
+                if (touchTargetButton == null || gestureCanceled) {
+                    return true;
                 }
-                if (button != null) {
-                    button.setPressed(true);
+                float dx = event.getX() - touchDownX;
+                float dy = event.getY() - touchDownY;
+                float absX = Math.abs(dx);
+                float absY = Math.abs(dy);
+                if (absY > touchSlop && absY > absX) {
+                    cancelGesture();
+                    return false;
                 }
-                if (pressedButton != null && button != null && onColorSelectedListener != null && selectedColorId != button.id) {
-                    onColorSelectedListener.onColorSelected(button.id);
+                if (!gestureClaimed && absX > touchSlop && absX > absY) {
+                    gestureClaimed = true;
+                    requestParentDisallowIntercept(true);
                 }
-                pressedButton = button;
+                if (findButton(event.getX(), event.getY()) != touchTargetButton) {
+                    cancelGesture();
+                    return true;
+                }
+                return true;
             }
-        } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-            if (event.getAction() == MotionEvent.ACTION_UP && pressedButton != null && onColorSelectedListener != null) {
-                onColorSelectedListener.onColorSelected(pressedButton.id);
+            case MotionEvent.ACTION_UP: {
+                if (!gestureCanceled && touchTargetButton != null
+                        && findButton(event.getX(), event.getY()) != touchTargetButton) {
+                    gestureCanceled = true;
+                }
+                if (!gestureCanceled && touchTargetButton != null
+                        && onColorSelectedListener != null && selectedColorId != touchTargetButton.id) {
+                    onColorSelectedListener.onColorSelected(touchTargetButton.id);
+                }
+                cancelGesture();
+                return true;
             }
-            for (ColorButton colorButton : buttons) {
-                colorButton.setPressed(false);
-            }
-            pressedButton = null;
+            case MotionEvent.ACTION_CANCEL:
+                cancelGesture();
+                return true;
+            default:
+                return true;
         }
-        return true;
+    }
+
+    private void cancelGesture() {
+        for (ColorButton colorButton : buttons) {
+            colorButton.setPressed(false);
+        }
+        pressedButton = null;
+        touchTargetButton = null;
+        gestureClaimed = false;
+        gestureCanceled = true;
+        requestParentDisallowIntercept(false);
+    }
+
+    private void requestParentDisallowIntercept(boolean disallow) {
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(disallow);
+        }
     }
 
     private ColorButton findButton(float x, float y) {

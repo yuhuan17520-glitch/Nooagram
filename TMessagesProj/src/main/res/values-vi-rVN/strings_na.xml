@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Kênh nguồn</string>
+    <string name="UpstreamTipsChannel">Kênh mẹo nguồn</string>
     <string name="N_Config">Cấu hình Nooagram</string>
     <string name="ForceCopy">Buộc sao chép</string>
     <string name="disableSecondAddress">Disable Second Address Request</string>

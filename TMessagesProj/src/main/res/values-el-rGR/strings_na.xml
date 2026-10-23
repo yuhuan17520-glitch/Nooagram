@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Κανάλι upstream</string>
+    <string name="UpstreamTipsChannel">Κανάλι συμβουλών upstream</string>
     <string name="N_Config">Nooagram-Ρύθμιση</string>
     <string name="ForceCopy">Εξαναγκασμός Αντιγραφής</string>
     <string name="disableSecondAddress">Απενεργοποίηση Δεύτερης Αίτησης Διεύθυνσης</string>

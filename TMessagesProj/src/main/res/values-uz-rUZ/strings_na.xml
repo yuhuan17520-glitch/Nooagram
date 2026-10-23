@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Yuqori oqim kanali</string>
+    <string name="UpstreamTipsChannel">Yuqori oqim maslahatlar kanali</string>
     <string name="N_Config">Sozlamalar</string>
     <string name="ForceCopy">Force Copy</string>
     <string name="InvertReply">Invert</string>

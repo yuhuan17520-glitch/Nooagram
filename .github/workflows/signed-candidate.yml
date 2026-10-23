@@ -4,8 +4,6 @@ on:
     branches: [nooagram-nagram-migration]
     paths-ignore:
       - '**.md'
-      - 'nooagram-version.json'
-      - 'Tools/nooagram-release.ps1'
       - 'Tools/test-nooagram-release.ps1'
       - '.github/workflows/release.yml'
       - '.github/workflows/migration-checks.yml'
@@ -30,13 +28,24 @@ jobs:
       COMPILE_NATIVE: '1'
       NOOAGRAM_SIGNED_CANDIDATE: '1'
       NATIVE_TARGET: ${{ matrix.abi }}
-      NOOAGRAM_VERSION_CODE: '125001000'
-      NOOAGRAM_VERSION_NAME: '1.3.0-13.0.2.n1255+125001000'
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Resolve candidate version from project metadata
+        id: version
+        shell: pwsh
+        run: |
+          . ./Tools/nooagram-release.ps1
+          $version = Get-NooagramCandidateVersion -RepositoryPath .
+          "code=$($version.VersionCode)" >> $env:GITHUB_OUTPUT
+          "name=$($version.VersionName)" >> $env:GITHUB_OUTPUT
+      - name: Apply resolved candidate version
+        shell: pwsh
+        run: |
+          "NOOAGRAM_VERSION_CODE=${{ steps.version.outputs.code }}" >> $env:GITHUB_ENV
+          "NOOAGRAM_VERSION_NAME=${{ steps.version.outputs.name }}" >> $env:GITHUB_ENV
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Saluran upstream</string>
+    <string name="UpstreamTipsChannel">Saluran tips upstream</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Salin Paksa</string>
     <string name="disableSecondAddress">Nonaktifkan Permintaan Alamat Kedua</string>

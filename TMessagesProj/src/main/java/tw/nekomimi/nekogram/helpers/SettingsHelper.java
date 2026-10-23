@@ -14,6 +14,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import java.util.ArrayList;
 import java.util.Map;
 
+import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
 import tw.nekomimi.nekogram.ChatHistoryActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity;
@@ -40,6 +41,7 @@ public class SettingsHelper {
             return;
         }
         BaseFragment fragment;
+        com.radolyn.ayugram.settings.BaseNekoXSettingsActivity ayu_fragment = null;
         BaseNekoSettingsActivity neko_fragment = null;
         BaseNekoXSettingsActivity nekox_fragment = null;
         if (segments.size() == 1) {
@@ -54,6 +56,9 @@ public class SettingsHelper {
                     break;
                 case "about":
                     fragment = neko_fragment = new NekoSettingsActivity();
+                    break;
+                case "ayumoments":
+                    fragment = ayu_fragment = new NekoAyuMomentsSettingsActivity();
                     break;
                 case "chat":
                 case "chats":
@@ -102,7 +107,15 @@ public class SettingsHelper {
         }
         if (!TextUtils.isEmpty(row)) {
             var rowFinal = row;
-            if (neko_fragment != null) {
+            if (ayu_fragment != null) {
+                com.radolyn.ayugram.settings.BaseNekoXSettingsActivity finalAyuFragment = ayu_fragment;
+                if (!TextUtils.isEmpty(value)) {
+                    String finalValue = value;
+                    AndroidUtilities.runOnUIThread(() -> finalAyuFragment.importToRow(rowFinal, finalValue, unknown));
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> finalAyuFragment.scrollToRow(rowFinal, unknown));
+                }
+            } else if (neko_fragment != null) {
                 BaseNekoSettingsActivity finalNeko_fragment = neko_fragment;
                 AndroidUtilities.runOnUIThread(() -> finalNeko_fragment.scrollToRow(rowFinal, unknown));
             } else if (nekox_fragment != null) {

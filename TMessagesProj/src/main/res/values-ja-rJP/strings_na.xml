@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">アップストリームチャンネル</string>
+    <string name="UpstreamTipsChannel">アップストリームのヒントチャンネル</string>
     <string name="N_Config">Nooagram設定</string>
     <string name="ForceCopy">強制コピー</string>
     <string name="disableSecondAddress">2番目のアドレスリクエストを無効にする</string>

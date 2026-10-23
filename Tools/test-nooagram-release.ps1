@@ -94,6 +94,7 @@ New-Item -ItemType Directory -Path (Join-Path $fixtureRepo 'Tools') | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'check-nagram-migration.ps1') -Destination (Join-Path $fixtureRepo 'Tools')
 Copy-Item -LiteralPath (Join-Path $sourceRepo 'gradle.properties') -Destination $fixtureRepo
 $metadata = Get-Content -LiteralPath (Join-Path $sourceRepo 'nooagram-version.json') -Raw | ConvertFrom-Json
+$telegramVersion = (Get-Content (Join-Path $fixtureRepo 'gradle.properties') | Where-Object { $_ -cmatch '^APP_VERSION_NAME=' }).Split('=')[1].Trim()
 $metadata.migration_ready = $false
 $metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixtureRepo 'nooagram-version.json') -Encoding utf8
 $rejected = $false
@@ -103,13 +104,52 @@ catch {
     $rejected = $true
 }
 Assert-Release $rejected 'Unvalidated migration accepted'
+$metadata.version_code_floor = [long]$metadata.version_code_floor + 1000
+$metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixtureRepo 'nooagram-version.json') -Encoding utf8
+$candidate = Get-NooagramCandidateVersion -RepositoryPath $fixtureRepo -Commit ('a' * 40)
+Assert-Release ($candidate.VersionCode -eq $metadata.version_code_floor) 'Candidate ignored a raised version floor'
+Assert-Release ($candidate.VersionName -ceq ('{0}-{1}.n{2}+{3}' -f $metadata.version, $telegramVersion, $metadata.upstream_build, $metadata.version_code_floor)) 'Candidate version name is hard-coded'
 $metadata.migration_ready = $true
+$metadata.version_code_floor = [long]$metadata.version_code_floor - 1000
 $metadata | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $fixtureRepo 'nooagram-version.json') -Encoding utf8
 $actualVersion = Get-NooagramVersion -RepositoryPath $fixtureRepo
-$telegramVersion = (Get-Content (Join-Path $fixtureRepo 'gradle.properties') | Where-Object { $_ -cmatch '^APP_VERSION_NAME=' }).Split('=')[1].Trim()
 $expectedName = '{0}-{1}.n{2}+{3}' -f $metadata.version, $telegramVersion, $metadata.upstream_build, $metadata.version_code_floor
 Assert-Release ($actualVersion.VersionName -ceq $expectedName) 'Build version name differs'
 Assert-Release ($actualVersion.ReleaseTag -ceq ('v' + $expectedName.Replace('+', '-'))) 'Unsafe release tag'
 Assert-Release ($actualVersion.VersionCode -eq $metadata.version_code_floor) 'Unexpected version code'
+$notesPath = Get-NooagramReleaseNotesPath -RepositoryPath $sourceRepo -Version $actualVersion.Version
+Assert-Release ($notesPath -ceq [IO.Path]::GetFullPath((Join-Path $sourceRepo ('docs/releases/' + $actualVersion.Version + '.md')))) 'Release notes path is not version-derived'
+$notes = Get-NooagramReleaseNotes -RepositoryPath $sourceRepo -Version $actualVersion.Version
+Assert-Release (![string]::IsNullOrWhiteSpace($notes)) 'Versioned release notes are empty'
+$notesTraversalRejected = $false
+try { Get-NooagramReleaseNotesPath -RepositoryPath $sourceRepo -Version '../release.yml' | Out-Null }
+catch { $notesTraversalRejected = $true }
+Assert-Release $notesTraversalRejected 'Unsafe release notes path was accepted'
+$releaseWorkflow = Get-Content -LiteralPath (Join-Path $sourceRepo '.github/workflows/release.yml') -Raw
+$candidateWorkflow = Get-Content -LiteralPath (Join-Path $sourceRepo '.github/workflows/signed-candidate.yml') -Raw
+Assert-Release ($releaseWorkflow -cnotmatch 'docs/releases/1[.]3[.]0[.]md' -and
+    $releaseWorkflow.Contains('Get-NooagramReleaseNotes') -and $releaseWorkflow.Contains('RELEASE_NOTES_PATH')) 'Release workflow has a hard-coded notes file'
+Assert-Release ($candidateWorkflow.Contains('Get-NooagramCandidateVersion') -and
+    $candidateWorkflow -cnotmatch "NOOAGRAM_VERSION_CODE: '125001000'") 'Signed candidate workflow has a hard-coded version'
+$proguardRules = Get-Content -LiteralPath (Join-Path $sourceRepo 'TMessagesProj/proguard-rules.pro') -Raw
+foreach ($settingsBase in @(
+    'com.radolyn.ayugram.settings.BaseNekoSettingsActivity',
+    'com.radolyn.ayugram.settings.BaseNekoXSettingsActivity',
+    'tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity',
+    'tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity'
+)) {
+    Assert-Release ($proguardRules.Contains("-keepnames class ") -and
+        $proguardRules.Contains("extends $settingsBase")) "Missing narrow R8 class-name keep for $settingsBase"
+}
+$dexCheck = Get-Content -LiteralPath (Join-Path $sourceRepo 'Tools/check-ayu-release-dex.cjs') -Raw
+foreach ($settingsClass in @(
+    'com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity',
+    'com.radolyn.ayugram.settings.NooagramPinnedHiderActivity',
+    'tw.nekomimi.nekogram.settings.NekoGeneralSettingsActivity',
+    'tw.nekomimi.nekogram.settings.NekoSettingsActivity'
+)) {
+    Assert-Release ($dexCheck.Contains($settingsClass)) "Release DEX check omits $settingsClass"
+}
+Assert-Release ($dexCheck.Contains("method.name === '<init>' && method.noArgs")) 'Release DEX check does not verify no-argument constructors'
 Write-Output 'PASS readiness guard and pinned release version in disposable fixture'
 # Keep this small generated fixture directory in OS temp for inspection.

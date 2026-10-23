@@ -6,25 +6,73 @@ function Get-NooagramVersion {
     $repoPath = (Resolve-Path -LiteralPath $RepositoryPath).Path
     & (Join-Path $repoPath 'Tools/check-nagram-migration.ps1') -RequireReleaseReady | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Migration validation failed.' }
+    Get-NooagramCandidateVersion -RepositoryPath $repoPath -Commit ((& git -C $repoPath rev-parse HEAD).Trim())
+}
+
+function Get-NooagramCandidateVersion {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [string]$Commit
+    )
+    $repoPath = (Resolve-Path -LiteralPath $RepositoryPath).Path
     $source = Get-Content -LiteralPath (Join-Path $repoPath 'nooagram-version.json') -Raw | ConvertFrom-Json
     if ($source.version -cnotmatch '^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$') {
         throw 'Nooagram version must be major.minor.patch.'
     }
+    if ([long]$source.version_code_floor -le [long]$source.previous_release_version_code -or
+        [long]$source.previous_release_version_code -lt 125000081 -or
+        [long]$source.version_code_floor -gt 2100000000) {
+        throw 'Unsafe Android upgrade version floor.'
+    }
     $appVersion = @(Get-Content -LiteralPath (Join-Path $repoPath 'gradle.properties') | Where-Object { $_ -cmatch '^APP_VERSION_NAME=' })[0].Substring('APP_VERSION_NAME='.Length).Trim()
     if ($appVersion -cnotmatch '^[0-9]+[.][0-9]+[.][0-9]+$') { throw 'Invalid Telegram version.' }
-    $commit = (& git -C $repoPath rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or $commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Cannot resolve build commit.' }
+    if (!$Commit) {
+        $Commit = (& git -C $repoPath rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve build commit.' }
+    }
+    if ($Commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid build commit.' }
     $code = [long]$source.version_code_floor
     $name = "$($source.version)-$appVersion.n$($source.upstream_build)+$code"
     [pscustomobject]@{
+        Version = $source.version
         VersionName = $name
         VersionCode = $code
         # URL paths must be accepted by both the old and migrated updater.
         ReleaseTag = 'v' + $name.Replace('+', '-')
         UpstreamRepository = $source.upstream_repository
         UpstreamCommit = $source.upstream_commit
-        Commit = $commit
+        Commit = $Commit
     }
+}
+
+function Get-NooagramReleaseNotesPath {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Version
+    )
+    if ($Version -cnotmatch '^(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$') {
+        throw 'Nooagram version must be major.minor.patch.'
+    }
+    $repoPath = (Resolve-Path -LiteralPath $RepositoryPath).Path
+    $releaseDirectory = [IO.Path]::GetFullPath((Join-Path $repoPath 'docs/releases'))
+    $path = [IO.Path]::GetFullPath((Join-Path $releaseDirectory ($Version + '.md')))
+    $prefix = $releaseDirectory.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    if (!$path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+        !(Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Missing release notes for version $Version."
+    }
+    return $path
+}
+
+function Get-NooagramReleaseNotes {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Version
+    )
+    $path = Get-NooagramReleaseNotesPath -RepositoryPath $RepositoryPath -Version $Version
+    $notes = Get-Content -LiteralPath $path -Raw
+    if ([string]::IsNullOrWhiteSpace($notes)) { throw "Empty release notes for version $Version." }
+    return $notes
 }
 
 function Export-NooagramReleaseAssets {

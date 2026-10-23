@@ -1,10 +1,13 @@
 import android.database.sqlite.SQLiteDatabase;
+import androidx.room.migration.Migration;
+import androidx.sqlite.db.SupportSQLiteDatabase;
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.AyuGhostConfig;
 import com.radolyn.ayugram.AyuWorker;
 import com.radolyn.ayugram.database.AyuData;
 import com.radolyn.ayugram.database.AyuDatabase;
 import com.radolyn.ayugram.database.AyuDatabaseMerger;
+import com.radolyn.ayugram.messages.AyuMessagesController;
 import com.radolyn.ayugram.utils.AyuGhostPreferences;
 import com.radolyn.ayugram.utils.AyuGhostUtils;
 import com.radolyn.ayugram.utils.AyuState;
@@ -22,12 +25,18 @@ import org.telegram.tgnet.tl.TL_account;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class PrivacyHistoryProbe {
     private static int assertions;
@@ -41,7 +50,10 @@ public class PrivacyHistoryProbe {
         delayedCallbacksStayOnAccount();
         lockedStatusCombinations();
         historyAccountLifecycle();
+        deletePermitSynchronization();
         Path fixtureRoot = Files.createTempDirectory(Path.of(args[0]), "fixtures-");
+        deletedDialogMigrationSurvives(fixtureRoot);
+        attachmentImportUsesWritableDirectory(fixtureRoot);
         importFailure(fixtureRoot, false);
         importFailure(fixtureRoot, true);
         invalidImportRestores(fixtureRoot);
@@ -217,11 +229,16 @@ public class PrivacyHistoryProbe {
         passed("R21 all 32 master/online/offline/lock combinations and shared global settings");
     }
 
-    private static void historyAccountLifecycle() {
+    private static void historyAccountLifecycle() throws Exception {
         UserConfig.selectedAccount = 0;
-        var history = new HistoryAccountProbe(message(1));
+        AyuMessagesController.revisionQueries = 0;
+        AyuMessagesController.attachmentsPath = Path.of("build/ayu-privacy-history-regression").toFile();
+        var historySource = message(1);
+        MessageObject.constructions = 0;
+        var history = new HistoryAccountProbe(historySource);
         check(history.getCurrentAccount() == 1, "R06 constructor did not bind message account before querying");
-        check(history.messages.getFirst().fakeId == 207, "R06 loaded another account's deletable row");
+        check(AyuMessagesController.revisionQueries == 0, "R24 history queried Room on the constructor thread");
+        check(history.messages.isEmpty(), "R24 history snapshot appeared before the storage queue ran");
         history.onFragmentCreate();
         check(NotificationCenter.getInstance(1).observers.contains(history), "R06 registered on wrong account");
         check(!NotificationCenter.getInstance(0).observers.contains(history), "R06 registered on foreground account");
@@ -229,11 +246,176 @@ public class PrivacyHistoryProbe {
         history.didReceivedNotification(AyuConstants.MESSAGE_EDITED_NOTIFICATION, 0, 70L, 42);
         check(history.refreshes == refreshes, "R06 reacted to another account's revision");
         history.didReceivedNotification(AyuConstants.MESSAGE_EDITED_NOTIFICATION, 1, 70L, 42);
-        check(history.refreshes == refreshes + 1, "R06 did not reload its own revision");
+        check(AyuMessagesController.revisionQueries == 0, "R24 history query left the UI queue");
+        Utilities.globalQueue.drain();
+        check(AyuMessagesController.revisionQueries == 2, "R24 history did not load both queued snapshots");
+        check(history.messages.isEmpty(), "R24 storage snapshot was committed before UI dispatch");
+        AndroidUtilities.drainUI();
+        check(history.messages.getFirst().fakeId == 202, "R24 stale history snapshot replaced the latest one");
+        check(history.preparedMessages.size() == 1 && history.messageObjects.size() == 1,
+                "R24 prepared history snapshot was not installed");
+        check(MessageObject.constructions == 0, "R24 MessageObject was constructed on the storage queue");
+        history.bindFirstForTest();
+        check(MessageObject.constructions == 1, "R24 MessageObject was not constructed on the UI path");
+        check(history.refreshes == refreshes + 1, "R06/R24 latest revision commit did not refresh once");
+
+        var destroyedHistory = new HistoryAccountProbe(message(1));
+        destroyedHistory.onFragmentDestroy();
+        Utilities.globalQueue.drain();
+        AndroidUtilities.drainUI();
+        check(destroyedHistory.messages.isEmpty(), "R24 destroyed history committed a late snapshot");
+
+        AyuMessagesController.attachmentsPath = null;
+        var noAttachmentsHistory = new HistoryAccountProbe(message(1));
+        Utilities.globalQueue.drain();
+        AndroidUtilities.drainUI();
+        check(noAttachmentsHistory.messages.size() == 1, "R24 null attachments path prevented history loading");
+
+        Path unavailableMarker = Path.of("build/ayu-privacy-history-regression/unavailable-attachments-sentinel");
+        Files.deleteIfExists(unavailableMarker);
+        Files.createFile(unavailableMarker);
+        AyuMessagesController.attachmentsPath = unavailableMarker.toFile();
+        var unavailableHistory = new HistoryAccountProbe(message(1));
+        Utilities.globalQueue.drain();
+        AndroidUtilities.drainUI();
+        check(unavailableHistory.messages.size() == 1, "R24 attachment-unavailable sentinel prevented history loading");
+        check(Files.isRegularFile(unavailableMarker), "R24 history changed the unavailable attachment sentinel");
+
         UserConfig.selectedAccount = 2;
         history.onFragmentDestroy();
         check(!NotificationCenter.getInstance(1).observers.contains(history), "R06 left observer on original account");
-        passed("R06 source-extracted constructor/query/notification lifecycle binds message account");
+        passed("R06/R24 history binds account, queries off-UI, applies only the latest snapshot, and drops destroyed-page results");
+    }
+
+    private static void deletePermitSynchronization() throws Exception {
+        int threads = 8;
+        int messagesPerWriter = 2000;
+        var executor = Executors.newFixedThreadPool(threads);
+        var start = new CountDownLatch(1);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+        for (int thread = 0; thread < threads; thread++) {
+            final int worker = thread;
+            futures.add(executor.submit(() -> {
+                start.await();
+                long dialogId = worker % 2 == 0 ? 70L : 99L;
+                for (int id = 1; id <= messagesPerWriter; id++) {
+                    AyuState.permitDeleteMessage(dialogId, id);
+                    AyuState.isDeletePermitted(dialogId, id);
+                }
+                return null;
+            }));
+        }
+        start.countDown();
+        for (var future : futures) future.get(20, TimeUnit.SECONDS);
+        executor.shutdown();
+        check(executor.awaitTermination(5, TimeUnit.SECONDS), "R24 delete-permit workers did not terminate");
+
+        for (long dialogId : List.of(70L, 99L)) {
+            for (int id = 1; id <= messagesPerWriter; id++) {
+                check(AyuState.isDeletePermitted(dialogId, id), "R24 concurrent delete permit was lost");
+            }
+        }
+        AyuState.permitDeleteMessage(70L, 7);
+        AyuState.permitDeleteMessage(70L, 7);
+        AyuState.messageDeleted(70L, 7);
+        check(!AyuState.isDeletePermitted(70L, 7), "R24 duplicate delete permit survived message cleanup");
+        check(!AyuState.isDeletePermitted(70L, messagesPerWriter + 1), "R24 unrelated delete permit appeared");
+        passed("R24 delete permits stay consistent across concurrent queue-style producers and consumers");
+    }
+
+    private static Migration migration(String fieldName) throws Exception {
+        Field field = AyuData.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return (Migration) field.get(null);
+    }
+
+    private static void deletedDialogMigrationSurvives(Path root) throws Exception {
+        android.content.Context.root = Files.createDirectories(root.resolve("migration-database")).toFile();
+        AndroidUtilities.cache = Files.createDirectories(root.resolve("migration-cache")).toFile();
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            try (var statement = connection.createStatement()) {
+                statement.execute("CREATE TABLE DeletedDialog (" +
+                        "fakeId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "userId INTEGER NOT NULL, dialogId INTEGER NOT NULL, peerId INTEGER NOT NULL, " +
+                        "folderId INTEGER, topMessage INTEGER NOT NULL, lastMessageDate INTEGER NOT NULL, " +
+                        "flags INTEGER NOT NULL, entityCreateDate INTEGER NOT NULL)");
+                statement.execute("CREATE INDEX index_DeletedDialog_userId_dialogId ON DeletedDialog(userId, dialogId)");
+                statement.execute("CREATE INDEX index_DeletedDialog_userId_entityCreateDate ON DeletedDialog(userId, entityCreateDate)");
+                statement.execute("INSERT INTO DeletedDialog VALUES (17,1000,-2000,-2000,3,44,123456,5,654321)");
+            }
+
+            SupportSQLiteDatabase database = new SupportSQLiteDatabase(connection);
+            migration("MIGRATION_29_30").migrate(database);
+            migration("MIGRATION_30_31").migrate(database);
+            try (var statement = connection.createStatement();
+                 var row = statement.executeQuery("SELECT fakeId, userId, dialogId, peerId, folderId, topMessage, lastMessageDate, flags, entityCreateDate FROM DeletedDialog")) {
+                check(row.next(), "R24 v29 DeletedDialog row was dropped by the v31 upgrade");
+                check(row.getLong("fakeId") == 17 && row.getLong("userId") == 1000
+                                && row.getLong("dialogId") == -2000 && row.getInt("folderId") == 3
+                                && row.getInt("topMessage") == 44 && row.getInt("lastMessageDate") == 123456
+                                && row.getInt("flags") == 5 && row.getInt("entityCreateDate") == 654321,
+                        "R24 v29 DeletedDialog payload changed during migration");
+                check(!row.next(), "R24 v29 DeletedDialog migration duplicated its row");
+            }
+            check(columnShape(connection).equals(
+                            "fakeId:INTEGER:1:1|userId:INTEGER:1:0|dialogId:INTEGER:1:0|peerId:INTEGER:1:0|" +
+                                    "folderId:INTEGER:0:0|topMessage:INTEGER:1:0|lastMessageDate:INTEGER:1:0|" +
+                                    "flags:INTEGER:1:0|entityCreateDate:INTEGER:1:0"),
+                    "R24 DeletedDialog schema differs from the Room v31 entity");
+            check(indexCount(connection) == 2, "R24 DeletedDialog indexes were lost during migration");
+        }
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            migration("MIGRATION_30_31").migrate(new SupportSQLiteDatabase(connection));
+            check(columnShape(connection).equals(
+                            "fakeId:INTEGER:1:1|userId:INTEGER:1:0|dialogId:INTEGER:1:0|peerId:INTEGER:1:0|" +
+                                    "folderId:INTEGER:0:0|topMessage:INTEGER:1:0|lastMessageDate:INTEGER:1:0|" +
+                                    "flags:INTEGER:1:0|entityCreateDate:INTEGER:1:0"),
+                    "R24 v30 fixture did not receive the Room v31 DeletedDialog schema");
+        }
+        passed("R24 production v29->30->31 migrations retain DeletedDialog data and Room-compatible schema");
+    }
+
+    private static String columnShape(Connection connection) throws Exception {
+        var columns = new java.util.ArrayList<String>();
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("PRAGMA table_info('DeletedDialog')")) {
+            while (rows.next()) {
+                columns.add(rows.getString("name") + ":" + rows.getString("type") + ":"
+                        + rows.getInt("notnull") + ":" + rows.getInt("pk"));
+            }
+        }
+        return String.join("|", columns);
+    }
+
+    private static int indexCount(Connection connection) throws Exception {
+        try (var statement = connection.createStatement();
+             var row = statement.executeQuery("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='DeletedDialog'")) {
+            row.next();
+            return row.getInt(1);
+        }
+    }
+
+    private static void attachmentImportUsesWritableDirectory(Path root) throws Exception {
+        Path fixture = Files.createDirectories(root.resolve("attachment-import"));
+        Path source = Files.writeString(fixture.resolve("history-attachment.bin"), "attachment payload");
+        Path unavailable = Files.createFile(fixture.resolve("unavailable-sentinel"));
+        Method copyAttachment = AyuDatabaseMerger.class.getDeclaredMethod("copyAttachment", String.class);
+        copyAttachment.setAccessible(true);
+
+        AyuMessagesController.attachmentsPath = unavailable.toFile();
+        check(copyAttachment.invoke(null, source.toString()) == null,
+                "R24 attachment import bypassed an unavailable writable directory");
+        check(Files.isRegularFile(unavailable), "R24 attachment import changed the unavailable sentinel");
+
+        Path writable = Files.createDirectories(fixture.resolve("writable"));
+        AyuMessagesController.attachmentsPath = writable.toFile();
+        String copiedPath = (String) copyAttachment.invoke(null, source.toString());
+        check(copiedPath != null, "R24 attachment import rejected a writable managed directory");
+        check(Files.readString(Path.of(copiedPath)).equals("attachment payload"),
+                "R24 attachment import corrupted the copied file");
+        AyuMessagesController.attachmentsPath = Path.of("build/ayu-privacy-history-regression").toFile();
+        passed("R24 attachment import uses the writable managed directory and preserves the unavailable failure path");
     }
 
     private static Path importFixture(Path root, String name) throws IOException {

@@ -33,6 +33,14 @@ The experimental-page probe executes the current page-rebuild method with both
 legacy hidden-feature values and channel-icon choices. All experimental options
 remain visible, the dependent channel-label row appears exactly once when needed,
 and rebuilding the page must not write any saved option or ghost-mode choice.
+The color picker probe compiles the production touch handler and verifies slop,
+vertical cancellation, leave-and-return cancellation, horizontal-to-vertical
+cancellation, and ACTION_UP-only selection. Deep-link and restore probes compile
+the current settings router and LaunchActivity factory, including the distinct
+`com.radolyn` and `tw.nekomimi` settings base types.
+The branding source check verifies that the dialogs title and stories header use
+the normal `Nooagram` text/status path without the legacy Nagram wordmark, while
+the custom title and user-name title preferences remain the title inputs.
 
 Startup/logout ordering, row binding, chat event subscription, and the URI
 encoding/decoding API pairing are source checks. These do not simulate Android
@@ -40,7 +48,8 @@ view rendering, disk durability, or execute Android's URI implementation.
 
 ## Review Result
 
-2026-09-28: all 25 probes passed against the quarantined-migration implementation.
+2026-10-23: all 30 probes passed, including the color picker, AyuMoments deep
+link, custom-settings process restoration, and home branding checks.
 The separate `TMessagesProj/src/test/run-filter-regressions.ps1` runner also
 passed all 27 JUnit tests, including account/session cache separation, album
 invalidation, and the non-null quick-filter error fallback.

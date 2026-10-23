@@ -32,7 +32,11 @@ public class RegressionRunner {
             manager.getJavaFileObjectsFromPaths(List.of(
                     root.resolve("tw/nekomimi/nekogram/helpers/NooagramPinnedHider.java"),
                     root.resolve("com/radolyn/ayugram/config/ConfigItem.java"),
-                    repo.resolve("Tools/pinned-settings-regression/PinnedSettingsProbe.java")))
+                    root.resolve("com/radolyn/ayugram/ui/cells/DeletedMessagesColorPickerCell.java"),
+                    repo.resolve("Tools/pinned-settings-regression/PinnedSettingsProbe.java"),
+                    repo.resolve("Tools/pinned-settings-regression/DeletedColorTouchProbe.java"),
+                    repo.resolve("Tools/pinned-settings-regression/SettingsDeepLinkProbe.java"),
+                    repo.resolve("Tools/pinned-settings-regression/LaunchSettingsRestoreProbe.java")))
                     .forEach(sources::add);
             STUBS.forEach((name, text) -> sources.add(source(name, text)));
             sources.add(activityMethods(root.resolve("com/radolyn/ayugram/settings/NooagramPinnedHiderActivity.java")));
@@ -40,6 +44,8 @@ public class RegressionRunner {
             sources.add(cellGroupMethods(root.resolve("com/radolyn/ayugram/config/CellGroup.java")));
             sources.add(filterNotificationMethods(root.resolve("tw/nekomimi/nekogram/filters/AyuFilter.java")));
             sources.add(experimentalSettingsMethods(root.resolve("tw/nekomimi/nekogram/settings/NekoExperimentalSettingsActivity.java")));
+            sources.add(settingsDeepLinkMethods(root.resolve("tw/nekomimi/nekogram/helpers/SettingsHelper.java")));
+            sources.add(launchSettingsRestoreMethods(root.resolve("org/telegram/ui/LaunchActivity.java")));
             if (!compiler.getTask(null, manager, null,
                     List.of("-proc:none", "-encoding", "UTF-8", "-d", output.toString()), null, sources).call()) {
                 throw new AssertionError("Probe compilation failed");
@@ -48,6 +54,9 @@ public class RegressionRunner {
         try (var loader = new URLClassLoader(new java.net.URL[]{output.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
             loader.loadClass("PinnedSettingsProbe").getMethod("main", String[].class)
                     .invoke(null, (Object) new String[]{repo.toString()});
+            loader.loadClass("DeletedColorTouchProbe").getMethod("verify").invoke(null);
+            loader.loadClass("SettingsDeepLinkProbe").getMethod("verify").invoke(null);
+            loader.loadClass("LaunchSettingsRestoreProbe").getMethod("verify").invoke(null);
         }
     }
 
@@ -246,6 +255,43 @@ public class RegressionRunner {
                 + "private static void notifyFiltersUpdated() " + methods.get("notifyFiltersUpdated") + "}");
     }
 
+    private static JavaFileObject settingsDeepLinkMethods(Path file) throws Exception {
+        return source("SettingsHelperProbe", """
+                import java.util.*;
+                import android.app.Activity;
+                import android.text.TextUtils;
+                import org.telegram.messenger.AndroidUtilities;
+                import org.telegram.messenger.LocaleController;
+                import org.telegram.messenger.R;
+                import org.telegram.ui.ActionBar.BaseFragment;
+                import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
+                import tw.nekomimi.nekogram.ChatHistoryActivity;
+                import tw.nekomimi.nekogram.helpers.PasscodeHelper;
+                import tw.nekomimi.nekogram.settings.*;
+                import xyz.nextalone.nagram.network.NetworkLogActivity;
+                import static org.telegram.ui.ProfileActivity.sendLogs;
+                public class SettingsHelperProbe {
+                    public interface Callback { void presentFragment(BaseFragment fragment); }
+                    public static class TestCallback implements Callback {
+                        public BaseFragment fragment;
+                        public void presentFragment(BaseFragment fragment) { this.fragment = fragment; }
+                    }
+                """ + "public static void processDeepLink(Activity activity, android.net.Uri uri, Callback callback, Runnable unknown) "
+                + methodBodies(file).get("processDeepLink") + "}");
+    }
+
+    private static JavaFileObject launchSettingsRestoreMethods(Path file) throws Exception {
+        var methods = methodBodies(file);
+        return source("LaunchSettingsRestoreProbeFactory", """
+                import org.telegram.messenger.FileLog;
+                import org.telegram.ui.ActionBar.BaseFragment;
+                public class LaunchSettingsRestoreProbeFactory {
+                """ + "private static boolean isCustomSettingsClassName(String className) "
+                + methods.get("isCustomSettingsClassName")
+                + "public static BaseFragment createRestoredCustomSettingsFragment(String className) "
+                + methods.get("createRestoredCustomSettingsFragment") + "}");
+    }
+
     private static void stub(String name, String body) {
         STUBS.put(name, "package " + name.substring(0, name.lastIndexOf('.')) + ";\n" + body);
     }
@@ -294,11 +340,96 @@ public class RegressionRunner {
                     public static final int GONE = 8;
                     public int visibility;
                     private Object tag;
+                    private ViewParent parent;
+                    private int measuredWidth, measuredHeight;
+                    protected android.content.Context context;
+                    public View() {}
+                    public View(android.content.Context context) { this.context = context; }
                     public void setTag(Object tag) { this.tag = tag; }
                     public Object getTag() { return tag; }
                     public void setVisibility(int visibility) { this.visibility = visibility; }
+                    public void attachTestParent(ViewParent parent) { this.parent = parent; }
+                    public ViewParent getParent() { return parent; }
+                    public void invalidate() {}
+                    public final void measure(int widthSpec, int heightSpec) {
+                        onMeasure(widthSpec, heightSpec);
+                    }
+                    protected void onMeasure(int widthSpec, int heightSpec) {
+                        setMeasuredDimension(MeasureSpec.getSize(widthSpec), MeasureSpec.getSize(heightSpec));
+                    }
+                    protected final void setMeasuredDimension(int width, int height) {
+                        measuredWidth = width;
+                        measuredHeight = height;
+                    }
+                    public int getMeasuredWidth() { return measuredWidth; }
+                    public int getMeasuredHeight() { return measuredHeight; }
+                    protected void onDraw(android.graphics.Canvas canvas) {}
+                    public boolean onTouchEvent(android.view.MotionEvent event) { return false; }
+                    public static class MeasureSpec {
+                        public static final int UNSPECIFIED = 0, EXACTLY = 1;
+                        public static int makeMeasureSpec(int size, int mode) { return size; }
+                        public static int getSize(int spec) { return spec & 0x00ffffff; }
+                    }
                 }
                 """);
+        stub("android.view.ViewParent", "public class ViewParent { public void requestDisallowInterceptTouchEvent(boolean disallow) {} }");
+        stub("android.view.ViewConfiguration", """
+                public class ViewConfiguration {
+                    public static ViewConfiguration get(android.content.Context context) { return new ViewConfiguration(); }
+                    public int getScaledTouchSlop() { return 8; }
+                }
+                """);
+        stub("android.view.MotionEvent", """
+                public class MotionEvent {
+                    public static final int ACTION_DOWN = 0, ACTION_UP = 1, ACTION_MOVE = 2, ACTION_CANCEL = 3;
+                    private final float x, y;
+                    private final int action;
+                    private MotionEvent(float x, float y, int action) { this.x = x; this.y = y; this.action = action; }
+                    public static MotionEvent obtain(float x, float y, int action) { return new MotionEvent(x, y, action); }
+                    public float getX() { return x; }
+                    public float getY() { return y; }
+                    public int getActionMasked() { return action; }
+                }
+                """);
+        stub("android.graphics.RectF", """
+                public class RectF {
+                    private float left, top, right, bottom;
+                    public RectF() {}
+                    public RectF(float left, float top, float right, float bottom) { set(left, top, right, bottom); }
+                    public void set(float left, float top, float right, float bottom) {
+                        this.left = left; this.top = top; this.right = right; this.bottom = bottom;
+                    }
+                    public void set(RectF other) { set(other.left, other.top, other.right, other.bottom); }
+                    public void inset(float dx, float dy) { left -= dx; top -= dy; right += dx; bottom += dy; }
+                    public boolean contains(float x, float y) { return x >= left && x <= right && y >= top && y <= bottom; }
+                    public float centerX() { return (left + right) / 2f; }
+                    public float centerY() { return (top + bottom) / 2f; }
+                    public float width() { return right - left; }
+                    public float height() { return bottom - top; }
+                }
+                """);
+        stub("android.graphics.Paint", """
+                public class Paint {
+                    public static final int ANTI_ALIAS_FLAG = 1;
+                    public enum Style { FILL, STROKE }
+                    public Paint() {}
+                    public Paint(int flags) {}
+                    public void setStyle(Style style) {}
+                    public void setStrokeWidth(float width) {}
+                    public void setColor(int color) {}
+                    public float getStrokeWidth() { return 0; }
+                }
+                """);
+        stub("android.graphics.Canvas", """
+                public class Canvas {
+                    public int save() { return 0; }
+                    public void restore() {}
+                    public void scale(float sx, float sy, float px, float py) {}
+                    public void drawCircle(float x, float y, float radius, android.graphics.Paint paint) {}
+                }
+                """);
+        stub("android.annotation.SuppressLint", "@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface SuppressLint { String[] value(); }");
+        stub("androidx.annotation.NonNull", "@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS) public @interface NonNull {}");
         stub("android.util.Base64", """
                 public class Base64 {
                     public static final int DEFAULT = 0;
@@ -330,8 +461,12 @@ public class RegressionRunner {
         stub("org.telegram.messenger.AndroidUtilities", """
                 public class AndroidUtilities {
                     public static final java.util.List<Runnable> queue = new java.util.ArrayList<>();
+                    public static final android.graphics.RectF rectTmp = new android.graphics.RectF();
                     public static void runOnUIThread(Runnable task) { queue.add(task); }
                     public static void flush() { while (!queue.isEmpty()) queue.remove(0).run(); }
+                    public static float dp(float value) { return value; }
+                    public static float dpf2(float value) { return value; }
+                    public static float lerp(float start, float end, float fraction) { return start + (end - start) * fraction; }
                 }
                 """);
         stub("org.telegram.messenger.UserConfig", """
@@ -397,6 +532,83 @@ public class RegressionRunner {
                     }
                 }
                 """);
+        stub("org.telegram.ui.ActionBar.BaseFragment", "public class BaseFragment {}");
+        stub("org.telegram.ui.ActionBar.Theme", """
+                public class Theme {
+                    public interface ResourcesProvider {}
+                    public static final String key_chat_inTimeText = "chat_inTimeText";
+                    public static final String key_windowBackgroundWhite = "windowBackgroundWhite";
+                    public static int getColor(String key, ResourcesProvider provider) { return 0xff000000; }
+                }
+                """);
+        stub("org.telegram.ui.Components.AnimatedFloat", """
+                public class AnimatedFloat {
+                    private float value;
+                    public AnimatedFloat(android.view.View view, float value, int duration, Object interpolator) { this.value = value; }
+                    public AnimatedFloat(android.view.View view, int duration, Object interpolator) {}
+                    public void set(boolean value, boolean immediate) { this.value = value ? 1 : 0; }
+                    public float set(boolean value) { this.value = value ? 1 : 0; return this.value; }
+                }
+                """);
+        stub("org.telegram.ui.Components.ButtonBounce", """
+                public class ButtonBounce {
+                    public ButtonBounce(android.view.View view) {}
+                    public float getScale(float minScale) { return 1; }
+                    public void setPressed(boolean pressed) {}
+                }
+                """);
+        stub("org.telegram.ui.Components.CubicBezierInterpolator", """
+                public class CubicBezierInterpolator {
+                    public static final CubicBezierInterpolator EASE_OUT_QUINT = new CubicBezierInterpolator();
+                }
+                """);
+        stub("tw.nekomimi.nekogram.helpers.TimeStringHelper", """
+                public class TimeStringHelper {
+                    public static final int[] DELETED_COLORS = {1, 2, 3, 4, 5, 6, 7};
+                }
+                """);
+        stub("android.app.Activity", "public class Activity {}");
+        stub("android.net.Uri", """
+                public class Uri {
+                    public java.util.List<String> getPathSegments() { return java.util.List.of(); }
+                    public String getQueryParameter(String key) { return null; }
+                }
+                """);
+        stub("android.text.TextUtils", "public class TextUtils { public static boolean isEmpty(CharSequence text) { return text == null || text.length() == 0; } }");
+        stub("org.telegram.messenger.LocaleController", "public class LocaleController { public static String getString(int id) { return \"text\"; } }");
+        stub("org.telegram.ui.ProfileActivity", "public class ProfileActivity { public static void sendLogs(android.app.Activity activity, boolean reset) {} }");
+        stub("com.radolyn.ayugram.settings.BaseNekoXSettingsActivity", """
+                public class BaseNekoXSettingsActivity extends org.telegram.ui.ActionBar.BaseFragment {
+                    public static String lastImport, lastScroll;
+                    public void importToRow(String key, String value, Runnable unknown) { lastImport = key + "=" + value; }
+                    public void scrollToRow(String key, Runnable unknown) { lastScroll = key; }
+                }
+                """);
+        stub("com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity", "public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {}");
+        stub("tw.nekomimi.nekogram.ChatHistoryActivity", "public class ChatHistoryActivity extends org.telegram.ui.ActionBar.BaseFragment {}");
+        stub("xyz.nextalone.nagram.network.NetworkLogActivity", "public class NetworkLogActivity extends org.telegram.ui.ActionBar.BaseFragment {}");
+        stub("tw.nekomimi.nekogram.helpers.PasscodeHelper", "public class PasscodeHelper { public static String getSettingsKey() { return \"passcode\"; } }");
+        stub("tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity", """
+                public class BaseNekoSettingsActivity extends org.telegram.ui.ActionBar.BaseFragment {
+                    public static String lastImport, lastScroll;
+                    public void importToRow(String key, String value, Runnable unknown) { lastImport = key + "=" + value; }
+                    public void scrollToRow(String key, Runnable unknown) { lastScroll = key; }
+                }
+                """);
+        stub("tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity", """
+                public class BaseNekoXSettingsActivity extends org.telegram.ui.ActionBar.BaseFragment {
+                    public static String lastImport, lastScroll;
+                    public void importToRow(String key, String value, Runnable unknown) { lastImport = key + "=" + value; }
+                    public void scrollToRow(String key, Runnable unknown) { lastScroll = key; }
+                }
+                """);
+        for (String name : List.of("NekoPasscodeSettingsActivity", "NekoEmojiSettingsActivity", "NekoSettingsActivity")) {
+            stub("tw.nekomimi.nekogram.settings." + name, "public class " + name + " extends BaseNekoSettingsActivity {}");
+        }
+        for (String name : List.of("NekoAccountSettingsActivity", "NekoChatSettingsActivity",
+                "NekoDebugSettingsActivity", "NekoExperimentalSettingsActivity", "NekoGeneralSettingsActivity")) {
+            stub("tw.nekomimi.nekogram.settings." + name, "public class " + name + " extends BaseNekoXSettingsActivity {}");
+        }
         stub("com.radolyn.ayugram.AyuOptions", """
                 public class AyuOptions {
                     public static final Object sync = new Object();

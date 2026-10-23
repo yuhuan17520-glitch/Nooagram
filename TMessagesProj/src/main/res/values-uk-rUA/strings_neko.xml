@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Захистити цей QR-код паролем</string>
     <string name="ConfirmNewPassword">Підтвердити пароль</string>
     <string name="PassQRAbout">Зберігає ваш ключ доступу як зашифрований QR-код. Ви можете відсканувати його, щоб увійти на інший пристрій.</string>
-    <string name="PassQREncryption">Сканувати з Награмом для входу.</string>
+    <string name="PassQREncryption">Скануйте за допомогою Nooagram для входу.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Пароль має складатися хоча б з 8 символів</string>
     <string name="PassQRPasswordWarning">Попередження про безпеку: цей пароль є єдиним захистом вашого ключа. Слабкий пароль можна зламати офлайн, змішувати вгору і нижні, цифри і символи.</string>

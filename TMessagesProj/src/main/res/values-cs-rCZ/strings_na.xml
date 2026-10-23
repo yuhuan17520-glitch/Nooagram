@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Kanál upstream</string>
+    <string name="UpstreamTipsChannel">Kanál tipů upstream</string>
     <string name="N_Config">Konfigurace Nooagram</string>
     <string name="ForceCopy">Vynutit kopírování</string>
     <string name="disableSecondAddress">Zakázat žádost o druhou adresu</string>

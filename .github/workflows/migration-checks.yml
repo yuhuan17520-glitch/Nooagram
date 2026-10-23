@@ -5,9 +5,16 @@ on:
     paths:
       - '.github/workflows/migration-checks.yml'
       - '.github/workflows/release.yml'
-      - 'Tools/*nooagram-release.ps1'
+      - '.github/workflows/signed-candidate.yml'
+      - 'nooagram-version.json'
+      - 'docs/releases/*.md'
+      - 'Tools/check-nagram-migration.ps1'
+      - 'Tools/nooagram-release.ps1'
+      - 'Tools/test-nooagram-release.ps1'
       - 'Tools/ayu-privacy-history-regression/**'
-      - 'TMessagesProj/src/test/java/org/telegram/messenger/car/**'
+      - 'Tools/pinned-settings-regression/**'
+      - 'TMessagesProj/src/main/**'
+      - 'TMessagesProj/src/test/**'
   pull_request:
   workflow_dispatch:
 permissions:
@@ -43,7 +50,7 @@ jobs:
         shell: pwsh
         run: ./Tools/test-nooagram-release.ps1
       - name: Compile Java/Kotlin and run migration unit tests
-        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'org.telegram.messenger.car.CarVoiceAttachmentTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --console=plain
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'tw.nekomimi.nekogram.helpers.CloudSettingsHelperTest' --tests 'tw.nekomimi.nekogram.settings.*' --tests 'org.telegram.messenger.car.CarVoiceAttachmentTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --console=plain
       - name: Validate upstream proposal script without network or pushes
         run: node Tools/nagram-sync-regression/test.cjs
       - name: Validate release shrinking and reflection contracts without packaging

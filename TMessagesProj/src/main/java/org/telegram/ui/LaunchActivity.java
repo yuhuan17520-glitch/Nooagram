@@ -682,6 +682,16 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                 actionBarLayout.addFragmentToStack(new SettingsActivity());
                                 break;
                             }
+                            case "custom_settings": {
+                                if (UserConfig.getInstance(currentAccount).isClientActivated()) {
+                                    BaseFragment settings = createRestoredCustomSettingsFragment(
+                                            savedInstanceState.getString("settings_class"));
+                                    if (settings != null) {
+                                        actionBarLayout.addFragmentToStack(settings);
+                                    }
+                                }
+                                break;
+                            }
                             case "group":
                                 if (args != null) {
                                     GroupCreateFinalActivity group = new GroupCreateFinalActivity(args);
@@ -8507,11 +8517,43 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     outState.putString("fragment", "channel");
                 } else if (lastFragment instanceof SettingsActivity) {
                     outState.putString("fragment", "settings2");
+                } else if (isRestorableCustomSettingsFragment(lastFragment)) {
+                    outState.putString("fragment", "custom_settings");
+                    outState.putString("settings_class", lastFragment.getClass().getName());
                 }
                 lastFragment.saveSelfArgs(outState);
             }
         } catch (Exception e) {
             FileLog.e(e);
+        }
+    }
+
+    private static boolean isRestorableCustomSettingsFragment(BaseFragment fragment) {
+        return fragment != null && isCustomSettingsClassName(fragment.getClass().getName());
+    }
+
+    private static boolean isCustomSettingsClassName(String className) {
+        if (className == null || className.indexOf('$') >= 0) {
+            return false;
+        }
+        return className.startsWith("com.radolyn.ayugram.settings.")
+                || className.startsWith("tw.nekomimi.nekogram.settings.");
+    }
+
+    static BaseFragment createRestoredCustomSettingsFragment(String className) {
+        if (!isCustomSettingsClassName(className)) {
+            return null;
+        }
+        try {
+            Class<?> type = Class.forName(className);
+            if (!BaseFragment.class.isAssignableFrom(type)
+                    || java.lang.reflect.Modifier.isAbstract(type.getModifiers())) {
+                return null;
+            }
+            return (BaseFragment) type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | SecurityException exception) {
+            FileLog.e(exception);
+            return null;
         }
     }
 

@@ -31,42 +31,341 @@ import tw.nekomimi.nekogram.filters.AyuFilter;
 final class NooagramDialogPreviewFilter {
     private static final int MAX_STATES = 256;
     private static final int MAX_REMEMBERED_MESSAGES = 4;
+    private static final int MAX_GROUP_CONTEXTS = 512;
+    private static final int MAX_GROUP_MEMBERS = 64;
+    private static final int GROUP_FETCH_LIMIT = 20;
+    private static final int GROUP_FETCH_OFFSET = -10;
+    private static final int GROUP_OLDER_PROBE_LIMIT = 10;
+    private static final int TELEGRAM_ALBUM_MAX_SIZE = 10;
+    private static final long GROUP_RETRY_MS = 30000;
     static final int SEARCHING = 0;
     static final int UNAVAILABLE = 1;
     static final int EXHAUSTED = 2;
+    static final int VISIBLE = 0;
+    static final int PENDING = 1;
+    static final int HIDDEN = 2;
     private static final long REQUEST_TIMEOUT_MS = 30000;
     // These collections and request transitions are confined to the UI thread.
     private static final Map<NooagramPreviewSearch.Key, State> STATES = new LinkedHashMap<>(64, 0.75f, true);
     private static final Map<NooagramPreviewSearch.Key, ArrayList<MessageObject>> VISIBLE_PREVIEWS =
             new LinkedHashMap<>(64, 0.75f, true);
+    private static final Map<GroupKey, GroupContext> GROUP_CONTEXTS =
+            new LinkedHashMap<>(64, 0.75f, true);
+    private static final Map<GroupKey, GroupLoad> GROUP_LOADS = new LinkedHashMap<>();
     private static final Account[] ACCOUNTS = new Account[UserConfig.MAX_ACCOUNT_COUNT];
     private static long nextGeneration;
 
     private NooagramDialogPreviewFilter() {}
 
     static boolean isHidden(int account, long dialogId, MessageObject message) {
+        return getVisibility(account, dialogId, message) == HIDDEN;
+    }
+
+    static int getVisibility(int account, long dialogId, MessageObject message) {
         if (message == null || message.messageOwner == null) {
-            return false;
+            return VISIBLE;
         }
         if (message.messageOwner.hide) {
-            return true;
+            return HIDDEN;
         }
         // A chat's temporary "show filtered" flag must not bypass dialog filtering.
         boolean skipFiltering = message.skipAyuFiltering;
         try {
             message.skipAyuFiltering = false;
-            return AyuFilter.shouldHideIgnoredBlockedMessages()
-                        && ChatObject.isMegagroup(MessagesController.getInstance(account).getChat(-dialogId))
-                        && AyuFilter.isIgnoredBlockedMessage(message)
-                    || AyuFilter.shouldHideFilteredMessages() && AyuFilter.isFiltered(message, null);
+            boolean blocked = AyuFilter.shouldHideIgnoredBlockedMessages()
+                    && ChatObject.isMegagroup(MessagesController.getInstance(account).getChat(-dialogId))
+                    && AyuFilter.isIgnoredBlockedMessage(message);
+            if (blocked || !AyuFilter.shouldHideFilteredMessages()) {
+                return blocked ? HIDDEN : VISIBLE;
+            }
+            long groupId = message.getGroupId();
+            if (groupId == 0) {
+                return AyuFilter.isFiltered(message, null) ? HIDDEN : VISIBLE;
+            }
+            GroupContext group = groupContext(account, dialogId, groupId);
+            if (group == null || !group.complete) {
+                return PENDING;
+            }
+            return AyuFilter.isFiltered(message, group.messages.messages.size() > 1 ? group.messages : null)
+                    ? HIDDEN : VISIBLE;
         } finally {
             message.skipAyuFiltering = skipFiltering;
         }
     }
 
+    static int dialogPreviewDate(boolean filteredPreview, MessageObject message, int dialogDate) {
+        return filteredPreview ? message != null && message.messageOwner != null ? message.messageOwner.date : 0
+                : dialogDate;
+    }
+
+    private static GroupContext groupContext(int account, long dialogId, long groupId) {
+        if (groupId == 0) {
+            return null;
+        }
+        Account owner = ACCOUNTS[account];
+        UserConfig config = UserConfig.getInstance(account);
+        if (owner == null || owner.userId != config.getClientUserId() || owner.loginTime != config.loginTime) {
+            return null;
+        }
+        GroupKey key = new GroupKey(account, owner.userId, owner.generation, dialogId, groupId);
+        synchronized (GROUP_CONTEXTS) {
+            return GROUP_CONTEXTS.get(key);
+        }
+    }
+
+    private static void putGroupContext(GroupKey key, MessageObject.GroupedMessages messages, boolean complete) {
+        synchronized (GROUP_CONTEXTS) {
+            GroupContext previous = GROUP_CONTEXTS.get(key);
+            if (previous == null || complete || !previous.complete) {
+                GROUP_CONTEXTS.put(key, new GroupContext(messages, complete));
+            }
+            if (GROUP_CONTEXTS.size() > MAX_GROUP_CONTEXTS) {
+                Iterator<GroupKey> iterator = GROUP_CONTEXTS.keySet().iterator();
+                iterator.next();
+                iterator.remove();
+            }
+        }
+    }
+
+    private static void clearGroupContexts(int account) {
+        synchronized (GROUP_CONTEXTS) {
+            GROUP_CONTEXTS.keySet().removeIf(key -> account < 0 || key.account == account);
+        }
+        ArrayList<GroupLoad> removed = new ArrayList<>();
+        synchronized (GROUP_LOADS) {
+            Iterator<Map.Entry<GroupKey, GroupLoad>> iterator = GROUP_LOADS.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry<GroupKey, GroupLoad> entry = iterator.next();
+                if (account < 0 || entry.getKey().account == account) {
+                    removed.add(entry.getValue());
+                    iterator.remove();
+                }
+            }
+        }
+        for (GroupLoad load : removed) {
+            load.cancel();
+        }
+    }
+
+    static void ensureGroupContext(DialogCell cell, int account, long dialogId, MessageObject message) {
+        ensureGroupContext(cell, null, account, dialogId, message);
+    }
+
+    private static void ensureGroupContext(State state, MessageObject message) {
+        ensureGroupContext(null, state, state.key.account, state.key.dialogId, message);
+    }
+
+    private static void ensureGroupContext(DialogCell cell, State state, int account, long dialogId, MessageObject message) {
+        if (message == null || message.getGroupId() == 0) {
+            return;
+        }
+        Account owner = account(account);
+        if (owner.userId == 0) {
+            return;
+        }
+        GroupKey key = new GroupKey(account, owner.userId, owner.generation, dialogId, message.getGroupId());
+        GroupContext context = groupContext(account, dialogId, message.getGroupId());
+        if (context != null && context.complete) {
+            return;
+        }
+        GroupLoad load;
+        synchronized (GROUP_LOADS) {
+            load = GROUP_LOADS.get(key);
+            if (load == null) {
+                load = new GroupLoad(key, owner.loginTime, message.getGroupId(), message.getId());
+                GROUP_LOADS.put(key, load);
+            }
+        }
+        load.watch(cell, state);
+        if (load.requestId != 0 || load.started) {
+            return;
+        }
+        if (SystemClock.elapsedRealtime() < load.retryAt) {
+            return;
+        }
+        sendGroupRequest(load);
+    }
+
+    private static void sendGroupRequest(GroupLoad load) {
+        if (GROUP_LOADS.get(load.key) != load) {
+            return;
+        }
+        load.started = true;
+        try {
+            TLRPC.TL_messages_getHistory request = new TLRPC.TL_messages_getHistory();
+            request.peer = MessagesController.getInstance(load.key.account).getInputPeer(load.key.dialogId);
+            if (load.checkingOldest) {
+                request.limit = GROUP_OLDER_PROBE_LIMIT;
+                request.offset_id = load.oldestGroupId;
+            } else {
+                // Telegram albums contain at most ten messages. A centered 20-message window must
+                // contain the whole album when the album is inside both returned page boundaries.
+                request.limit = GROUP_FETCH_LIMIT;
+                request.offset_id = load.sourceId;
+                request.add_offset = GROUP_FETCH_OFFSET;
+            }
+            int requestToken = ++load.requestToken;
+            load.requestId = ConnectionsManager.getInstance(load.key.account).sendRequest(request,
+                    (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                        if (load.requestToken == requestToken) {
+                            finishGroupLoad(load, response, error);
+                        }
+                    }));
+            load.timeout = () -> {
+                load.clearRequest(true);
+                finishGroupLoad(load, null, new Object());
+            };
+            AndroidUtilities.runOnUIThread(load.timeout, REQUEST_TIMEOUT_MS);
+        } catch (Exception error) {
+            Log.e("NooagramPreview", "Cannot request album context", error);
+            scheduleGroupRetry(load);
+        }
+    }
+
+    private static void finishGroupLoad(GroupLoad load, Object response, Object error) {
+        if (!load.sessionCurrent() || GROUP_LOADS.get(load.key) != load) {
+            return;
+        }
+        boolean checkingOldest = load.checkingOldest;
+        load.checkingOldest = false;
+        load.clearRequest(false);
+        if (error != null || !(response instanceof TLRPC.messages_Messages)
+                || response instanceof TLRPC.TL_messages_messagesNotModified) {
+            scheduleGroupRetry(load);
+            return;
+        }
+        TLRPC.messages_Messages history = (TLRPC.messages_Messages) response;
+        if (checkingOldest) {
+            for (TLRPC.Message message : history.messages) {
+                if (message != null && message.grouped_id == load.groupId) {
+                    scheduleGroupRetry(load);
+                    return;
+                }
+            }
+            MessageObject.GroupedMessages completeGroup = load.completeGroup;
+            load.completeGroup = null;
+            load.oldestGroupId = 0;
+            if (completeGroup != null) {
+                putGroupContext(load.key, completeGroup, true);
+                load.cancel();
+                removeGroupLoad(load.key, load);
+                refreshGroupLoad(load);
+            } else {
+                scheduleGroupRetry(load);
+            }
+            return;
+        }
+        MessagesController controller = MessagesController.getInstance(load.key.account);
+        controller.putUsers(history.users, false);
+        controller.putChats(history.chats, false);
+        ArrayList<TLRPC.Message> page = new ArrayList<>();
+        for (TLRPC.Message message : history.messages) {
+            if (message != null && !(message instanceof TLRPC.TL_messageEmpty)) {
+                message.dialog_id = load.key.dialogId;
+                page.add(message);
+            }
+        }
+        MessageObject.GroupedMessages group = new MessageObject.GroupedMessages();
+        group.groupId = load.groupId;
+        boolean sourceFound = false;
+        int newestGroupId = 0;
+        int firstGroupIndex = -1;
+        int lastGroupIndex = -1;
+        for (int i = 0; i < page.size(); i++) {
+            TLRPC.Message message = page.get(i);
+            if (message.grouped_id != load.groupId) {
+                continue;
+            }
+            if (firstGroupIndex == -1) {
+                firstGroupIndex = i;
+            }
+            lastGroupIndex = i;
+            MessageObject object = new MessageObject(load.key.account, message, false, false);
+            group.messages.add(object);
+            sourceFound |= object.getId() == load.sourceId;
+            newestGroupId = Math.max(newestGroupId, object.getId());
+        }
+        TLRPC.Dialog dialog = controller.dialogs_dict.get(load.key.dialogId);
+        boolean topBoundary = firstGroupIndex > 0
+                || dialog != null && dialog.top_message != 0 && newestGroupId == dialog.top_message;
+        boolean bottomBoundary = lastGroupIndex >= 0 && lastGroupIndex < page.size() - 1;
+        // A short centered page is not proof of the oldest edge because add_offset may clamp.
+        // Probe immediately older than the oldest known member when the group reaches page end.
+        if (sourceFound && topBoundary && !bottomBoundary && group.messages.size() <= TELEGRAM_ALBUM_MAX_SIZE) {
+            group.messages.sort((left, right) -> Integer.compare(left.getId(), right.getId()));
+            load.completeGroup = group;
+            load.oldestGroupId = group.messages.get(0).getId();
+            load.checkingOldest = true;
+            sendGroupRequest(load);
+        } else if (sourceFound && topBoundary && bottomBoundary
+                && group.messages.size() <= TELEGRAM_ALBUM_MAX_SIZE) {
+            group.messages.sort((left, right) -> Integer.compare(left.getId(), right.getId()));
+            putGroupContext(load.key, group, true);
+            load.cancel();
+            removeGroupLoad(load.key, load);
+            refreshGroupLoad(load);
+        } else {
+            scheduleGroupRetry(load);
+        }
+    }
+
+    private static void scheduleGroupRetry(GroupLoad load) {
+        load.clearRequest(true);
+        load.started = false;
+        load.checkingOldest = false;
+        load.completeGroup = null;
+        load.oldestGroupId = 0;
+        load.retryAt = SystemClock.elapsedRealtime() + GROUP_RETRY_MS;
+        if (load.retry != null) {
+            AndroidUtilities.cancelRunOnUIThread(load.retry);
+        }
+        load.retry = () -> {
+            load.retry = null;
+            if (GROUP_LOADS.get(load.key) != load || !load.sessionCurrent()) {
+                return;
+            }
+            if (!load.hasWatchers()) {
+                load.cancel();
+                removeGroupLoad(load.key, load);
+                return;
+            }
+            if (load.requestId != 0 || load.started) {
+                return;
+            }
+            sendGroupRequest(load);
+        };
+        AndroidUtilities.runOnUIThread(load.retry, GROUP_RETRY_MS);
+    }
+
+    private static void refreshGroupLoad(GroupLoad load) {
+        for (WeakReference<DialogCell> reference : new ArrayList<>(load.cells)) {
+            DialogCell cell = reference.get();
+            if (cell != null && cell.isAttachedToWindow() && cell.getCurrentAccount() == load.key.account
+                    && cell.getDialogId() == load.key.dialogId) {
+                cell.refreshFilteredPreview();
+            }
+        }
+        for (State state : new ArrayList<>(load.states)) {
+            if (STATES.get(state.key) == state) {
+                STATES.remove(state.key);
+                state.dispose();
+                refresh(state);
+            }
+        }
+    }
+
+    private static void removeGroupLoad(GroupKey key, GroupLoad load) {
+        synchronized (GROUP_LOADS) {
+            if (GROUP_LOADS.get(key) == load) {
+                GROUP_LOADS.remove(key);
+            }
+        }
+    }
+
     static void rememberVisible(int account, long dialogId, MessageObject message) {
         Account owner = account(account);
-        if (owner.userId == 0 || !validMessage(account, dialogId, message) || isHidden(account, dialogId, message)) {
+        if (owner.userId == 0 || !validMessage(account, dialogId, message)
+                || getVisibility(account, dialogId, message) != VISIBLE) {
             return;
         }
         NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
@@ -171,9 +470,16 @@ final class NooagramDialogPreviewFilter {
     }
 
     private static boolean eligible(State state, MessageObject candidate) {
-        return validMessage(state.key.account, state.key.dialogId, candidate)
-                && candidate.getId() != state.search.sourceId
-                && !isHidden(state.key.account, state.key.dialogId, candidate);
+        if (!validMessage(state.key.account, state.key.dialogId, candidate)
+                || candidate.getId() == state.search.sourceId) {
+            return false;
+        }
+        int visibility = getVisibility(state.key.account, state.key.dialogId, candidate);
+        if (visibility == PENDING) {
+            ensureGroupContext(state, candidate);
+            return false;
+        }
+        return visibility == VISIBLE;
     }
 
     private static Account account(int account) {
@@ -234,6 +540,7 @@ final class NooagramDialogPreviewFilter {
                         }
                     }
                 }
+                loadGroupMembers(storage, state, page, users, chats);
                 page.users = storage.getUsers(users);
                 page.chats = storage.getChats(chats);
             } catch (Exception error) {
@@ -252,6 +559,7 @@ final class NooagramDialogPreviewFilter {
                     finish(state, token, null, true);
                     return;
                 }
+                publishGroupContexts(state, page);
                 MessageObject result;
                 try {
                     result = findCandidate(state, page);
@@ -293,6 +601,54 @@ final class NooagramDialogPreviewFilter {
         return NooagramPreviewSearch.latestEligible(candidates, candidate -> eligible(state, candidate));
     }
 
+    private static void loadGroupMembers(MessagesStorage storage, State state, Page page,
+                                         ArrayList<Long> users, ArrayList<Long> chats) throws SQLiteException {
+        Set<Long> groupIds = new HashSet<>();
+        for (TLRPC.Message message : page.messages) {
+            if (message.grouped_id != 0) {
+                groupIds.add(message.grouped_id);
+            }
+        }
+        if (state.source.getGroupId() != 0) {
+            groupIds.add(state.source.getGroupId());
+        }
+        for (Long groupId : groupIds) {
+            ArrayList<TLRPC.Message> members = new ArrayList<>();
+            SQLiteCursor cursor = null;
+            try {
+                cursor = storage.getDatabase().queryFinalized(
+                        "SELECT data, send_state, mid, date, read_state, replydata FROM messages_v2 "
+                                + "WHERE uid = ? AND group_id = ? ORDER BY date ASC, mid ASC LIMIT ?",
+                        state.key.dialogId, groupId, MAX_GROUP_MEMBERS + 1);
+                while (cursor.next()) {
+                    TLRPC.Message message = readMessage(cursor, state);
+                    if (message != null) {
+                        members.add(message);
+                        MessagesStorage.addUsersAndChatsFromMessage(message, users, chats, null);
+                    }
+                }
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+            }
+            if (members.size() <= MAX_GROUP_MEMBERS) {
+                page.groupMembers.put(groupId, members);
+            }
+        }
+    }
+
+    private static void publishGroupContexts(State state, Page page) {
+        for (Map.Entry<Long, ArrayList<TLRPC.Message>> entry : page.groupMembers.entrySet()) {
+            MessageObject.GroupedMessages group = new MessageObject.GroupedMessages();
+            group.groupId = entry.getKey();
+            for (TLRPC.Message message : entry.getValue()) {
+                group.messages.add(new MessageObject(state.key.account, message, false, false));
+            }
+            putGroupContext(new GroupKey(state.key, entry.getKey()), group, false);
+        }
+    }
+
     private static void recheckReplacement(State state, long token) {
         ArrayList<TLRPC.Message> messages = new ArrayList<>();
         messages.add(state.replacement.messageOwner);
@@ -310,6 +666,7 @@ final class NooagramDialogPreviewFilter {
                     finish(state, token, null, true);
                     return;
                 }
+                publishGroupContexts(state, page);
                 MessageObject result;
                 try {
                     result = findCandidate(state, page);
@@ -453,6 +810,7 @@ final class NooagramDialogPreviewFilter {
                             finish(state, token, null, true);
                             return;
                         }
+                        publishGroupContexts(state, stored);
                         MessageObject result;
                         try {
                             result = findCandidate(state, stored);
@@ -478,6 +836,8 @@ final class NooagramDialogPreviewFilter {
     // Read the fetched page itself after the write, including rows outside the local scan cap.
     private static Page readStoredHistory(MessagesStorage storage, State state, ArrayList<TLRPC.Message> messages, boolean requireAll) {
         Page page = new Page();
+        ArrayList<Long> users = new ArrayList<>();
+        ArrayList<Long> chats = new ArrayList<>();
         try {
             for (TLRPC.Message message : messages) {
                 if (message instanceof TLRPC.TL_messageEmpty) {
@@ -496,10 +856,16 @@ final class NooagramDialogPreviewFilter {
                         continue;
                     }
                     page.messages.add(raw);
+                    MessagesStorage.addUsersAndChatsFromMessage(raw, users, chats, null);
                 } finally {
                     cursor.dispose();
                 }
             }
+            if (!page.failed) {
+                loadGroupMembers(storage, state, page, users, chats);
+            }
+            page.users = storage.getUsers(users);
+            page.chats = storage.getChats(chats);
         } catch (Exception error) {
             page.failed = true;
             Log.e("NooagramPreview", "Cannot verify preview history write", error);
@@ -552,6 +918,7 @@ final class NooagramDialogPreviewFilter {
             return;
         }
         long dialogId = ((Number) args[0]).longValue();
+        clearGroupContexts(account);
         Account owner = account(account);
         NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
         Set<Integer> ids = new HashSet<>();
@@ -592,6 +959,7 @@ final class NooagramDialogPreviewFilter {
         if (args.length > 2 && Boolean.TRUE.equals(args[2])) {
             return true; // Scheduled-message deletion does not affect the main dialog preview.
         }
+        clearGroupContexts(account);
         Set<Integer> ids = new HashSet<>();
         for (Object id : (List<?>) args[0]) {
             if (id instanceof Number) {
@@ -647,6 +1015,7 @@ final class NooagramDialogPreviewFilter {
 
         void reset(boolean refresh, boolean keepVisible) {
             generation = ++nextGeneration;
+            clearGroupContexts(account);
             ArrayList<MessageObject> remembered = new ArrayList<>();
             Iterator<Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>>> previews = VISIBLE_PREVIEWS.entrySet().iterator();
             while (previews.hasNext()) {
@@ -703,6 +1072,7 @@ final class NooagramDialogPreviewFilter {
     private static final class State {
         final NooagramPreviewSearch.Key key;
         final NooagramPreviewSearch search;
+        final MessageObject source;
         final int loginTime;
         final ArrayList<WeakReference<DialogCell>> cells = new ArrayList<>();
         volatile boolean disposed;
@@ -715,6 +1085,7 @@ final class NooagramDialogPreviewFilter {
         State(NooagramPreviewSearch.Key key, int loginTime, MessageObject source) {
             this.key = key;
             this.loginTime = loginTime;
+            this.source = source;
             search = new NooagramPreviewSearch(source.getId(), source.messageOwner.date, source.messageOwner.edit_date);
         }
 
@@ -777,11 +1148,145 @@ final class NooagramDialogPreviewFilter {
 
     private static final class Page {
         final ArrayList<TLRPC.Message> messages = new ArrayList<>();
+        final Map<Long, ArrayList<TLRPC.Message>> groupMembers = new LinkedHashMap<>();
         ArrayList<TLRPC.User> users = new ArrayList<>();
         ArrayList<TLRPC.Chat> chats = new ArrayList<>();
         int rows;
         int oldestDate;
         int oldestId;
         boolean failed;
+    }
+
+    private static final class GroupContext {
+        final MessageObject.GroupedMessages messages;
+        final boolean complete;
+
+        GroupContext(MessageObject.GroupedMessages messages, boolean complete) {
+            this.messages = messages;
+            this.complete = complete;
+        }
+    }
+
+    private static final class GroupKey {
+        final int account;
+        final long userId;
+        final long generation;
+        final long dialogId;
+        final long groupId;
+
+        GroupKey(int account, long userId, long generation, long dialogId, long groupId) {
+            this.account = account;
+            this.userId = userId;
+            this.generation = generation;
+            this.dialogId = dialogId;
+            this.groupId = groupId;
+        }
+
+        GroupKey(NooagramPreviewSearch.Key key, long groupId) {
+            this(key.account, key.userId, key.generation, key.dialogId, groupId);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof GroupKey)) {
+                return false;
+            }
+            GroupKey key = (GroupKey) other;
+            return account == key.account && userId == key.userId && generation == key.generation
+                    && dialogId == key.dialogId && groupId == key.groupId;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Integer.hashCode(account);
+            result = 31 * result + Long.hashCode(userId);
+            result = 31 * result + Long.hashCode(generation);
+            result = 31 * result + Long.hashCode(dialogId);
+            return 31 * result + Long.hashCode(groupId);
+        }
+    }
+
+    private static final class GroupLoad {
+        final GroupKey key;
+        final int loginTime;
+        final long groupId;
+        final int sourceId;
+        final ArrayList<WeakReference<DialogCell>> cells = new ArrayList<>();
+        final ArrayList<State> states = new ArrayList<>();
+        int requestId;
+        int requestToken;
+        boolean checkingOldest;
+        int oldestGroupId;
+        MessageObject.GroupedMessages completeGroup;
+        boolean started;
+        long retryAt;
+        Runnable timeout;
+        Runnable retry;
+
+        GroupLoad(GroupKey key, int loginTime, long groupId, int sourceId) {
+            this.key = key;
+            this.loginTime = loginTime;
+            this.groupId = groupId;
+            this.sourceId = sourceId;
+        }
+
+        boolean sessionCurrent() {
+            UserConfig config = UserConfig.getInstance(key.account);
+            return config.getClientUserId() == key.userId && config.loginTime == loginTime;
+        }
+
+        void watch(DialogCell cell, State state) {
+            if (cell != null) {
+                boolean found = false;
+                for (WeakReference<DialogCell> reference : cells) {
+                    if (reference.get() == cell) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    cells.add(new WeakReference<>(cell));
+                }
+            }
+            if (state != null && !states.contains(state)) {
+                states.add(state);
+            }
+        }
+
+        boolean hasWatchers() {
+            for (WeakReference<DialogCell> reference : cells) {
+                DialogCell cell = reference.get();
+                if (cell != null && cell.isAttachedToWindow() && cell.getCurrentAccount() == key.account
+                        && cell.getDialogId() == key.dialogId) {
+                    return true;
+                }
+            }
+            for (State state : states) {
+                if (STATES.get(state.key) == state && state.hasAttachedCells()) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void clearRequest(boolean cancel) {
+            requestToken++;
+            if (cancel && requestId != 0) {
+                ConnectionsManager.getInstance(key.account).cancelRequest(requestId, true);
+            }
+            requestId = 0;
+            if (timeout != null) {
+                AndroidUtilities.cancelRunOnUIThread(timeout);
+                timeout = null;
+            }
+        }
+
+        void cancel() {
+            clearRequest(true);
+            if (retry != null) {
+                AndroidUtilities.cancelRunOnUIThread(retry);
+                retry = null;
+            }
+        }
     }
 }

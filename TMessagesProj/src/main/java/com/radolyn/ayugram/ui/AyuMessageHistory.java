@@ -78,20 +78,22 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     private static final int OPTION_SAVE_TO_DOWNLOADS = 7;
     private static final int OPTION_TRANSLATE = 8;
     private final MessageObject messageObject;
-    private List<EditedMessage> messages;
+    private List<EditedMessage> messages = new ArrayList<>();
     private final ArrayList<MessageObject> messageObjects = new ArrayList<>();
+    private final ArrayList<PreparedHistoryMessage> preparedMessages = new ArrayList<>();
     private int rowCount;
+    private int historyRequestVersion;
+    private volatile boolean destroyed;
     private RecyclerListView listView;
     private TextView emptyView;
     private Runnable showEmptyViewRunnable;
     private ActionBarPopupWindow scrimPopupWindow;
     private final WindowInsetsStateHolder windowInsetsStateHolder = new WindowInsetsStateHolder(this::checkInsets);
-    private String[] cachedAttachmentFileNames;
 
     public AyuMessageHistory(MessageObject messageObject) {
         setCurrentAccount(messageObject.currentAccount);
         this.messageObject = messageObject;
-        updateHistory();
+        loadHistoryAsync();
     }
 
     @Override
@@ -106,23 +108,56 @@ public class AyuMessageHistory extends NekoDelegateFragment {
     }
 
     private void updateHistory() {
-        messages = AyuMessagesController.getInstance().getRevisions(getUserConfig().clientUserId, messageObject.messageOwner.dialog_id, messageObject.messageOwner.id);
-        if (messages == null) {
-            messages = new ArrayList<>();
-        }
-        rowCount = messages.size();
-        cacheAttachmentFileNames();
-        rebuildMessageObjects();
-        updateEmptyView();
+        loadHistoryAsync();
     }
 
-    private void cacheAttachmentFileNames() {
-        File attachmentsDir = AyuMessagesController.attachmentsPath;
-        if (attachmentsDir.exists()) {
-            cachedAttachmentFileNames = attachmentsDir.list();
-        } else {
-            cachedAttachmentFileNames = null;
+    private void loadHistoryAsync() {
+        if (destroyed) {
+            return;
         }
+
+        int requestVersion = ++historyRequestVersion;
+        long userId = getUserConfig().clientUserId;
+        long dialogId = messageObject.messageOwner.dialog_id;
+        int messageId = messageObject.messageOwner.id;
+        HistorySourceSnapshot source = new HistorySourceSnapshot(messageObject);
+        Utilities.globalQueue.postRunnable(() -> {
+            List<EditedMessage> revisions = AyuMessagesController.getInstance().getRevisions(userId, dialogId, messageId);
+            ArrayList<EditedMessage> snapshot = new ArrayList<>();
+            if (revisions != null) {
+                snapshot.addAll(revisions);
+            }
+            if (destroyed) {
+                return;
+            }
+            String[] attachmentFileNames = listAttachmentFileNames();
+            ArrayList<PreparedHistoryMessage> preparedSnapshot = prepareMessageObjects(snapshot, attachmentFileNames, source);
+            AndroidUtilities.runOnUIThread(() -> applyHistorySnapshot(requestVersion, snapshot, preparedSnapshot));
+        });
+    }
+
+    private String[] listAttachmentFileNames() {
+        File attachmentsDir = AyuMessagesController.getManagedAttachmentsDirectory();
+        return attachmentsDir != null && attachmentsDir.isDirectory() ? attachmentsDir.list() : null;
+    }
+
+    private void applyHistorySnapshot(int requestVersion, List<EditedMessage> snapshot, ArrayList<PreparedHistoryMessage> preparedSnapshot) {
+        if (destroyed || requestVersion != historyRequestVersion) {
+            return;
+        }
+
+        messages = snapshot;
+        preparedMessages.clear();
+        preparedMessages.addAll(preparedSnapshot);
+        messageObjects.clear();
+        for (int i = 0; i < preparedMessages.size(); i++) {
+            messageObjects.add(null);
+        }
+        rowCount = messages.size();
+        if (listView != null && listView.getAdapter() != null) {
+            listView.getAdapter().notifyDataSetChanged();
+        }
+        updateEmptyView();
     }
 
     @Override
@@ -248,6 +283,8 @@ public class AyuMessageHistory extends NekoDelegateFragment {
 
     @Override
     public void onFragmentDestroy() {
+        destroyed = true;
+        historyRequestVersion++;
         super.onFragmentDestroy();
 
         getNotificationCenter().removeObserver(this, AyuConstants.MESSAGE_EDITED_NOTIFICATION);
@@ -282,9 +319,6 @@ public class AyuMessageHistory extends NekoDelegateFragment {
 
             if (dialogId == messageObject.messageOwner.dialog_id && messageId == messageObject.messageOwner.id) {
                 updateHistory();
-                if (listView != null && listView.getAdapter() != null) {
-                    listView.getAdapter().notifyDataSetChanged();
-                }
             }
         } else if (id == NotificationCenter.voiceTranscriptionUpdate) {
             handleVoiceTranscriptionUpdate(args);
@@ -403,6 +437,9 @@ public class AyuMessageHistory extends NekoDelegateFragment {
                     Utilities.globalQueue.postRunnable(() -> AyuMessagesController.getInstance().deleteRevision(edited.fakeId));
                     if (pos >= 0 && pos < messages.size()) {
                         messages.remove(pos);
+                        if (pos < preparedMessages.size()) {
+                            preparedMessages.remove(pos);
+                        }
                         if (pos < messageObjects.size()) {
                             messageObjects.remove(pos);
                         }
@@ -604,15 +641,13 @@ public class AyuMessageHistory extends NekoDelegateFragment {
                 var ayuMessageDetailCell = (NekoMessageCell) holder.itemView;
 
                 var editedMessage = messages.get(position);
-                MessageObject msg;
-                if (position >= 0 && position < messageObjects.size()) {
-                    msg = messageObjects.get(position);
-                    if (msg == null) {
-                        msg = createMessageObject(editedMessage);
-                        messageObjects.set(position, msg);
-                    }
-                } else {
-                    msg = createMessageObject(editedMessage);
+                if (position < 0 || position >= messageObjects.size() || position >= preparedMessages.size()) {
+                    return;
+                }
+                MessageObject msg = messageObjects.get(position);
+                if (msg == null) {
+                    msg = createMessageObject(preparedMessages.get(position));
+                    messageObjects.set(position, msg);
                 }
 
                 ayuMessageDetailCell.setAyuDelegate(AyuMessageHistory.this);
@@ -628,69 +663,79 @@ public class AyuMessageHistory extends NekoDelegateFragment {
         }
     }
 
-    private MessageObject createMessageObject(EditedMessage editedMessage) {
+    private MessageObject createMessageObject(PreparedHistoryMessage preparedMessage) {
         int currentAccount = getCurrentAccount();
+        // MessageObject construction initializes shared Theme/emoji state, so keep it on
+        // the UI thread. File existence was already checked by the storage snapshot.
+        MessageObject messageObj = new MessageObject(currentAccount, preparedMessage.message, false, false);
+        if (preparedMessage.localFileFound && preparedMessage.message.attachPath != null) {
+            messageObj.attachPathExists = true;
+        }
+        return messageObj;
+    }
+
+    private PreparedHistoryMessage prepareMessage(EditedMessage editedMessage, String[] attachmentFileNames, HistorySourceSnapshot source) {
         var msg = new TLRPC.TL_message();
-        AyuMessageUtils.map(editedMessage, msg, currentAccount);
-        AyuMessageUtils.mapMedia(editedMessage, msg, currentAccount);
+        AyuMessageUtils.map(editedMessage, msg, source.currentAccount);
+        AyuMessageUtils.mapMedia(editedMessage, msg, source.currentAccount);
 
         msg.ayuDeleted = true;
         msg.date = editedMessage.entityCreateDate;
         msg.edit_hide = true;
         if (msg.media != null) {
-            if (messageObject.isVoiceOnce() || messageObject.isRoundOnce()) {
-                inheritTtlSeconds(msg, messageObject.messageOwner);
+            if (source.inheritTtl) {
+                msg.media.ttl_seconds = source.originalTtlSeconds;
             } else {
                 msg.media.ttl_seconds = 0;
             }
         }
         // fix reply state
-        if (messageObject.messageOwner.replyMessage != null) {
-            msg.replyMessage = messageObject.messageOwner.replyMessage;
-            msg.reply_to = messageObject.messageOwner.reply_to;
+        if (source.replyMessage != null) {
+            msg.replyMessage = source.replyMessage;
+            msg.reply_to = source.replyTo;
         }
         // prefer the current message's cached media only if the original file still exists
         boolean localFileFound = false;
-        if (messageObject.isVoice()) {
-            msg.media = messageObject.messageOwner.media;
+        if (source.isVoice && source.originalMedia != null) {
+            msg.media = source.originalMedia;
         } else if (editedMessage.documentType == AyuConstants.DOCUMENT_TYPE_FILE) {
-            File originalPath = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner);
-            if (!messageObject.isAyuDeleted() && originalPath.exists() && Objects.equals(editedMessage.mediaPath, originalPath.getAbsolutePath())) {
-                msg.media.document = messageObject.messageOwner.media.document;
+            if (!source.ayuDeleted
+                    && msg.media instanceof TLRPC.TL_messageMediaDocument
+                    && source.originalMedia instanceof TLRPC.TL_messageMediaDocument
+                    && source.originalMedia.document != null
+                    && source.cachedFile != null
+                    && source.cachedFile.exists()
+                    && Objects.equals(editedMessage.mediaPath, source.cachedFile.getAbsolutePath())) {
+                msg.media.document = source.originalMedia.document;
                 localFileFound = true;
             } else { // try to find local file for media that was saved
-                File localFile = findSavedMedia(editedMessage);
+                File localFile = findSavedMedia(editedMessage, attachmentFileNames);
                 if (localFile != null) {
                     updateDocumentMediaWithLocalFile(msg, localFile, editedMessage);
                     localFileFound = true;
                 }
             }
         } else if (editedMessage.documentType == AyuConstants.DOCUMENT_TYPE_STORY) {
-            File localFile = findSavedMedia(editedMessage);
+            File localFile = findSavedMedia(editedMessage, attachmentFileNames);
             if (localFile != null) {
                 updateStoryMediaWithLocalFile(msg, localFile);
                 localFileFound = true;
             }
         } else if (editedMessage.documentType == AyuConstants.DOCUMENT_TYPE_PHOTO) {
-            File localFile = findSavedMedia(editedMessage);
+            File localFile = findSavedMedia(editedMessage, attachmentFileNames);
             if (localFile != null) {
                 updatePhotoMediaWithLocalFile(msg, localFile);
                 localFileFound = true;
             }
         }
-        MessageObject messageObj = new MessageObject(getCurrentAccount(), msg, false, true);
-        if (localFileFound && msg.attachPath != null) {
-            messageObj.attachPathExists = true;
-        }
-        return messageObj;
+        return new PreparedHistoryMessage(msg, localFileFound);
     }
 
-    private File findSavedMedia(EditedMessage editedMessage) {
-        File attachmentsDir = AyuMessagesController.attachmentsPath;
-        if (!attachmentsDir.exists() && !attachmentsDir.mkdirs()) {
+    private File findSavedMedia(EditedMessage editedMessage, String[] fileNames) {
+        File attachmentsDir = AyuMessagesController.getManagedAttachmentsDirectory();
+        if (attachmentsDir == null || !attachmentsDir.isDirectory()) {
             return null;
         }
-        String[] fileNames = cachedAttachmentFileNames;
         if (fileNames == null) {
             return null;
         }
@@ -874,13 +919,46 @@ public class AyuMessageHistory extends NekoDelegateFragment {
         msg.media = mediaDocument;
     }
 
-    private void rebuildMessageObjects() {
-        messageObjects.clear();
-        if (messages == null) {
-            return;
+    private ArrayList<PreparedHistoryMessage> prepareMessageObjects(List<EditedMessage> revisions, String[] attachmentFileNames, HistorySourceSnapshot source) {
+        ArrayList<PreparedHistoryMessage> result = new ArrayList<>(revisions.size());
+        for (EditedMessage revision : revisions) {
+            result.add(prepareMessage(revision, attachmentFileNames, source));
         }
-        for (int i = 0; i < messages.size(); i++) {
-            messageObjects.add(createMessageObject(messages.get(i)));
+        return result;
+    }
+
+    private static final class HistorySourceSnapshot {
+        private final int currentAccount;
+        private final TLRPC.MessageMedia originalMedia;
+        private final int originalTtlSeconds;
+        private final TLRPC.Message replyMessage;
+        private final TLRPC.MessageReplyHeader replyTo;
+        private final File cachedFile;
+        private final boolean inheritTtl;
+        private final boolean isVoice;
+        private final boolean ayuDeleted;
+
+        // Captured on the UI thread before the storage task starts.
+        private HistorySourceSnapshot(MessageObject messageObject) {
+            currentAccount = messageObject.currentAccount;
+            originalMedia = messageObject.messageOwner.media;
+            originalTtlSeconds = originalMedia != null ? originalMedia.ttl_seconds : 0;
+            replyMessage = messageObject.messageOwner.replyMessage;
+            replyTo = messageObject.messageOwner.reply_to;
+            cachedFile = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner);
+            inheritTtl = messageObject.isVoiceOnce() || messageObject.isRoundOnce();
+            isVoice = messageObject.isVoice();
+            ayuDeleted = messageObject.isAyuDeleted();
+        }
+    }
+
+    private static final class PreparedHistoryMessage {
+        private final TLRPC.Message message;
+        private final boolean localFileFound;
+
+        private PreparedHistoryMessage(TLRPC.Message message, boolean localFileFound) {
+            this.message = message;
+            this.localFileFound = localFileFound;
         }
     }
 
@@ -934,17 +1012,6 @@ public class AyuMessageHistory extends NekoDelegateFragment {
             listView.getAdapter().notifyItemChanged(indexToUpdate);
         } else {
             listView.getAdapter().notifyDataSetChanged();
-        }
-    }
-
-    static void inheritTtlSeconds(TLRPC.Message targetMessage, TLRPC.Message sourceMessage) {
-        if (targetMessage == null || targetMessage.media == null) {
-            return;
-        }
-        if (sourceMessage != null && sourceMessage.media != null) {
-            targetMessage.media.ttl_seconds = sourceMessage.media.ttl_seconds;
-        } else {
-            targetMessage.media.ttl_seconds = 0;
         }
     }
 

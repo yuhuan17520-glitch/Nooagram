@@ -24,6 +24,27 @@ public class PinnedSettingsProbe {
     public static void main(String[] args) throws Exception {
         root = Path.of(args[0]).resolve("TMessagesProj/src/main/java");
         check("experimental options remain visible without changing saved choices", ExperimentalSettingsProbe::verify);
+        check("deleted-message colors preserve scrolling and commit on release", DeletedColorTouchProbe::verify);
+        check("settings deep links route custom pages and row imports", SettingsDeepLinkProbe::verify);
+        check("custom settings pages survive process-state restoration", LaunchSettingsRestoreProbe::verify);
+        check("home and stories use Nooagram text instead of the legacy wordmark", () -> {
+            String dialogs = read("org/telegram/ui/DialogsActivity.java");
+            require(dialogs.contains("String title = NaConfig.INSTANCE.getCustomTitle().String();"),
+                    "The custom title preference is no longer the title source");
+            require(dialogs.contains("NaConfig.INSTANCE.getCustomTitleUserName().Bool()"),
+                    "The user-name title preference is no longer honored");
+            require(dialogs.contains("actionBar.setTitle(title, statusDrawable);"),
+                    "The default title no longer uses normal text and its status drawable");
+            require(!dialogs.contains("nagram_logo_2") && !dialogs.contains("new ImageSpan("),
+                    "The home title still embeds the legacy Nagram wordmark");
+
+            String stories = read("org/telegram/ui/Stories/DialogStoriesCell.java");
+            require(stories.contains("AnimatedTextView telegramLogoView;")
+                            && stories.contains("telegramLogoView.setText(LocaleController.getString(R.string.NekoX));"),
+                    "The stories title still uses an image instead of Nooagram text");
+            require(!stories.contains("nagram_logo_2"),
+                    "The stories title still references the legacy Nagram wordmark");
+        });
         check("active-account legacy data is quarantined without automatic assignment", () -> {
             login(0, 1001);
             prefs().edit().putString("hidden_pinned_0", "[-20, -10, -20, 0]").apply();
@@ -295,6 +316,11 @@ public class PinnedSettingsProbe {
             require(!base.contains("&v=%s"), "raw backup URL format remains");
             require(read("tw/nekomimi/nekogram/helpers/SettingsHelper.java").contains("uri.getQueryParameter(\"v\")"),
                     "value query not decoded");
+            String launch = read("org/telegram/ui/LaunchActivity.java");
+            require(launch.contains("outState.putString(\"fragment\", \"custom_settings\")")
+                            && launch.contains("outState.putString(\"settings_class\", lastFragment.getClass().getName())")
+                            && launch.contains("case \"custom_settings\""),
+                    "Custom settings page state restoration is not wired into LaunchActivity");
         });
         check("global filter rebuild reaches all activated accounts", () -> {
             login(0, 1001);

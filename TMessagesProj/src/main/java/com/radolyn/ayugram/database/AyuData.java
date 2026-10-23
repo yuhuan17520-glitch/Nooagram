@@ -173,74 +173,91 @@ public class AyuData {
         }
     };
 
-    private static final Migration MIGRATION_29_30 = new Migration(29, 30) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("DROP TABLE IF EXISTS DeletedDialog");
-            database.execSQL("DROP INDEX IF EXISTS index_DeletedDialog_userId_dialogId");
-            database.execSQL("DROP INDEX IF EXISTS index_DeletedDialog_userId_entityCreateDate");
-        }
-    };
-
-    private static final Migration MIGRATION_30_31 = new Migration(30, 31) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("CREATE TABLE IF NOT EXISTS `DeletedDialog` (" +
-                    "`fakeId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                    "`userId` INTEGER NOT NULL, " +
-                    "`dialogId` INTEGER NOT NULL, " +
-                    "`peerId` INTEGER NOT NULL, " +
-                    "`folderId` INTEGER, " +
-                    "`topMessage` INTEGER NOT NULL, " +
-                    "`lastMessageDate` INTEGER NOT NULL, " +
-                    "`flags` INTEGER NOT NULL, " +
-                    "`entityCreateDate` INTEGER NOT NULL)");
-            database.execSQL("CREATE INDEX IF NOT EXISTS `index_DeletedDialog_userId_dialogId` ON `DeletedDialog` (`userId`, `dialogId`)");
-            database.execSQL("CREATE INDEX IF NOT EXISTS `index_DeletedDialog_userId_entityCreateDate` ON `DeletedDialog` (`userId`, `entityCreateDate`)");
-        }
-    };
-
-    private static final Migration MIGRATION_31_32 = new Migration(31, 32) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("CREATE TABLE IF NOT EXISTS `SpyLastSeen` (" +
-                    "`userId` INTEGER NOT NULL, " +
-                    "`lastSeenDate` INTEGER NOT NULL, " +
-                    "PRIMARY KEY(`userId`))");
-            try {
-                database.execSQL("INSERT OR REPLACE INTO SpyLastSeen (userId, lastSeenDate) " +
-                        "SELECT userId, lastSeen FROM LastSeenEntity");
-            } catch (Exception ignored) {
+    /*
+     * Kept in a static nested class so JVM tests can exercise the production migration
+     * objects without initializing AyuData's database/native-dependent static block.
+     */
+    static final class Migrations {
+        static final Migration MIGRATION_29_30 = new Migration(29, 30) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                // v29 and v31 use the same DeletedDialog schema. Keep the table while
+                // advancing the intermediate version so v30 fixtures can still create it.
             }
-            database.execSQL("DROP TABLE IF EXISTS LastSeenEntity");
-        }
-    };
+        };
 
-    private static final Migration MIGRATION_32_33 = new Migration(32, 33) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_topicId_groupedId_messageId ON DeletedMessage(userId, dialogId, topicId, groupedId, messageId)");
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_messageId_fakeId ON DeletedMessage(userId, dialogId, messageId, fakeId)");
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_date ON DeletedMessage(userId, dialogId, date)");
-            database.execSQL("CREATE INDEX IF NOT EXISTS index_EditedMessage_userId_dialogId_messageId_mediaPath ON EditedMessage(userId, dialogId, messageId, mediaPath)");
-        }
-    };
+        static final Migration MIGRATION_30_31 = new Migration(30, 31) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS `DeletedDialog` (" +
+                        "`fakeId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`userId` INTEGER NOT NULL, " +
+                        "`dialogId` INTEGER NOT NULL, " +
+                        "`peerId` INTEGER NOT NULL, " +
+                        "`folderId` INTEGER, " +
+                        "`topMessage` INTEGER NOT NULL, " +
+                        "`lastMessageDate` INTEGER NOT NULL, " +
+                        "`flags` INTEGER NOT NULL, " +
+                        "`entityCreateDate` INTEGER NOT NULL)");
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_DeletedDialog_userId_dialogId` ON `DeletedDialog` (`userId`, `dialogId`)");
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_DeletedDialog_userId_entityCreateDate` ON `DeletedDialog` (`userId`, `entityCreateDate`)");
+            }
+        };
 
-    private static final Migration MIGRATION_33_34 = new Migration(33, 34) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("ALTER TABLE DeletedMessage ADD COLUMN replySerialized BLOB");
-            database.execSQL("ALTER TABLE EditedMessage ADD COLUMN replySerialized BLOB");
-        }
-    };
+        static final Migration MIGRATION_31_32 = new Migration(31, 32) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                database.execSQL("CREATE TABLE IF NOT EXISTS `SpyLastSeen` (" +
+                        "`userId` INTEGER NOT NULL, " +
+                        "`lastSeenDate` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`userId`))");
+                try {
+                    database.execSQL("INSERT OR REPLACE INTO SpyLastSeen (userId, lastSeenDate) " +
+                            "SELECT userId, lastSeen FROM LastSeenEntity");
+                } catch (Exception ignored) {
+                }
+                database.execSQL("DROP TABLE IF EXISTS LastSeenEntity");
+            }
+        };
 
-    private static final Migration MIGRATION_34_35 = new Migration(34, 35) {
-        @Override
-        public void migrate(SupportSQLiteDatabase database) {
-            database.execSQL("ALTER TABLE DeletedMessage ADD COLUMN richMessageSerialized BLOB");
-            database.execSQL("ALTER TABLE EditedMessage ADD COLUMN richMessageSerialized BLOB");
-        }
-    };
+        static final Migration MIGRATION_32_33 = new Migration(32, 33) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_topicId_groupedId_messageId ON DeletedMessage(userId, dialogId, topicId, groupedId, messageId)");
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_messageId_fakeId ON DeletedMessage(userId, dialogId, messageId, fakeId)");
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_DeletedMessage_userId_dialogId_date ON DeletedMessage(userId, dialogId, date)");
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_EditedMessage_userId_dialogId_messageId_mediaPath ON EditedMessage(userId, dialogId, messageId, mediaPath)");
+            }
+        };
+
+        static final Migration MIGRATION_33_34 = new Migration(33, 34) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                database.execSQL("ALTER TABLE DeletedMessage ADD COLUMN replySerialized BLOB");
+                database.execSQL("ALTER TABLE EditedMessage ADD COLUMN replySerialized BLOB");
+            }
+        };
+
+        static final Migration MIGRATION_34_35 = new Migration(34, 35) {
+            @Override
+            public void migrate(SupportSQLiteDatabase database) {
+                database.execSQL("ALTER TABLE DeletedMessage ADD COLUMN richMessageSerialized BLOB");
+                database.execSQL("ALTER TABLE EditedMessage ADD COLUMN richMessageSerialized BLOB");
+            }
+        };
+
+        static final Migration[] V29_TO_CURRENT = {
+                MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32,
+                MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35
+        };
+    }
+
+    private static final Migration MIGRATION_29_30 = Migrations.MIGRATION_29_30;
+    private static final Migration MIGRATION_30_31 = Migrations.MIGRATION_30_31;
+    private static final Migration MIGRATION_31_32 = Migrations.MIGRATION_31_32;
+    private static final Migration MIGRATION_32_33 = Migrations.MIGRATION_32_33;
+    private static final Migration MIGRATION_33_34 = Migrations.MIGRATION_33_34;
+    private static final Migration MIGRATION_34_35 = Migrations.MIGRATION_34_35;
 
     static {
         create();

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Канал джерела</string>
+    <string name="UpstreamTipsChannel">Канал порад джерела</string>
     <string name="N_Config">Nooagram-конфігурації</string>
     <string name="ForceCopy">Примусова копія</string>
     <string name="disableSecondAddress">Вимкнути другий адресний запит</string>
@@ -22,7 +24,7 @@
     <string name="SendReactions">Надіслати відгуки</string>
     <string name="ShowReactions">Показати реакції</string>
     <string name="CustomTitle">Свій заголовок</string>
-    <string name="CustomTitleHint">Залиште порожнім, щоб використовувати Награм</string>
+    <string name="CustomTitleHint">Залиште порожнім, щоб використовувати Nooagram</string>
     <string name="CodeSyntaxHighlight">Підсвітка синтаксису коду</string>
     <string name="CreateMono">Створити Monospace</string>
     <string name="CreateMonoLanguage">Кодова мова</string>

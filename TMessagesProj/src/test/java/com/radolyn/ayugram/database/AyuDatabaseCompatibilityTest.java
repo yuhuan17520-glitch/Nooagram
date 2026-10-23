@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase;
 
 import androidx.room.Room;
 
+import com.radolyn.ayugram.database.entities.DeletedDialog;
 import com.radolyn.ayugram.database.entities.DeletedMessageFull;
 import com.radolyn.ayugram.database.entities.RegexFilter;
 
@@ -26,6 +27,57 @@ import static org.junit.Assert.*;
 @RunWith(RobolectricTestRunner.class)
 @Config(application = android.app.Application.class, sdk = 28)
 public class AyuDatabaseCompatibilityTest {
+    @Test public void v29DeletedDialogSurvivesRoomMigrationToCurrentSchema() throws Exception {
+        Context context = RuntimeEnvironment.getApplication();
+        String name = "nooagram-v29-deleted-dialog.db";
+        context.deleteDatabase(name);
+        try {
+            JSONObject schema;
+            try (InputStream input = getClass().getResourceAsStream("/com.radolyn.ayugram.database.AyuDatabase/29.json")) {
+                assertNotNull(input);
+                schema = new JSONObject(new String(input.readAllBytes(), StandardCharsets.UTF_8)).getJSONObject("database");
+            }
+            assertEquals(29, schema.getInt("version"));
+            try (SQLiteDatabase old = context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null)) {
+                JSONArray entities = schema.getJSONArray("entities");
+                for (int i = 0; i < entities.length(); i++) {
+                    JSONObject entity = entities.getJSONObject(i);
+                    old.execSQL(entity.getString("createSql").replace("${TABLE_NAME}", entity.getString("tableName")));
+                    JSONArray indices = entity.optJSONArray("indices");
+                    for (int j = 0; indices != null && j < indices.length(); j++) {
+                        old.execSQL(indices.getJSONObject(j).getString("createSql").replace("${TABLE_NAME}", entity.getString("tableName")));
+                    }
+                }
+                JSONArray setup = schema.getJSONArray("setupQueries");
+                for (int i = 0; i < setup.length(); i++) old.execSQL(setup.getString(i));
+                old.execSQL("INSERT INTO DeletedDialog(fakeId,userId,dialogId,peerId,folderId,topMessage,lastMessageDate,flags,entityCreateDate) " +
+                        "VALUES(17,1000,-2000,-2000,3,44,123456,5,654321)");
+                old.setVersion(29);
+            }
+
+            AyuDatabase migrated = Room.databaseBuilder(context, AyuDatabase.class, name)
+                    .allowMainThreadQueries()
+                    .addMigrations(AyuData.Migrations.V29_TO_CURRENT)
+                    .build();
+            try {
+                DeletedDialog dialog = migrated.deletedDialogDao().get(1000, -2000);
+                assertNotNull(dialog);
+                assertEquals(17, dialog.fakeId);
+                assertEquals(-2000, dialog.peerId);
+                assertEquals(Integer.valueOf(3), dialog.folderId);
+                assertEquals(44, dialog.topMessage);
+                assertEquals(123456, dialog.lastMessageDate);
+                assertEquals(5, dialog.flags);
+                assertEquals(654321, dialog.entityCreateDate);
+                assertEquals(1, migrated.deletedDialogDao().getDeletedCount());
+            } finally {
+                migrated.close();
+            }
+        } finally {
+            context.deleteDatabase(name);
+        }
+    }
+
     @Test public void v35ArchiveAndFilterSurviveOpeningOnTheNewRoomRuntime() throws Exception {
         Context context = RuntimeEnvironment.getApplication();
         String name = "nooagram-upgrade-fixture.db";

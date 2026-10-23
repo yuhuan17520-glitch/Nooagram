@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Oppstrømskanal</string>
+    <string name="UpstreamTipsChannel">Oppstrømstips kanal</string>
     <string name="N_Config">Nooagram-konfigurasjon</string>
     <string name="ForceCopy">Tving kopi</string>
     <string name="disableSecondAddress">Deaktiver annenstedsforespørsel</string>

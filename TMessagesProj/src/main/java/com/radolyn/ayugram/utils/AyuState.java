@@ -22,6 +22,7 @@ public class AyuState {
     private static final AyuStateVariable hideSelection = new AyuStateVariable();
     private static final AyuStateVariable automaticallyScheduled = new AyuStateVariable();
     private static final AyuStateVariable allowDeleteDialogs = new AyuStateVariable();
+    private static final Object deletePermittedLock = new Object();
     private static final LongSparseArray<ArrayList<Integer>> deletePermitted = new LongSparseArray<>();
 
     public static void setHideSelection(boolean val, int resetAfter) {
@@ -56,31 +57,42 @@ public class AyuState {
     }
 
     public static void permitDeleteMessage(long dialogId, int messageId) {
-        var list = deletePermitted.get(dialogId);
-        if (list == null) {
-            list = new ArrayList<>();
-            deletePermitted.put(dialogId, list);
-        }
+        synchronized (deletePermittedLock) {
+            var list = deletePermitted.get(dialogId);
+            if (list == null) {
+                list = new ArrayList<>();
+                deletePermitted.put(dialogId, list);
+            }
 
-        list.add(messageId);
+            if (!list.contains(messageId)) {
+                list.add(messageId);
+            }
+        }
     }
 
     public static boolean isDeletePermitted(long dialogId, int messageId) {
-        var list = deletePermitted.get(dialogId);
-        if (list == null) {
-            return false;
-        }
+        synchronized (deletePermittedLock) {
+            var list = deletePermitted.get(dialogId);
+            if (list == null) {
+                return false;
+            }
 
-        return list.contains(messageId);
+            return list.contains(messageId);
+        }
     }
 
     public static void messageDeleted(long dialogId, int messageId) {
-        var list = deletePermitted.get(dialogId);
-        if (list == null) {
-            return;
-        }
+        synchronized (deletePermittedLock) {
+            var list = deletePermitted.get(dialogId);
+            if (list == null) {
+                return;
+            }
 
-        list.remove((Object) messageId);
+            list.remove((Object) messageId);
+            if (list.isEmpty()) {
+                deletePermitted.delete(dialogId);
+            }
+        }
     }
 
     /**

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">अपस्ट्रीम चैनल</string>
+    <string name="UpstreamTipsChannel">अपस्ट्रीम सुझाव चैनल</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Force Copy</string>
     <string name="InvertReply">Invert</string>

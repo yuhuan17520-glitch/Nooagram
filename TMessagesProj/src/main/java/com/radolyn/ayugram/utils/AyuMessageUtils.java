@@ -40,6 +40,7 @@ import org.telegram.ui.Components.ColoredImageSpan;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -1116,7 +1117,7 @@ public abstract class AyuMessageUtils {
                 pathToAttach = pathToAttach2;
             }
         }
-        return processAttachment(pathToAttach, new File(AyuMessagesController.attachmentsPath, AyuUtils.getFilename(object, pathToAttach)));
+        return processAttachment(pathToAttach, AyuUtils.getFilename(object, pathToAttach));
     }
 
     private static File processAttachment(AyuSavePreferences prefs) {
@@ -1135,7 +1136,21 @@ public abstract class AyuMessageUtils {
         File source = TextUtils.isEmpty(path) || "/".equals(path)
                 ? FileLoader.getInstance(prefs.getAccountId()).getPathToMessage(message)
                 : new File(path);
-        return processAttachment(source, new File(AyuMessagesController.attachmentsPath, AyuUtils.getFilename(message, source)));
+        return processAttachment(source, AyuUtils.getFilename(message, source));
+    }
+
+    private static File processAttachment(File source, String fileName) {
+        File directory = AyuMessagesController.getWritableAttachmentsDirectory();
+        if (directory == null) {
+            FileLog.e("processAttachment: attachment store is unavailable");
+            return new File("/");
+        }
+        try {
+            return processAttachment(source, AyuMessagesController.AttachmentStoragePolicy.resolveTarget(directory, fileName));
+        } catch (IOException e) {
+            FileLog.e("processAttachment: invalid target", e);
+            return new File("/");
+        }
     }
 
     private static File processAttachment(File source, File target) {
@@ -1277,8 +1292,8 @@ public abstract class AyuMessageUtils {
         if (!AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
             return null;
         }
-        File AttachmentsDir = AyuMessagesController.attachmentsPath;
-        if (!AttachmentsDir.exists() && !AttachmentsDir.mkdirs()) {
+        File attachmentsDir = AyuMessagesController.getWritableAttachmentsDirectory();
+        if (attachmentsDir == null) {
             return null;
         }
         if (TextUtils.isEmpty(fileName)) {
@@ -1293,7 +1308,13 @@ public abstract class AyuMessageUtils {
         long dialogId = messageObject != null ? messageObject.getDialogId() : 0;
         int messageId = messageObject != null ? messageObject.getId() : 0;
         String outputFileName = "ttl_" + dialogId + "_" + messageId + "_" + fileName;
-        File outputFile = new File(AyuMessagesController.attachmentsPath, outputFileName);
+        File outputFile;
+        try {
+            outputFile = AyuMessagesController.AttachmentStoragePolicy.resolveTarget(attachmentsDir, outputFileName);
+        } catch (IOException e) {
+            FileLog.e("decryptAndSaveMedia: invalid target", e);
+            return null;
+        }
         // check if already exists
         if (outputFile.exists() && outputFile.length() > 0) {
             if (BuildVars.LOGS_ENABLED) {
@@ -1339,8 +1360,8 @@ public abstract class AyuMessageUtils {
     }
 
     public static File findExistingFileByBaseNameFast(String baseName) {
-        File attachmentsDir = AyuMessagesController.attachmentsPath;
-        if (!attachmentsDir.exists() && !attachmentsDir.mkdirs()) {
+        File attachmentsDir = AyuMessagesController.getManagedAttachmentsDirectory();
+        if (attachmentsDir == null || !attachmentsDir.isDirectory()) {
             return null;
         }
         File exactMatch = new File(attachmentsDir, baseName);
@@ -1351,8 +1372,8 @@ public abstract class AyuMessageUtils {
     }
 
     public static File findExistingFileByBaseName(String baseName) {
-        File attachmentsDir = AyuMessagesController.attachmentsPath;
-        if (!attachmentsDir.exists() && !attachmentsDir.mkdirs()) {
+        File attachmentsDir = AyuMessagesController.getManagedAttachmentsDirectory();
+        if (attachmentsDir == null || !attachmentsDir.isDirectory()) {
             return null;
         }
         File exactMatch = new File(attachmentsDir, baseName);
@@ -1410,7 +1431,17 @@ public abstract class AyuMessageUtils {
             return null;
         }
         String filename = downloadedFile.getName();
-        File outputFile = new File(AyuMessagesController.attachmentsPath, filename);
+        File attachmentsDir = AyuMessagesController.getWritableAttachmentsDirectory();
+        if (attachmentsDir == null) {
+            return null;
+        }
+        File outputFile;
+        try {
+            outputFile = AyuMessagesController.AttachmentStoragePolicy.resolveTarget(attachmentsDir, filename);
+        } catch (IOException e) {
+            FileLog.e("saveDownloadedMedia: invalid target", e);
+            return null;
+        }
         if (outputFile.exists()) {
             return outputFile;
         }
@@ -1440,11 +1471,11 @@ public abstract class AyuMessageUtils {
             // check if the file exists in the telegram cache folder (successfully downloaded after deserialization and saved by DELETED_MEDIA_LOADED_NOTIFICATION)
             if (!TextUtils.isEmpty(filePath)) {
                 File from = new File(filePath);
-                String attachmentsPath = AyuMessagesController.attachmentsPath.getAbsolutePath();
-                if (from.exists() && !from.getAbsolutePath().startsWith(attachmentsPath)) {
-                    File to = new File(attachmentsPath, baseName);
+                File attachmentsDir = AyuMessagesController.getManagedAttachmentsDirectory();
+                if (from.exists() && attachmentsDir != null
+                        && !from.getCanonicalPath().startsWith(attachmentsDir.getCanonicalPath() + File.separator)) {
                     Utilities.globalQueue.postRunnable(() -> {
-                        File result = processAttachment(from, to);
+                        File result = processAttachment(from, baseName);
                         File resolved;
                         if (result != null && !"/".equals(result.getAbsolutePath()) && result.exists()) {
                             resolved = result;

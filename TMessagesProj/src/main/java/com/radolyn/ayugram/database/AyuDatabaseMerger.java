@@ -211,11 +211,8 @@ public class AyuDatabaseMerger {
         if (!source.isFile() || source.length() == 0L) {
             return null;
         }
-        File targetDir = AyuMessagesController.attachmentsPath;
+        File targetDir = AyuMessagesController.getWritableAttachmentsDirectory();
         if (targetDir == null) {
-            return null;
-        }
-        if (!targetDir.exists() && !targetDir.mkdirs()) {
             return null;
         }
         File target = new File(targetDir, source.getName());

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Kanał upstream</string>
+    <string name="UpstreamTipsChannel">Kanał porad upstream</string>
     <string name="N_Config">Nooagram-Konfiguracja</string>
     <string name="ForceCopy">Wymuś kopiowanie</string>
     <string name="disableSecondAddress">Wyłącz żądanie drugiego adresu</string>

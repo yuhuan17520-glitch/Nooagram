@@ -38,7 +38,8 @@ import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import tw.nekomimi.nekogram.settings.NekoSettingsActivity;
 import tw.nekomimi.nekogram.utils.GsonUtil;
@@ -214,43 +215,94 @@ public class CloudSettingsHelper {
     }
 
     private void syncToCloud(Utilities.Callback2<Boolean, String> callback) {
+        int account = UserConfig.selectedAccount;
+        CloudStorageHelper storageHelper = CloudStorageHelper.getInstance(account);
         try {
             String setting = NekoSettingsActivity.backupSettingsJson(0);
-            // 分块存储
-            int chunkSize = 4000;  // 每个分块的最大长度
-            int numChunks = (int) Math.ceil((double) setting.length() / chunkSize);  // 计算总分块数
-            AtomicReference<Boolean> haveError = new AtomicReference<>(false);
-            for (int i = 0; i < numChunks; i++) {
-                int startIndex = i * chunkSize;
-                int endIndex = Math.min(startIndex + chunkSize, setting.length());
-
-                String chunk = setting.substring(startIndex, endIndex);
-
-                // 存储每个分块
-                String storageKey = "neko_settings_" + i;
-                getCloudStorageHelper().setItem(storageKey, chunk, (res, error) -> {
-                    if (error != null) {
-                        haveError.set(true);
-                        callback.run(false, error);
-                    }
-                });
-                if (haveError.get()) break;
-            }
-            if (!haveError.get()) {
-                getCloudStorageHelper().setItem("neko_settings", String.valueOf(numChunks), (res, error) -> {
-                    if (error == null) {
-                        localSyncedDate = System.currentTimeMillis();
-                        cloudSyncedDate.put(UserConfig.selectedAccount, localSyncedDate);
-                        getCloudStorageHelper().setItem("neko_settings_updated_at", String.valueOf(localSyncedDate), null);
-                        preferences.edit().putLong("updated_at", localSyncedDate).apply();
-                        callback.run(true, null);
-                    } else {
-                        callback.run(false, error);
-                    }
-                });
-            }
-        } catch (JSONException error) {
+            syncToCloud(storageHelper, account, setting, callback);
+        } catch (Exception error) {
             callback.run(false, error.toString());
+        }
+    }
+
+    void syncToCloud(CloudStorageHelper storageHelper, int account, String setting, Utilities.Callback2<Boolean, String> callback) {
+        int chunkSize = 4000;
+        int numChunks = (setting.length() + chunkSize - 1) / chunkSize;
+        ArrayList<String> chunks = new ArrayList<>(numChunks);
+        for (int i = 0; i < numChunks; i++) {
+            int startIndex = i * chunkSize;
+            int endIndex = Math.min(startIndex + chunkSize, setting.length());
+            chunks.add(setting.substring(startIndex, endIndex));
+        }
+
+        AtomicBoolean finished = new AtomicBoolean();
+        Consumer<String> fail = error -> {
+            if (finished.compareAndSet(false, true)) {
+                callback.run(false, error);
+            }
+        };
+
+        uploadChunks(storageHelper, chunks, 0,
+                () -> setItemOnce(storageHelper, "neko_settings", String.valueOf(numChunks),
+                        () -> {
+                            String syncedAt = String.valueOf(System.currentTimeMillis());
+                            setItemOnce(storageHelper, "neko_settings_updated_at", syncedAt,
+                                    () -> {
+                                        try {
+                                            localSyncedDate = Long.parseLong(syncedAt);
+                                            cloudSyncedDate.put(account, localSyncedDate);
+                                            preferences.edit().putLong("updated_at", localSyncedDate).apply();
+                                        } catch (Exception error) {
+                                            fail.accept(error.toString());
+                                            return;
+                                        }
+                                        if (finished.compareAndSet(false, true)) {
+                                            callback.run(true, null);
+                                        }
+                                    },
+                                    fail);
+                        },
+                        fail),
+                fail);
+    }
+
+    private static void uploadChunks(CloudStorageHelper storageHelper, ArrayList<String> chunks, int index,
+                                     Runnable onSuccess, Consumer<String> onError) {
+        if (index >= chunks.size()) {
+            try {
+                onSuccess.run();
+            } catch (Exception error) {
+                onError.accept(error.toString());
+            }
+            return;
+        }
+        setItemOnce(storageHelper, "neko_settings_" + index, chunks.get(index),
+                () -> uploadChunks(storageHelper, chunks, index + 1, onSuccess, onError),
+                onError);
+    }
+
+    private static void setItemOnce(CloudStorageHelper storageHelper, String key, String value,
+                                    Runnable onSuccess, Consumer<String> onError) {
+        AtomicBoolean completed = new AtomicBoolean();
+        try {
+            storageHelper.setItem(key, value, (res, error) -> {
+                if (!completed.compareAndSet(false, true)) {
+                    return;
+                }
+                try {
+                    if (error != null) {
+                        onError.accept(error);
+                    } else {
+                        onSuccess.run();
+                    }
+                } catch (Exception callbackError) {
+                    onError.accept(callbackError.toString());
+                }
+            });
+        } catch (Exception error) {
+            if (completed.compareAndSet(false, true)) {
+                onError.accept(error.toString());
+            }
         }
     }
 

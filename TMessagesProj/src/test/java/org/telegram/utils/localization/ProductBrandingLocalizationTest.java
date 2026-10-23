@@ -73,7 +73,7 @@ public class ProductBrandingLocalizationTest {
                     "CustomTitleHint", "PassQREncryption", "CloudConfigDesc",
                     "CloudConfigAutoSyncDesc", "NeedChangeNekoSettings",
                     "NekogramRunning", "PasscodeShowInSettings", "ResetSettingsAlert",
-                    "UnknownNekoSettingsOption", "About", "RemoveTitleEmoji"
+                    "UnknownNekoSettingsOption"
             }) {
                 String expected = bundled.getByResName(key);
                 assertNotNull(tag + ": " + key, expected);
@@ -95,6 +95,35 @@ public class ProductBrandingLocalizationTest {
     }
 
     @Test
+    public void genericLabelsKeepCloudTranslationPriority() {
+        Localization bundled = localization("About", "About", "RemoveTitleEmoji", "Remove emoji in title");
+        Localization cloud = localization("About", "Despre", "RemoveTitleEmoji", "Elimina emoji del titulo");
+
+        assertEquals("Despre", ProductBrandingLocalization.resolve(
+                bundled, cloud, context, "About", R.string.About, null, true));
+        assertEquals("Elimina emoji del titulo", ProductBrandingLocalization.resolve(
+                bundled, cloud, context, "RemoveTitleEmoji", R.string.RemoveTitleEmoji, null, true));
+        assertEquals(0, ProductBrandingLocalization.getProductBrandStringRes("About", R.string.About));
+        assertEquals(0, ProductBrandingLocalization.getProductBrandStringRes(
+                "RemoveTitleEmoji", R.string.RemoveTitleEmoji));
+    }
+
+    @Test
+    public void localizedBrandHintsUseTheCurrentProductName() {
+        for (String tag : new String[]{"ar-SA", "uk-UA"}) {
+            Localization bundled = loadBundled(Locale.forLanguageTag(tag));
+            for (String key : new String[]{"CustomTitleHint", "PassQREncryption"}) {
+                String value = bundled.getByResName(key);
+                assertNotNull(tag + ": " + key, value);
+                assertTrue(tag + ": " + key + " = " + value, value.contains("Nooagram"));
+                assertFalse(tag + ": " + key + " = " + value, value.contains("Nagram"));
+                assertFalse(tag + ": " + key + " = " + value, value.contains("\u041d\u0430\u0433\u0440\u0430\u043c"));
+                assertFalse(tag + ": " + key + " = " + value, value.contains("\u0646\u0627\u063a\u0631\u0627\u0645"));
+            }
+        }
+    }
+
+    @Test
     public void upstreamAndThirdPartyLabelsAreNotPinnedAsProductBranding() {
         assertEquals(0, ProductBrandingLocalization.getProductBrandStringRes("Nekogram", 0));
         assertEquals(0, ProductBrandingLocalization.getProductBrandStringRes("NekoXUpdatesChannel", 0));
@@ -105,13 +134,24 @@ public class ProductBrandingLocalizationTest {
     @Test
     public void upstreamChannelUsesBundledLocaleTranslations() {
         String english = loadBundled(Locale.ENGLISH).getByResName("UpstreamChannel");
-        String chinese = loadBundled(Locale.SIMPLIFIED_CHINESE).getByResName("UpstreamChannel");
-
         assertNotNull(english);
-        assertNotNull(chinese);
         assertFalse(english.startsWith("LOC_ERR"));
-        assertFalse(chinese.startsWith("LOC_ERR"));
-        assertNotEquals(english, chinese);
+
+        for (String tag : new String[]{
+                "ar-SA", "bn-BD", "cs-CZ", "da-DK", "de-DE", "el-GR", "es-ES",
+                "fa-IR", "fi-FI", "fr-FR", "hi-IN", "id-ID", "it-IT", "ja-JP",
+                "ko-KR", "ms-MY", "nl-NL", "no-NO", "pl-PL", "pt-BR", "pt-PT",
+                "ro-RO", "ru-RU", "sv-SE", "tr-TR", "uk-UA", "uz-UZ", "vi-VN",
+                "zh-CN", "zh-HK", "zh-TW"
+        }) {
+            Localization bundled = loadBundled(Locale.forLanguageTag(tag));
+            for (String key : new String[]{"UpstreamChannel", "UpstreamTipsChannel"}) {
+                String value = bundled.getByResName(key);
+                assertNotNull(tag + ": " + key, value);
+                assertFalse(tag + ": " + key + " = " + value, value.startsWith("LOC_ERR"));
+                assertNotEquals(tag + ": " + key + " fell back to English", english, value);
+            }
+        }
     }
 
     @Test

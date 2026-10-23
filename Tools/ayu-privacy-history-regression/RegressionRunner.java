@@ -97,14 +97,21 @@ public class RegressionRunner {
         }
         String body = """
                 import java.util.*;
+                import java.io.File;
                 import org.telegram.messenger.*;
+                import org.telegram.tgnet.TLRPC;
                 import com.radolyn.ayugram.AyuConstants;
+                import com.radolyn.ayugram.database.entities.EditedMessage;
                 import com.radolyn.ayugram.messages.AyuMessagesController;
                 public class HistoryAccountProbe {
                     private int currentAccount = UserConfig.selectedAccount;
                     private MessageObject messageObject;
-                    public List<AyuMessagesController.Revision> messages;
+                    public List<EditedMessage> messages = new ArrayList<>();
+                    public final ArrayList<MessageObject> messageObjects = new ArrayList<>();
+                    public final ArrayList<PreparedHistoryMessage> preparedMessages = new ArrayList<>();
                     private int rowCount;
+                    private int historyRequestVersion;
+                    private boolean destroyed;
                     private Runnable showEmptyViewRunnable;
                     private Dummy listView, scrimPopupWindow;
                     public int refreshes;
@@ -112,8 +119,39 @@ public class RegressionRunner {
                     public int getCurrentAccount() { return currentAccount; }
                     private UserConfig getUserConfig() { return UserConfig.getInstance(currentAccount); }
                     private NotificationCenter getNotificationCenter() { return NotificationCenter.getInstance(currentAccount); }
-                    private void cacheAttachmentFileNames() {}
-                    private void rebuildMessageObjects() {}
+                    private ArrayList<PreparedHistoryMessage> prepareMessageObjects(
+                            List<EditedMessage> revisions, String[] attachmentFileNames, HistorySourceSnapshot source) {
+                        ArrayList<PreparedHistoryMessage> result = new ArrayList<>(revisions.size());
+                        for (EditedMessage revision : revisions) {
+                            result.add(new PreparedHistoryMessage(new TLRPC.Message(), false));
+                        }
+                        return result;
+                    }
+                    public void bindFirstForTest() {
+                        messageObjects.set(0, createMessageObject(preparedMessages.get(0)));
+                    }
+                    private static final class HistorySourceSnapshot {
+                        private final int currentAccount;
+                        private final TLRPC.Message messageOwner;
+                        private final boolean inheritTtl;
+                        private final boolean isVoice;
+                        private final boolean ayuDeleted;
+                        private HistorySourceSnapshot(MessageObject messageObject) {
+                            currentAccount = messageObject.currentAccount;
+                            messageOwner = messageObject.messageOwner;
+                            inheritTtl = messageObject.isVoiceOnce() || messageObject.isRoundOnce();
+                            isVoice = messageObject.isVoice();
+                            ayuDeleted = messageObject.isAyuDeleted();
+                        }
+                    }
+                    private static final class PreparedHistoryMessage {
+                        private final TLRPC.Message message;
+                        private final boolean localFileFound;
+                        private PreparedHistoryMessage(TLRPC.Message message, boolean localFileFound) {
+                            this.message = message;
+                            this.localFileFound = localFileFound;
+                        }
+                    }
                     private void updateEmptyView() { refreshes++; }
                     private void handleVoiceTranscriptionUpdate(Object... args) { refreshes++; }
                     private static class Dummy {
@@ -128,6 +166,10 @@ public class RegressionRunner {
                 """
                 + "public HistoryAccountProbe(MessageObject messageObject) " + methods.get("<init>")
                 + "private void updateHistory() " + methods.get("updateHistory")
+                + "private void loadHistoryAsync() " + methods.get("loadHistoryAsync")
+                + "private String[] listAttachmentFileNames() " + methods.get("listAttachmentFileNames")
+                + "private void applyHistorySnapshot(int requestVersion, List<EditedMessage> snapshot, ArrayList<PreparedHistoryMessage> preparedSnapshot) " + methods.get("applyHistorySnapshot")
+                + "private MessageObject createMessageObject(PreparedHistoryMessage preparedMessage) " + methods.get("createMessageObject")
                 + "public boolean onFragmentCreate() " + methods.get("onFragmentCreate").replace("super.onFragmentCreate();", "")
                 + "public void onFragmentDestroy() " + methods.get("onFragmentDestroy").replace("super.onFragmentDestroy();", "")
                 + "public void didReceivedNotification(int id, int account, Object... args) " + methods.get("didReceivedNotification")
@@ -164,6 +206,7 @@ public class RegressionRunner {
                     private final java.util.Map<Long, T> values = new java.util.HashMap<>();
                     public T get(long key) { return values.get(key); }
                     public void put(long key, T value) { values.put(key, value); }
+                    public void delete(long key) { values.remove(key); }
                 }
                 """);
         stub("org.telegram.messenger.ApplicationLoader", "public class ApplicationLoader { public static android.content.Context applicationContext = new android.content.Context(); }");
@@ -184,13 +227,23 @@ public class RegressionRunner {
         stub("org.telegram.messenger.DialogObject", "public class DialogObject { public static int getEncryptedChatId(long id) { return (int) (id >> 32); } }");
         stub("org.telegram.messenger.MessageObject", """
                 public class MessageObject {
+                    public static int constructions;
                     public int currentAccount;
-                    public boolean voice, round;
+                    public boolean voice, round, attachPathExists;
                     public org.telegram.tgnet.TLRPC.Message messageOwner = new org.telegram.tgnet.TLRPC.Message();
+                    public MessageObject() { constructions++; }
+                    public MessageObject(int account, org.telegram.tgnet.TLRPC.Message owner, boolean generateLayout, boolean checkMediaExists) {
+                        constructions++;
+                        currentAccount = account;
+                        messageOwner = owner;
+                    }
                     public int getId() { return messageOwner.id; }
                     public long getDialogId() { return messageOwner.dialog_id; }
                     public boolean isVoice() { return voice; }
                     public boolean isRoundVideo() { return round; }
+                    public boolean isVoiceOnce() { return false; }
+                    public boolean isRoundOnce() { return false; }
+                    public boolean isAyuDeleted() { return messageOwner.ayuDeleted; }
                 }
                 """);
         stub("org.telegram.messenger.MessagesController", """
@@ -229,9 +282,14 @@ public class RegressionRunner {
         stub("org.telegram.messenger.AndroidUtilities", """
                 public class AndroidUtilities {
                     public static java.io.File cache;
+                    public static final java.util.ArrayDeque<Runnable> uiTasks = new java.util.ArrayDeque<>();
                     public static java.io.File getCacheDir() { return cache; }
-                    public static void runOnUIThread(Runnable task, long delay) { task.run(); }
+                    public static void runOnUIThread(Runnable task) { uiTasks.add(task); }
+                    public static void runOnUIThread(Runnable task, long delay) { uiTasks.add(task); }
                     public static void cancelRunOnUIThread(Runnable task) {}
+                    public static void drainUI() {
+                        while (!uiTasks.isEmpty()) uiTasks.remove().run();
+                    }
                 }
                 """);
         stub("org.telegram.messenger.NotificationCenter", """
@@ -308,7 +366,7 @@ public class RegressionRunner {
                     public static class InputChannel extends TLObject { public long channel_id; }
                     public static class TL_inputEncryptedChat extends TLObject { public int chat_id; public long access_hash; }
                     public static class EncryptedChat { public int id; public long access_hash; }
-                    public static class Message { public int id, date; public long dialog_id; public InputPeer peer_id = new InputPeer(); }
+                    public static class Message { public int id, date; public long dialog_id; public boolean ayuDeleted; public String attachPath; public InputPeer peer_id = new InputPeer(); }
                     public static class TL_inputDialogPeer extends TLObject { public InputPeer peer; }
                     public static class TL_error extends TLObject {}
                     public static class TL_messages_affectedMessages extends TLObject { public int pts, pts_count; }
@@ -412,10 +470,20 @@ public class RegressionRunner {
         stub("androidx.sqlite.db.SimpleSQLiteQuery", "public class SimpleSQLiteQuery { public SimpleSQLiteQuery(String sql) {} }");
         stub("androidx.sqlite.db.SupportSQLiteDatabase", """
                 public class SupportSQLiteDatabase {
-                    public void execSQL(String sql) {}
+                    private final java.sql.Connection connection;
+                    public SupportSQLiteDatabase() { this(null); }
+                    public SupportSQLiteDatabase(java.sql.Connection connection) { this.connection = connection; }
+                    public void execSQL(String sql) {
+                        if (connection == null) return;
+                        try (var statement = connection.createStatement()) { statement.execute(sql); }
+                        catch (java.sql.SQLException e) { throw new RuntimeException(sql, e); }
+                    }
                     public android.database.Cursor query(String sql) {
                         if (com.radolyn.ayugram.database.AyuDatabase.failValidation) throw new IllegalStateException("Injected validation failure");
-                        return new android.database.Cursor();
+                        if (connection == null) return new android.database.Cursor();
+                        try (var statement = connection.createStatement(); var result = statement.executeQuery(sql)) {
+                            return new android.database.Cursor(result);
+                        } catch (java.sql.SQLException e) { throw new RuntimeException(sql, e); }
                     }
                 }
                 """);
@@ -459,13 +527,26 @@ public class RegressionRunner {
         stub("com.radolyn.ayugram.messages.AyuMessagesController", """
                 public class AyuMessagesController {
                     public static java.io.File attachmentsPath;
-                    public static class Revision { public long fakeId; public Revision(long id) { fakeId = id; } }
+                    public static int revisionQueries;
                     public static AyuMessagesController getInstance() { return new AyuMessagesController(); }
-                    public java.util.List<Revision> getRevisions(long userId, long dialogId, int messageId) { return java.util.List.of(new Revision(userId + 7)); }
+                    public static java.io.File getManagedAttachmentsDirectory() {
+                        return attachmentsPath != null && attachmentsPath.isDirectory() ? attachmentsPath : null;
+                    }
+                    public static java.io.File getWritableAttachmentsDirectory() {
+                        return getManagedAttachmentsDirectory();
+                    }
+                    public java.util.List<com.radolyn.ayugram.database.entities.EditedMessage> getRevisions(long userId, long dialogId, int messageId) {
+                        revisionQueries++;
+                        var revision = new com.radolyn.ayugram.database.entities.EditedMessage();
+                        revision.fakeId = userId + revisionQueries;
+                        return java.util.List.of(revision);
+                    }
                     public static void refreshAfterDatabaseChange() {}
                     public static void syncAttachmentsPathWithConfig() {}
                 }
                 """);
+        stub("com.radolyn.ayugram.database.entities.EditedMessage",
+                "public class EditedMessage { public long fakeId; }");
         stub("com.radolyn.ayugram.utils.AyuAndroidUtil", "public class AyuAndroidUtil { public static long getDirectorySize(java.io.File file) { return 0; } }");
         stub("tw.nekomimi.nekogram.utils.FileUtil", """
                 public class FileUtil {

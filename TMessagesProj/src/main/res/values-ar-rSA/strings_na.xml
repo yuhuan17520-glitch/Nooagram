@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">قناة المنبع</string>
+    <string name="UpstreamTipsChannel">قناة نصائح المنبع</string>
     <string name="N_Config">تكوين Nooagram Settings</string>
     <string name="ForceCopy">إجبار النسخ</string>
     <string name="disableSecondAddress">تعطيل طلب العنوان الثاني</string>
@@ -22,7 +24,7 @@
     <string name="SendReactions">إرسال ردود الفعل</string>
     <string name="ShowReactions">إظهار ردود الفعل</string>
     <string name="CustomTitle">عنوان مخصص</string>
-    <string name="CustomTitleHint">اتركه فارغاً لاستخدام ناغرام</string>
+    <string name="CustomTitleHint">اتركه فارغاً لاستخدام Nooagram</string>
     <string name="CodeSyntaxHighlight">تسليط الضوء على بناء الكود</string>
     <string name="CreateMono">إنشاء فضاء أحادي</string>
     <string name="CreateMonoLanguage">لغة الكود</string>

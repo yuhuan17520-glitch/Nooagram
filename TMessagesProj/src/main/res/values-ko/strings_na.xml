@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="UpstreamChannel">업스트림 채널</string>
+    <string name="UpstreamTipsChannel">업스트림 팁 채널</string>
+</resources>

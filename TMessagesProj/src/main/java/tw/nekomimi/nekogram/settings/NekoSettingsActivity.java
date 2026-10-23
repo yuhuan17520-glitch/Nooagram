@@ -29,11 +29,14 @@ import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.DocumentSelectActivity;
 
 import java.io.File;
+import java.math.BigDecimal;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -365,6 +368,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
 
         spToJSON("nkmrcfg", configJson, key -> shouldTransferPreference("nkmrcfg", key));
         spToJSON("nekodialogconfig", configJson, null);
+        spToJSON("ayughostconfig", configJson, null);
+        spToJSON("ayughostexclusionsconfig", configJson, null);
 
         return indentSpaces > 0 ? configJson.toString(indentSpaces): configJson.toString();
     }
@@ -440,47 +445,105 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
     }
 
     public static void importSettings(JsonObject configJson) throws JSONException {
+        if (configJson == null) {
+            throw new JSONException("Settings root must be a JSON object");
+        }
+
+        Map<String, List<PreferenceUpdate>> staged = new LinkedHashMap<>();
         for (Map.Entry<String, JsonElement> element : configJson.entrySet()) {
             String preferencesName = element.getKey();
-            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(preferencesName, Activity.MODE_PRIVATE);
-            SharedPreferences.Editor editor = preferences.edit();
-            for (Map.Entry<String, JsonElement> config : ((JsonObject) element.getValue()).entrySet()) {
+            if (element.getValue() == null || !element.getValue().isJsonObject()) {
+                throw new JSONException("Preference set " + preferencesName + " must be an object");
+            }
+            for (Map.Entry<String, JsonElement> config : element.getValue().getAsJsonObject().entrySet()) {
                 String key = config.getKey();
+                JsonElement valueElement = config.getValue();
+                if (valueElement == null || !valueElement.isJsonPrimitive()) {
+                    throw new JSONException("Preference " + preferencesName + "/" + key + " must be a boolean, number, or string");
+                }
+                JsonPrimitive value = valueElement.getAsJsonPrimitive();
                 String preferenceKey = key;
                 if (preferenceKey.endsWith("_long")) {
                     preferenceKey = StringsKt.substringBeforeLast(preferenceKey, "_long", preferenceKey);
                 } else if (preferenceKey.endsWith("_float")) {
                     preferenceKey = StringsKt.substringBeforeLast(preferenceKey, "_float", preferenceKey);
                 }
+                Object parsedValue;
+                if (value.isBoolean()) {
+                    parsedValue = value.getAsBoolean();
+                } else if (value.isNumber()) {
+                    BigDecimal number;
+                    try {
+                        number = value.getAsBigDecimal();
+                    } catch (NumberFormatException e) {
+                        throw new JSONException("Preference " + preferencesName + "/" + key + " has an invalid number");
+                    }
+                    try {
+                        if (key.endsWith("_long")) {
+                            key = StringsKt.substringBeforeLast(key, "_long", key);
+                            parsedValue = number.longValueExact();
+                        } else if (key.endsWith("_float")) {
+                            key = StringsKt.substringBeforeLast(key, "_float", key);
+                            float floatValue = number.floatValue();
+                            if (Float.isNaN(floatValue) || Float.isInfinite(floatValue)) {
+                                throw new ArithmeticException();
+                            }
+                            parsedValue = floatValue;
+                        } else {
+                            parsedValue = number.intValueExact();
+                        }
+                    } catch (ArithmeticException e) {
+                        throw new JSONException("Preference " + preferencesName + "/" + key + " has an invalid numeric type");
+                    }
+                } else {
+                    parsedValue = value.getAsString();
+                }
                 if (!shouldTransferPreference(preferencesName, preferenceKey)) {
                     continue;
                 }
-                JsonPrimitive value = (JsonPrimitive) config.getValue();
-                if (value.isBoolean()) {
-                    editor.putBoolean(key, value.getAsBoolean());
-                } else if (value.isNumber()) {
-                    boolean isLong = false;
-                    boolean isFloat = false;
-                    if (key.endsWith("_long")) {
-                        key = StringsKt.substringBeforeLast(key, "_long", key);
-                        isLong = true;
-                    } else if (key.endsWith("_float")) {
-                        key = StringsKt.substringBeforeLast(key, "_float", key);
-                        isFloat = true;
-                    }
-                    if (isLong) {
-                        editor.putLong(key, value.getAsLong());
-                    } else if (isFloat) {
-                        editor.putFloat(key, value.getAsFloat());
-                    } else {
-                        editor.putInt(key, value.getAsInt());
-                    }
-                } else {
-                    editor.putString(key, value.getAsString());
-                }
+                staged.computeIfAbsent(preferencesName, ignored -> new ArrayList<>())
+                        .add(new PreferenceUpdate(key, parsedValue));
             }
-            editor.commit();
+        }
+
+        // Validation is complete before the first commit. SharedPreferences has no
+        // cross-file transaction, so a storage failure can still leave earlier files committed.
+        for (Map.Entry<String, List<PreferenceUpdate>> entry : staged.entrySet()) {
+            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(entry.getKey(), Activity.MODE_PRIVATE);
+            SharedPreferences.Editor editor = preferences.edit();
+            for (PreferenceUpdate update : entry.getValue()) {
+                update.put(editor);
+            }
+            if (!editor.commit()) {
+                throw new JSONException("Failed to commit preference set " + entry.getKey());
+            }
         }
         NkmrConfig.compact();
+    }
+
+    private static final class PreferenceUpdate {
+        private final String key;
+        private final Object value;
+
+        private PreferenceUpdate(String key, Object value) {
+            this.key = key;
+            this.value = value;
+        }
+
+        private void put(SharedPreferences.Editor editor) throws JSONException {
+            if (value instanceof Boolean) {
+                editor.putBoolean(key, (Boolean) value);
+            } else if (value instanceof Integer) {
+                editor.putInt(key, (Integer) value);
+            } else if (value instanceof Long) {
+                editor.putLong(key, (Long) value);
+            } else if (value instanceof Float) {
+                editor.putFloat(key, (Float) value);
+            } else if (value instanceof String) {
+                editor.putString(key, (String) value);
+            } else {
+                throw new JSONException("Unsupported preference value for " + key);
+            }
+        }
     }
 }

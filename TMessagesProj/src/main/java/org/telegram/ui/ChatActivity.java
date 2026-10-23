@@ -18071,10 +18071,14 @@ public class ChatActivity extends BaseFragment implements
                 if (chatListView != null) {
                     updateMessagesVisiblePart(false);
                 }
-                suppressPinnedHeaderUpdate = false;
-                updatePinnedMessageView(false, 0);
+                releasePinnedHeaderSuppression();
             });
         }
+    }
+
+    private void releasePinnedHeaderSuppression() {
+        suppressPinnedHeaderUpdate = false;
+        updatePinnedMessageView(false, 0);
     }
 
     public void scrollToMessageId(int id, int fromMessageId, boolean select, int loadIndex, boolean forceScroll, int forcePinnedMessageId) {
@@ -22235,6 +22239,9 @@ public class ChatActivity extends BaseFragment implements
                         }
                     }
                     if (!found) {
+                        if (pinnedJump) {
+                            releasePinnedHeaderSuppression();
+                        }
                         if (isThreadChat()) {
                             Bundle bundle = new Bundle();
                             if (currentEncryptedChat != null) {
@@ -23240,6 +23247,8 @@ public class ChatActivity extends BaseFragment implements
                             chatScrollHelper.scrollToPosition(chatScrollHelperCallback.position = chatAdapter.messagesStartRow + k, chatScrollHelperCallback.offset = yOffset, chatScrollHelperCallback.bottom = false, true);
                         }
                     }
+                } else if (pinnedJump) {
+                    releasePinnedHeaderSuppression();
                 }
             }
         }
@@ -23317,7 +23326,16 @@ public class ChatActivity extends BaseFragment implements
                 messageEnterTransitionContainer.invalidate();
             }
         } else if (id == NotificationCenter.loadingMessagesFailed) {
-            if ((Integer) args[0] == classGuid && args[2] instanceof TLRPC.TL_error) {
+            if (!(args[0] instanceof Integer) || (Integer) args[0] != classGuid) {
+                return;
+            }
+            // The failure callback omits loadIndex, so scope it by the requested history target.
+            if (suppressPinnedHeaderUpdate && postponedScrollMessageId != 0
+                    && args[1] instanceof TLRPC.TL_messages_getHistory history
+                    && history.offset_id == postponedScrollMessageId) {
+                releasePinnedHeaderSuppression();
+            }
+            if (args[2] instanceof TLRPC.TL_error) {
                 TLRPC.TL_error e = (TLRPC.TL_error) args[2];
                 if ("FROZEN_METHOD_INVALID".equals(e.text)) {
                     finishFragment();
@@ -32786,7 +32804,6 @@ public class ChatActivity extends BaseFragment implements
                     && message.messageOwner.from_id != null
                     && message.messageOwner.from_id.user_id != getAccountInstance().getUserConfig().getClientUserId()
                     && !(AyuMessageUtils.isExpiredDocument(message) && (message.messageOwner.media.voice || message.messageOwner.media.round))
-                    && AyuMessagesController.getInstance().hasAnyRevisions(getAccountInstance().getUserConfig().getClientUserId(), dialog_id, message.messageOwner.id)
             ) {
                 int idx = options.isEmpty() ? 0 : options.size() - 1;
                 items.add(idx, getString(R.string.EditsHistoryMenuText));

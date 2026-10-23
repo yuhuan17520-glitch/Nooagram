@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Upstream-kanava</string>
+    <string name="UpstreamTipsChannel">Upstream-vinkkikanava</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Pakota Kopio</string>
     <string name="disableSecondAddress">Poista Toinen Osoitepyyntö Käytöstä</string>

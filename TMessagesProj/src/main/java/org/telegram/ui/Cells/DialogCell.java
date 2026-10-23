@@ -2204,7 +2204,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 timeString = LocaleController.stringForMessageListDate(draftMessage.date);
             } else if (lastMessageDate != 0) {
                 timeString = LocaleController.stringForMessageListDate(lastMessageDate);
-            } else if (message != null) {
+            } else if (message != null && message.messageOwner.date > 0) {
                 timeString = LocaleController.stringForMessageListDate(message.messageOwner.date);
             }
 
@@ -3410,6 +3410,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                     readOutboxMaxId = dialog.read_outbox_max_id;
                     ttlPeriod = dialog.ttl_period;
                     if (mask == 0) {
+                        boolean filteredPreview = false;
                         clearingDialog = MessagesController.getInstance(currentAccount).isClearingDialog(dialog.id);
                         groupMessages = MessagesController.getInstance(currentAccount).dialogMessage.get(dialog.id);
                         message = groupMessages != null && groupMessages.size() > 0 ? groupMessages.get(0) : null;
@@ -3420,13 +3421,17 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                             }
                         }
                         if (message != null) {
-                            if (NooagramDialogPreviewFilter.isHidden(currentAccount, dialog.id, message)) {
+                            int previewVisibility = NooagramDialogPreviewFilter.getVisibility(currentAccount, dialog.id, message);
+                            if (previewVisibility == NooagramDialogPreviewFilter.HIDDEN) {
+                                filteredPreview = true;
                                 MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
                                 if (replacement == null) {
                                     replacement = getFilteredPreviewPlaceholder(message, dialog);
                                 }
                                 message = replacement;
                                 groupMessages = null;
+                            } else if (previewVisibility == NooagramDialogPreviewFilter.PENDING) {
+                                NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
                             } else {
                                 NooagramDialogPreviewFilter.rememberVisible(currentAccount, dialog.id, message);
                             }
@@ -3465,7 +3470,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         }
                         markUnread = dialog.unread_mark;
                         currentEditDate = message != null ? message.messageOwner.edit_date : 0;
-                        lastMessageDate = dialog.last_message_date;
+                        lastMessageDate = NooagramDialogPreviewFilter.dialogPreviewDate(
+                                filteredPreview, message, dialog.last_message_date);
                         if (dialogsType == 7 || dialogsType == 8) {
                             MessagesController.DialogFilter filter = MessagesController.getInstance(currentAccount).selectedDialogFilter[dialogsType == 8 ? 1 : 0];
                             drawPin = filter != null && filter.pinnedDialogs.indexOfKey(dialog.id) >= 0;

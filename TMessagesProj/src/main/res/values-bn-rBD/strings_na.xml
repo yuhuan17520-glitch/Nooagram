@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">আপস্ট্রিম চ্যানেল</string>
+    <string name="UpstreamTipsChannel">আপস্ট্রিম টিপস চ্যানেল</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">আমি তোমাকে ভালোবাসি</string>
     <string name="disableSecondAddress">Disable Second Address Request</string>

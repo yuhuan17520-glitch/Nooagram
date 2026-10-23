@@ -77,7 +77,7 @@ package org.telegram.tgnet;
 import java.util.*;
 public class TLRPC {
  public static class Message {
-  public int id, date, edit_date, send_state; public long dialog_id;
+  public int id, date, edit_date, send_state; public long dialog_id, grouped_id;
   public boolean unread, out, hide; public Object action; public Reply reply_to; public Message replyMessage;
   public static Message TLdeserialize(NativeByteBuffer data, int constructor, boolean exception) { return data.message; }
   public void readAttachPath(NativeByteBuffer data, long userId) {}
@@ -88,8 +88,9 @@ public class TLRPC {
  public static class TL_messageActionChannelCreate {}
  public static class User {}
  public static class Chat { public boolean megagroup = true, channel = true; }
+ public static class Dialog { public int top_message; }
  public static class InputPeer { public long dialog; }
- public static class TL_messages_getHistory { public InputPeer peer; public int limit, offset_id; }
+ public static class TL_messages_getHistory { public InputPeer peer; public int limit, offset_id, add_offset; }
  public static class messages_Messages {
   public ArrayList<Message> messages = new ArrayList<>();
   public ArrayList<User> users = new ArrayList<>(); public ArrayList<Chat> chats = new ArrayList<>();
@@ -109,7 +110,7 @@ public class ConnectionsManager {
  private int nextId;
  public static ConnectionsManager getInstance(int account) { return instance; }
  public int sendRequest(TLRPC.TL_messages_getHistory request, Callback callback) {
-  if (request.limit != 80) throw new AssertionError("Unbounded network page");
+  if (request.limit != 80 && request.limit != 20 && request.limit != 10) throw new AssertionError("Unbounded network page");
   requests.add(new Pending(++nextId, request, callback)); offsets.add(request.offset_id); return nextId;
  }
  public void cancelRequest(int id, boolean notify) { cancelled.add(id); }
@@ -118,6 +119,7 @@ public class ConnectionsManager {
 '@
     'org/telegram/messenger/MessageObject.java' = @'
 package org.telegram.messenger;
+import java.util.ArrayList;
 import org.telegram.tgnet.TLRPC;
 public class MessageObject {
  public final int currentAccount; public final TLRPC.Message messageOwner;
@@ -125,7 +127,11 @@ public class MessageObject {
  public MessageObject(int account, TLRPC.Message message, boolean layout, boolean media) { currentAccount = account; messageOwner = message; }
  public int getId() { return messageOwner.id; }
  public long getDialogId() { return messageOwner.dialog_id; }
+ public long getGroupId() { return messageOwner.grouped_id; }
  public static void setUnreadFlags(TLRPC.Message message, int flags) { message.unread = flags == 0; }
+ public static class GroupedMessages {
+  public long groupId; public ArrayList<MessageObject> messages = new ArrayList<>();
+ }
 }
 '@
     'org/telegram/messenger/ChatObject.java' = @'
@@ -148,6 +154,7 @@ public class MessagesController {
  public static final int LOAD_BACKWARD = 0;
  public static final MessagesController instance = new MessagesController();
  public final TLRPC.Chat chat = new TLRPC.Chat();
+ public final Map<Long, TLRPC.Dialog> dialogs_dict = new HashMap<>();
  public static MessagesController getInstance(int account) { return instance; }
  public TLRPC.Chat getChat(long id) { return id > 0 ? chat : null; }
  public void putUsers(ArrayList<TLRPC.User> users, boolean fromCache) {}
@@ -189,11 +196,13 @@ public class SQLiteDatabase {
   if (fail) throw new SQLiteException();
   var selected = new ArrayList<TLRPC.Message>(); long dialog = ((Number) args[0]).longValue();
   boolean byId = sql.contains("AND mid = ?");
+  boolean byGroup = sql.contains("AND group_id = ?");
   if (!byId) { scans++; if (!sql.contains("LIMIT ?")) throw new AssertionError("Unbounded database query"); }
   for (TLRPC.Message row : rows) {
    if (row.dialog_id != dialog) continue;
    if (byId && row.id != ((Number) args[1]).intValue()) continue;
-   if (!byId && args.length > 2) {
+   if (byGroup && row.grouped_id != ((Number) args[1]).longValue()) continue;
+   if (!byId && !byGroup && args.length > 2) {
     int date = ((Number) args[1]).intValue(), id = ((Number) args[3]).intValue();
     if (!(row.date < date || row.date == date && row.id < id)) continue;
    }
@@ -242,7 +251,14 @@ public class AyuFilter {
  public static boolean hideRegex = true, hideBlocked = true;
  public static boolean shouldHideFilteredMessages() { return hideRegex; }
  public static boolean shouldHideIgnoredBlockedMessages() { return hideBlocked; }
- public static boolean isFiltered(MessageObject message, Object group) { return !message.skipAyuFiltering && regex.contains(message.getId()); }
+ public static boolean isFiltered(MessageObject message, MessageObject.GroupedMessages group) {
+  if (message.skipAyuFiltering) return false;
+  if (group != null) {
+   for (MessageObject member : group.messages) if (regex.contains(member.getId())) return true;
+   return false;
+  }
+  return regex.contains(message.getId());
+ }
  public static boolean isIgnoredBlockedMessage(MessageObject message) { return blocked.contains(message.getId()); }
 }
 '@
@@ -257,8 +273,12 @@ public class DialogCell {
  public boolean isAttachedToWindow() { return attached; }
  public void refreshFilteredPreview() {
   refreshes++;
-  if (NooagramDialogPreviewFilter.isHidden(account, dialog, source)) {
+  int visibility = NooagramDialogPreviewFilter.getVisibility(account, dialog, source);
+  if (visibility == NooagramDialogPreviewFilter.HIDDEN) {
    applied = NooagramDialogPreviewFilter.resolve(this, account, dialog, source);
+  } else if (visibility == NooagramDialogPreviewFilter.PENDING) {
+   applied = source;
+   NooagramDialogPreviewFilter.ensureGroupContext(this, account, dialog, source);
   } else {
    applied = source;
    NooagramDialogPreviewFilter.rememberVisible(account, dialog, source);
@@ -284,4 +304,47 @@ New-Item -ItemType Directory -Path $classes | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Preview probe compilation failed' }
 & java -cp $classes org.telegram.ui.Cells.NooagramDialogPreviewFilterProbe
 if ($LASTEXITCODE -ne 0) { throw 'Preview probe failed' }
+
+$dialogCell = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java') -Raw
+if (-not $dialogCell.Contains('lastMessageDate = NooagramDialogPreviewFilter.dialogPreviewDate(')) {
+    throw 'DialogCell does not use the filtered-preview date'
+}
+if (-not $dialogCell.Contains('else if (message != null && message.messageOwner.date > 0)')) {
+    throw 'DialogCell can draw a zero-date placeholder as a timestamp'
+}
+
+$previewFilter = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/org/telegram/ui/Cells/NooagramDialogPreviewFilter.java') -Raw
+if (-not $previewFilter.Contains('WHERE uid = ? AND group_id = ?')) {
+    throw 'Preview filtering does not load complete album members from storage'
+}
+
+$chatActivity = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java') -Raw
+$historyMenuSyncQuery = $chatActivity.Contains('hasAnyRevisions(')
+$historyMenuPresent = $chatActivity.Contains('AyuConstants.OPTION_HISTORY') -and
+    $chatActivity.Contains('presentFragment(new AyuMessageHistory(selectedObject))') -and
+    $chatActivity.Contains('getEnableSaveEditsHistory().Bool()') -and
+    $chatActivity.Contains('message.messageOwner.from_id.user_id != getAccountInstance().getUserConfig().getClientUserId()') -and
+    $chatActivity.Contains('AyuMessageUtils.isExpiredDocument(message)')
+if ($historyMenuSyncQuery -or -not $historyMenuPresent) {
+    throw 'Edit-history menu still performs a synchronous revision lookup'
+}
+$messageHistory = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/com/radolyn/ayugram/ui/AyuMessageHistory.java') -Raw
+$historyLoadsAsync = $messageHistory.Contains('Utilities.globalQueue.postRunnable(') -and
+    $messageHistory.Contains('AndroidUtilities.runOnUIThread(')
+if (-not $historyLoadsAsync) {
+    throw 'Edit-history page does not load and publish asynchronously'
+}
+Write-Output 'PASS Edit-history menu is synchronous-query free and the page loads asynchronously'
+$classGuidGuard = 'if \(!\(args\[0\] instanceof Integer\) \|\| \(Integer\) args\[0\] != classGuid\) \{\s*return;'
+$targetGuard = 'if \(suppressPinnedHeaderUpdate && postponedScrollMessageId != 0\s*&& args\[1\] instanceof TLRPC\.TL_messages_getHistory history\s*&& history\.offset_id == postponedScrollMessageId\)'
+if ($chatActivity -notmatch $classGuidGuard -or $chatActivity -notmatch $targetGuard) {
+    throw 'Pinned jump failure is not tied to this chat and target load'
+}
+if ($chatActivity -match 'if \(suppressPinnedHeaderUpdate\) \{\s*releasePinnedHeaderSuppression\(\);') {
+    throw 'An unrelated message-load failure can clear pinned suppression'
+}
+if (([regex]::Matches($chatActivity, 'releasePinnedHeaderSuppression\(\);')).Count -lt 4) {
+    throw 'Pinned jump failure and miss paths do not all release suppression'
+}
+Write-Output 'PASS Pinned jump failure is scoped to the current chat and target request'
 Write-Output "Probe fixtures and classes: $scratch"

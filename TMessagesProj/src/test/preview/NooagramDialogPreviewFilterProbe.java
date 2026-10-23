@@ -10,6 +10,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import tw.nekomimi.nekogram.filters.AyuFilter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class NooagramDialogPreviewFilterProbe {
@@ -29,6 +30,12 @@ public class NooagramDialogPreviewFilterProbe {
         return message;
     }
 
+    private static TLRPC.Message groupedRaw(int id, long groupId) {
+        TLRPC.Message message = raw(id);
+        message.grouped_id = groupId;
+        return message;
+    }
+
     private static MessageObject add(int id) {
         TLRPC.Message message = raw(id);
         storage.database.rows.add(message);
@@ -38,6 +45,14 @@ public class NooagramDialogPreviewFilterProbe {
     private static TLRPC.messages_Messages page(int newest, int oldest) {
         TLRPC.messages_Messages page = new TLRPC.messages_Messages();
         for (int id = newest; id >= oldest; id--) page.messages.add(raw(id));
+        return page;
+    }
+
+    private static TLRPC.messages_Messages pageOf(TLRPC.Message... messages) {
+        TLRPC.messages_Messages page = new TLRPC.messages_Messages();
+        for (TLRPC.Message message : messages) {
+            page.messages.add(message);
+        }
         return page;
     }
 
@@ -69,12 +84,14 @@ public class NooagramDialogPreviewFilterProbe {
         storage.writes = 0;
         network.requests.clear();
         network.offsets.clear();
+        network.cancelled.clear();
         AndroidUtilities.ui.clear();
         AndroidUtilities.delayed.clear();
         AyuFilter.regex.clear();
         AyuFilter.blocked.clear();
         AyuFilter.hideRegex = AyuFilter.hideBlocked = true;
         MessagesController.instance.chat.megagroup = true;
+        MessagesController.instance.dialogs_dict.clear();
     }
 
     private static void test(String name, Runnable body) {
@@ -453,6 +470,211 @@ public class NooagramDialogPreviewFilterProbe {
             check(cell.applied.getId() == 98, "Regex masking treated as hiding");
             MessagesController.instance.chat.megagroup = false;
             check(!NooagramDialogPreviewFilter.isHidden(0, -77, top), "Blocked policy leaked outside megagroups");
+        });
+        test("Cold-cache album members are read from storage before filtering", () -> {
+            MessageObject source = add(100);
+            MessageObject captioned = add(101);
+            MessageObject fallback = add(90);
+            source.messageOwner.grouped_id = captioned.messageOwner.grouped_id = 44;
+            AyuFilter.regex.add(101);
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.PENDING,
+                    "Unknown album context was not kept pending");
+            DialogCell cell = cell(source);
+            check(cell.applied == source, "Pending album hid the current source");
+            check(network.requests.size() == 1, "Album context request missing");
+            network.respond(pageOf(raw(110), groupedRaw(101, 44), groupedRaw(100, 44), raw(90)), false);
+            drain();
+            check(cell.applied != null && cell.applied.getId() == fallback.getId(),
+                    "Storage album context missed the filtered sibling");
+        });
+        test("Storage fallback candidates defer partial album context", () -> {
+            MessageObject source = add(200);
+            MessageObject candidate = add(90);
+            MessageObject captioned = add(91);
+            MessageObject fallback = add(80);
+            candidate.messageOwner.grouped_id = captioned.messageOwner.grouped_id = 55;
+            AyuFilter.regex.addAll(List.of(200, 91));
+            DialogCell cell = cell(source);
+            drain();
+            check(cell.applied != null && cell.applied.getId() == fallback.getId(),
+                    "Partially grouped candidate was cached as visible");
+            check(network.requests.size() == 1, "Partial candidate context was not requested");
+        });
+        test("Unfiltered album becomes visible only after storage context loads", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 66;
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.PENDING,
+                    "Missing album context was evaluated as an unfiltered member");
+            DialogCell cell = cell(source);
+            network.respond(pageOf(raw(110), groupedRaw(100, 66), groupedRaw(99, 66), raw(90)), false);
+            drain();
+            check(cell.applied == source, "Complete unfiltered album context was not restored");
+        });
+        test("Album touching the history page edge stays pending", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 77;
+            DialogCell cell = cell(source);
+            network.respond(pageOf(groupedRaw(101, 77), groupedRaw(100, 77), raw(90), raw(80)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.PENDING,
+                    "Edge-clipped album was accepted as complete");
+            check(cell.applied == source, "Edge-clipped album replaced a visible source");
+        });
+        test("Latest album at the page head completes from the known top message", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 112;
+            TLRPC.Dialog dialog = new TLRPC.Dialog();
+            dialog.top_message = 100;
+            MessagesController.instance.dialogs_dict.put(-77L, dialog);
+            ArrayList<TLRPC.Message> messages = new ArrayList<>();
+            messages.add(groupedRaw(100, 112));
+            messages.add(groupedRaw(99, 112));
+            for (int id = 90; id >= 73; id--) {
+                messages.add(raw(id));
+            }
+            DialogCell cell = cell(source);
+            network.respond(pageOf(messages.toArray(new TLRPC.Message[0])), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.VISIBLE,
+                    "Latest page-head album remained pending");
+            check(cell.applied == source, "Latest album was replaced");
+        });
+        test("Single-message album at the newest boundary completes", () -> {
+            MessageObject source = add(100);
+            source.messageOwner.grouped_id = 113;
+            TLRPC.Dialog dialog = new TLRPC.Dialog();
+            dialog.top_message = 100;
+            MessagesController.instance.dialogs_dict.put(-77L, dialog);
+            DialogCell cell = cell(source);
+            network.respond(pageOf(groupedRaw(100, 113), raw(90)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.VISIBLE,
+                    "Single-message album remained pending");
+            check(cell.applied == source, "Single-message album changed the preview");
+        });
+        test("Oldest album at the page tail completes after an empty older probe", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 114;
+            DialogCell cell = cell(source);
+            network.respond(pageOf(raw(120), raw(110),
+                    groupedRaw(100, 114), groupedRaw(99, 114)), false);
+            drain();
+            check(network.offsets.equals(List.of(100, 99)), "Oldest album was not probed downward");
+            network.respond(new TLRPC.messages_Messages(), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.VISIBLE,
+                    "Oldest album at the page tail remained pending");
+            check(cell.applied == source, "Oldest album changed the preview");
+        });
+        test("Older probe keeps an album pending when another member is found", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 116;
+            DialogCell cell = cell(source);
+            network.respond(pageOf(raw(120), raw(110),
+                    groupedRaw(100, 116), groupedRaw(99, 116)), false);
+            drain();
+            network.respond(pageOf(groupedRaw(98, 116)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.PENDING,
+                    "Album completed after finding another member below the page");
+            check(cell.applied == source, "Partial album replaced its source");
+        });
+        test("Pending albums are not admitted to the visible cache", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 115;
+            NooagramDialogPreviewFilter.rememberVisible(0, -77, source);
+            try {
+                java.lang.reflect.Field field = NooagramDialogPreviewFilter.class.getDeclaredField("VISIBLE_PREVIEWS");
+                field.setAccessible(true);
+                java.util.Map<?, ?> previews = (java.util.Map<?, ?>) field.get(null);
+                check(previews.isEmpty(), "Pending album entered visible cache");
+            } catch (ReflectiveOperationException error) {
+                throw new AssertionError(error);
+            }
+        });
+        test("Album context failure is throttled for thirty seconds", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 88;
+            cell(source);
+            network.respond(null, true);
+            drain();
+            check(network.offsets.size() == 1, "Initial album request count");
+            AndroidUtilities.advance(29999);
+            drain();
+            check(network.offsets.size() == 1, "Album request retried before cooldown");
+            AndroidUtilities.advance(1);
+            drain();
+            check(network.offsets.size() == 2, "Album request did not retry after cooldown");
+        });
+        test("Album context timeout starts the same bounded retry", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 99;
+            cell(source);
+            AndroidUtilities.advance(30000);
+            drain();
+            check(network.cancelled.size() == 1,
+                    "Timed-out album request was not cancelled: " + network.cancelled);
+            check(network.offsets.size() == 1, "Timeout retried immediately");
+            network.respond(pageOf(raw(110), groupedRaw(100, 99), groupedRaw(99, 99), raw(90)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source)
+                            == NooagramDialogPreviewFilter.PENDING,
+                    "Late response after timeout completed album context");
+            AndroidUtilities.advance(30000);
+            drain();
+            check(network.offsets.size() == 2, "Timed-out album request was not retried");
+        });
+        test("Album context request is cancelled on account switch", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 111;
+            cell(source);
+            int requestId = network.requests.peek().id();
+            NotificationCenter.getInstance(0).postNotificationName(NotificationCenter.appDidLogout);
+            check(network.cancelled.contains(requestId), "Account switch did not cancel album request");
+        });
+        test("Album context request is cancelled on edit and deletion", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 222;
+            cell(source);
+            int editRequestId = network.requests.peek().id();
+            NotificationCenter.getInstance(0).postNotificationName(
+                    NotificationCenter.replaceMessagesObjects, -77L, List.of(source), false);
+            check(network.cancelled.contains(editRequestId), "Edit did not cancel album request");
+
+            network.requests.clear();
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 223;
+            cell(source);
+            int deleteRequestId = network.requests.peek().id();
+            NotificationCenter.getInstance(0).postNotificationName(
+                    NotificationCenter.messagesDeleted, List.of(99), 77L, false);
+            check(network.cancelled.contains(deleteRequestId), "Deletion did not cancel album request");
+        });
+        test("Filtered fallback preview uses a valid message date", () -> {
+            MessageObject replacement = add(90);
+            check(NooagramDialogPreviewFilter.dialogPreviewDate(true, replacement, 200) == 90,
+                    "Filtered fallback kept the dialog date");
+            replacement.messageOwner.date = 0;
+            check(NooagramDialogPreviewFilter.dialogPreviewDate(true, replacement, 200) == 0,
+                    "Zero-date placeholder inherited the dialog time");
+            check(NooagramDialogPreviewFilter.dialogPreviewDate(false, replacement, 200) == 200,
+                    "Normal dialog date changed");
         });
         test("R20 rule invalidation refreshes waiting cells without notification loop", () -> {
             AyuFilter.regex.addAll(List.of(100, 99));

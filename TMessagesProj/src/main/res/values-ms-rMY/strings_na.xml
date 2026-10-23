@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="UpstreamChannel">Saluran huluan</string>
+    <string name="UpstreamTipsChannel">Saluran petua huluan</string>
     <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Force Copy</string>
     <string name="disableSecondAddress">Disable Second Address Request</string>
