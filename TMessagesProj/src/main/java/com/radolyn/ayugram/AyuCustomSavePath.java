@@ -6,6 +6,6 @@ final class AyuCustomSavePath {
 
     static String normalize(String path) {
         path = path == null ? "" : path.trim();
-        return path.isEmpty() ? "Nooagram" : path;
+        return path.isEmpty() ? "Nagram" : path;
     }
 }

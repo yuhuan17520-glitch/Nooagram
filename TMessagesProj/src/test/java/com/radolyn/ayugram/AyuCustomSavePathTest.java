@@ -6,11 +6,12 @@ import static org.junit.Assert.assertEquals;
 
 public class AyuCustomSavePathTest {
     @Test
-    public void emptyPathUsesTheNewDefaultWithoutRewritingExplicitPaths() {
-        assertEquals("Nooagram", AyuCustomSavePath.normalize(null));
-        assertEquals("Nooagram", AyuCustomSavePath.normalize(""));
-        assertEquals("Nooagram", AyuCustomSavePath.normalize("   "));
+    public void emptyPathKeepsHistoricalDirectoryWithoutRewritingExplicitPaths() {
+        assertEquals("Nagram", AyuCustomSavePath.normalize(null));
+        assertEquals("Nagram", AyuCustomSavePath.normalize(""));
+        assertEquals("Nagram", AyuCustomSavePath.normalize("   "));
         assertEquals("Nagram", AyuCustomSavePath.normalize("Nagram"));
+        assertEquals("Nooagram", AyuCustomSavePath.normalize("Nooagram"));
         assertEquals("Archive", AyuCustomSavePath.normalize(" Archive "));
     }
 }

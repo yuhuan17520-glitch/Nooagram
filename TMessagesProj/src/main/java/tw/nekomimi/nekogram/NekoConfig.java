@@ -126,7 +126,8 @@ public class NekoConfig {
     public static ConfigItem showIdAndDc = addConfig("ShowIdAndDc", configTypeBool, false);
 
     public static ConfigItem cachePath = addConfig("cache_path", configTypeString, "");
-    public static ConfigItem customSavePath = addConfig("customSavePath", configTypeString, "Nooagram");
+    // This is an existing on-disk directory, not the product's display name.
+    public static ConfigItem customSavePath = addConfig("customSavePath", configTypeString, "Nagram");
 
     public static ConfigItem translationProvider = addConfig("translationProvider", configTypeInt, 1);
     public static ConfigItem translateToLang = addConfig("TransToLang", configTypeString, ""); // "" -> translate to current language (MessageTrans.kt & Translator.kt)
