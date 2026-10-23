@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-设置</string>
+    <string name="NekoSettings">Nooagram设置</string>
     <string name="IPv6">通过 IPv6 连接</string>
     <string name="MessageMenu">消息菜单</string>
     <string name="HidePhone">隐藏您的手机号码</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">使用完全透明的状态栏</string>
     <string name="EnableResidentNotification">请让猫咪住在通知栏里吧</string>
     <string name="DisableResidentNotification">果然通知栏还是太挤了</string>
-    <string name="NekogramRunning">猫猫奔跑中</string>
+    <string name="NekogramRunning">Nooagram正在运行</string>
     <string name="EventType">抽屉图标集</string>
     <string name="ChristmasHat">一直显示圣诞帽</string>
     <string name="ActionBarDecoration">标题栏装饰</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">加速上传和下载</string>
     <string name="mapDriftingFixForGoogleMaps">修复 Google 地图在中国的漂移问题</string>
     <string name="useOSMDroidMap">使用 OSMDroid 地图</string>
-    <string name="UnknownNekoSettingsOption">没有这样的N-设置选项。</string>
+    <string name="UnknownNekoSettingsOption">没有这样的Nooagram设置选项。</string>
     <string name="PasscodeNeeded">您必须先启用锁定码</string>
     <string name="PasscodeNeko">锁定码</string>
-    <string name="PasscodeShowInSettings">在N-设置中显示</string>
+    <string name="PasscodeShowInSettings">在Nooagram设置中显示</string>
     <string name="PasscodeShowInSettingsAbout">隐藏后，您**只能**通过链接打开此页面：</string>
     <string name="PasscodeSet">设置锁定码</string>
     <string name="PasscodeEdit">更改锁定码</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">清除最近对话</string>
     <string name="ClearRecentChatAlert">您确定要清除您的最近对话吗？</string>
     <string name="CloudConfig">云设置</string>
-    <string name="CloudConfigDesc">保存N-设置到 Telegram 云。</string>
+    <string name="CloudConfigDesc">保存Nooagram设置到 Telegram 云。</string>
     <string name="CloudConfigSyncDate">最后同步：%s，云端：%s</string>
     <string name="CloudConfigSyncDateNever">从未</string>
     <string name="CloudConfigSync">同步到云端</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">恢复</string>
     <string name="CloudConfigSyncing">正在同步...</string>
     <string name="CloudConfigAutoSync">自动同步</string>
-    <string name="CloudConfigAutoSyncDesc">修改N-设置后自动同步到云端。</string>
+    <string name="CloudConfigAutoSyncDesc">修改Nooagram设置后自动同步到云端。</string>
     <string name="CloudConfigSyncFailed">无法将设置同步到云端。</string>
     <string name="CloudConfigRestoreFailed">无法从云端恢复设置。</string>
     <string name="CopyCallback">复制回调数据</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">使用密码保护此二维码</string>
     <string name="ConfirmNewPassword">确认密码</string>
     <string name="PassQRAbout">将您的通行密钥保存为加密的二维码。扫描它即可在其他设备上登录。</string>
-    <string name="PassQREncryption">使用 Nagram 扫描以登录。</string>
+    <string name="PassQREncryption">使用 Nooagram 扫描以登录。</string>
     <string name="InvalidPassQr">无效的通行密钥二维码</string>
     <string name="PassQRPasswordTooShort">密码至少需要 8 个字符</string>
     <string name="PassQRPasswordWarning">安全警告：此密码是保护您密钥的唯一防线。弱密码可被离线破解，请混合使用大写字母、小写字母、数字和符号。</string>

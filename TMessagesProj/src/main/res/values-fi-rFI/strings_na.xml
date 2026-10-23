@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Config</string>
+    <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Pakota Kopio</string>
     <string name="disableSecondAddress">Poista Toinen Osoitepyyntö Käytöstä</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Lähetä Reaktioita</string>
     <string name="ShowReactions">Näytä Reaktiot</string>
     <string name="CustomTitle">Oma Otsikko</string>
-    <string name="CustomTitleHint">Jätä tyhjäksi käyttääksesi Nagramia</string>
+    <string name="CustomTitleHint">Jätä tyhjäksi käyttääksesi Nooagramia</string>
     <string name="CodeSyntaxHighlight">Koodin syntaksin korostus</string>
     <string name="CreateMono">Luo Monospace</string>
     <string name="CreateMonoLanguage">Koodin kieli</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Jos olet ryhmän omistaja</string>
     <string name="RealHideTimeForSticker">Todellinen piilottaa aika tarroille</string>
     <string name="ResetSettings">Nollaa Asetukset</string>
-    <string name="ResetSettingsAlert">Oletko varma, että haluat palauttaa kaikki N-Config -asetukset?</string>
+    <string name="ResetSettingsAlert">Oletko varma, että haluat palauttaa kaikki Nooagram Settings -asetukset?</string>
     <string name="HideTitle">Piilota Otsikko</string>
     <string name="IgnoreFolderCount">Ohita Kansion Määrä</string>
     <string name="SendWithoutMarkdown">Lähetä ilman merkintää</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Näytä foorumi normaalina keskusteluna</string>
     <string name="DecorationNone">Ei Mitään</string>
     <string name="ChatDecoration">Keskustelun Koristelu</string>
-    <string name="NeedChangeNekoSettings">Sinun täytyy vaihtaa N-Config</string>
+    <string name="NeedChangeNekoSettings">Sinun täytyy vaihtaa Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Älä poista arkistoa pyyhkäisemällä</string>
     <string name="DoNotShareMyPhoneNumber">Älä jaa puhelinnumeroani</string>
     <string name="DefaultDeleteMenu">Poista Oletusvalikko</string>

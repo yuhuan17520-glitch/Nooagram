@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Configuratie</string>
+    <string name="N_Config">Nooagram-Configuratie</string>
     <string name="ForceCopy">Forceer kopiëren</string>
     <string name="disableSecondAddress">Tweede adresverzoek uitschakelen</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Verstuur reacties</string>
     <string name="ShowReactions">Toon reacties</string>
     <string name="CustomTitle">Aangepaste titel</string>
-    <string name="CustomTitleHint">Laat leeg om Nagram te gebruiken</string>
+    <string name="CustomTitleHint">Laat leeg om Nooagram te gebruiken</string>
     <string name="CodeSyntaxHighlight">Syntaxis code benadrukken</string>
     <string name="CreateMono">Maak Monospace</string>
     <string name="CreateMonoLanguage">Taal code</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Als je eigenaar van de groep bent</string>
     <string name="RealHideTimeForSticker">Tijd echte verbergen voor stickers</string>
     <string name="ResetSettings">Instellingen opnieuw instellen</string>
-    <string name="ResetSettingsAlert">Weet u zeker dat u alle N-Config?</string>
+    <string name="ResetSettingsAlert">Weet u zeker dat u alle Nooagram Settings?</string>
     <string name="HideTitle">Titel verbergen</string>
     <string name="IgnoreFolderCount">Negeer maptelling</string>
     <string name="SendWithoutMarkdown">Stuur zonder markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Toon forum als normale chat</string>
     <string name="DecorationNone">geen</string>
     <string name="ChatDecoration">Chat Versiering</string>
-    <string name="NeedChangeNekoSettings">U moet N-Config wijzigen</string>
+    <string name="NeedChangeNekoSettings">U moet Nooagram Settings wijzigen</string>
     <string name="DoNotUnarchiveBySwipe">Dearchiveren niet door te vegen</string>
     <string name="DoNotShareMyPhoneNumber">Mijn telefoonnummer niet delen</string>
     <string name="DefaultDeleteMenu">Standaard menu verwijderen</string>

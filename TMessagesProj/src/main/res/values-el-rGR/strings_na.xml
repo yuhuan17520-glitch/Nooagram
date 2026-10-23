@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Ρύθμιση</string>
+    <string name="N_Config">Nooagram-Ρύθμιση</string>
     <string name="ForceCopy">Εξαναγκασμός Αντιγραφής</string>
     <string name="disableSecondAddress">Απενεργοποίηση Δεύτερης Αίτησης Διεύθυνσης</string>
     <string name="InvertReply">Αναστροφή</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Αποστολή Αντιδράσεων</string>
     <string name="ShowReactions">Εμφάνιση Αντιδράσεων</string>
     <string name="CustomTitle">Προσαρμοσμένος Τίτλος</string>
-    <string name="CustomTitleHint">Αφήστε κενό για χρήση Nagram</string>
+    <string name="CustomTitleHint">Αφήστε κενό για χρήση Nooagram</string>
     <string name="CodeSyntaxHighlight">Επισήμανση σύνταξης κώδικα</string>
     <string name="CreateMono">Δημιουργία Monospace</string>
     <string name="CreateMonoLanguage">Κωδικός γλώσσας</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Αν είστε ιδιοκτήτης της ομάδας</string>
     <string name="RealHideTimeForSticker">Πραγματικός χρόνος απόκρυψης αυτοκόλλητων</string>
     <string name="ResetSettings">Επαναφορά Ρυθμίσεων</string>
-    <string name="ResetSettingsAlert">Είστε βέβαιοι ότι θέλετε να επαναφέρετε όλα τα N-Config?</string>
+    <string name="ResetSettingsAlert">Είστε βέβαιοι ότι θέλετε να επαναφέρετε όλα τα Nooagram Settings?</string>
     <string name="HideTitle">Απόκρυψη Τίτλου</string>
     <string name="IgnoreFolderCount">Παράβλεψη Καταμέτρησης Φακέλων</string>
     <string name="SendWithoutMarkdown">Αποστολή χωρίς markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Εμφάνιση φόρουμ ως κανονική συνομιλία</string>
     <string name="DecorationNone">Κανένα</string>
     <string name="ChatDecoration">Διακόσμηση Συνομιλίας</string>
-    <string name="NeedChangeNekoSettings">Πρέπει να αλλάξετε το N-Config</string>
+    <string name="NeedChangeNekoSettings">Πρέπει να αλλάξετε το Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Να μην αποσυμπιεσθεί με σύρσιμο</string>
     <string name="DoNotShareMyPhoneNumber">Χωρίς κοινή χρήση αριθμού τηλεφώνου μου</string>
     <string name="DefaultDeleteMenu">Προεπιλεγμένο Διαγραφή Μενού</string>

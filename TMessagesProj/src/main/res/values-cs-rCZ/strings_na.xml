@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">Konfigurace N-</string>
+    <string name="N_Config">Konfigurace Nooagram</string>
     <string name="ForceCopy">Vynutit kopírování</string>
     <string name="disableSecondAddress">Zakázat žádost o druhou adresu</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Odeslat reakce</string>
     <string name="ShowReactions">Zobrazit reakce</string>
     <string name="CustomTitle">Vlastní titulek</string>
-    <string name="CustomTitleHint">Nechte prázdné pro použití Nagram</string>
+    <string name="CustomTitleHint">Nechte prázdné pro použití Nooagram</string>
     <string name="CodeSyntaxHighlight">Zvýraznění syntaxe kódu</string>
     <string name="CreateMono">Vytvořit Monospace</string>
     <string name="CreateMonoLanguage">Jazyk kódu</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Pokud jste vlastníkem skupiny</string>
     <string name="RealHideTimeForSticker">Skutečný čas skrytí samolepek</string>
     <string name="ResetSettings">Obnovit nastavení</string>
-    <string name="ResetSettingsAlert">Jste si jisti, že chcete resetovat všechny N-Config?</string>
+    <string name="ResetSettingsAlert">Jste si jisti, že chcete resetovat všechny Nooagram Settings?</string>
     <string name="HideTitle">Skrýt název</string>
     <string name="IgnoreFolderCount">Ignorovat počet složek</string>
     <string name="SendWithoutMarkdown">Odeslat bez markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Zobrazit fórum jako normální chat</string>
     <string name="DecorationNone">Nic</string>
     <string name="ChatDecoration">Dekorace chatu</string>
-    <string name="NeedChangeNekoSettings">Je třeba změnit nastavení N-</string>
+    <string name="NeedChangeNekoSettings">Je třeba změnit nastavení Nooagram</string>
     <string name="DoNotUnarchiveBySwipe">Neodarchivovat tažením prstu</string>
     <string name="DoNotShareMyPhoneNumber">Nesdílejte mé telefonní číslo</string>
     <string name="DefaultDeleteMenu">Výchozí nabídka odstranění</string>

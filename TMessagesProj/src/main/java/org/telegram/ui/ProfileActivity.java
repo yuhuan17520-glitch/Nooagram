@@ -4837,7 +4837,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     updateListAnimated(false);
                 });
                 o.add(R.drawable.msg_retry, LocaleController.getString(R.string.SwitchVersion), () -> {
-                    Browser.openUrl(ProfileActivity.this.getParentActivity(), "https://github.com/NextAlone/Nagram/releases");
+                    Browser.openUrl(ProfileActivity.this.getParentActivity(), "https://github.com/yuhuan17520-glitch/Nooagram/releases");
                 });
 
                 o.add(R.drawable.msg_search, LocaleController.getString(R.string.CheckUpdate), () -> {
@@ -4970,10 +4970,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             public boolean onItemClick(View view, int position) {
                 if (position == versionRow) {
                     pressCount++;
-                    if (pressCount >= 5) {
-                        NaConfig.INSTANCE.getShowHiddenFeature().toggleConfigBool();
-                        Toast.makeText(getParentActivity(), LocaleController.getString("ErrorOccurred", R.string.ErrorOccurred), Toast.LENGTH_SHORT).show();
-                    }
                     if (pressCount >= 2 || BuildVars.DEBUG_PRIVATE_VERSION) {
                         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), resourcesProvider);
                         builder.setTitle(getString(R.string.DebugMenu));
@@ -13631,7 +13627,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     return;
                 }
 
-                File logcatFile = new File(dir, "Nagram-" + System.currentTimeMillis() + ".log");
+                File logcatFile = new File(dir, "Nooagram-" + System.currentTimeMillis() + ".log");
                 try {
                     RuntimeUtil.exec("logcat", "-df", logcatFile.getPath()).waitFor();
                     RuntimeUtil.exec("logcat", "-c").waitFor();

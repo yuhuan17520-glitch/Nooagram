@@ -85,9 +85,9 @@
     <string name="SortByUnmuted">Classificar por Desmutado</string>
     <string name="SortByUser">Ordenar por Usuário</string>
     <string name="SortByContacts">Ordenar por contatos</string>
-    <string name="NekoXPushService">Serviço de Push Nagrama</string>
-    <string name="EnablePushAlert">Por favor, habilite \"NekoX Push Service\"</string>
-    <string name="DisablePushAlert">Por favor, desabilite \"NekoX Push Service\"</string>
+    <string name="NekoXPushService">Serviço de Push Nooagrama</string>
+    <string name="EnablePushAlert">Por favor, habilite \"Nooagram Push Service\"</string>
+    <string name="DisablePushAlert">Por favor, desabilite \"Nooagram Push Service\"</string>
     <string name="DisableUndo">Desativar Desfazer</string>
     <string name="DisableSystemAccount">Desativar conta do sistema</string>
     <string name="FilterMenu">Menu de filtros de diálogos</string>
@@ -262,7 +262,7 @@
     <string name="rememberAllBackMessages">Lembrar todas as respostas clicadas</string>
     <string name="DisableInstantCamera">Desativar câmera instantânea</string>
     <string name="showSeconds">Mostrar data e hora em segundos</string>
-    <string name="AppUpdateNekoX">Atualizar o Nagrama</string>
+    <string name="AppUpdateNekoX">Atualizar o Nooagrama</string>
     <string name="NekoXUpdateTranslationHint">Pressione para traduzir o registro de alterações</string>
     <string name="Name">Nome:</string>
     <string name="channelAlias">Apelido do canal</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Config</string>
+    <string name="NekoSettings">Nooagram Settings</string>
     <string name="IPv6">Menyambung melalui IPv6</string>
     <string name="MessageMenu">Menu mesej</string>
     <string name="HidePhone">Sembunyikan nombor telefon saya</string>

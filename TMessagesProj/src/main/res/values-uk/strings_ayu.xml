@@ -179,7 +179,7 @@
     <string name="NoFilesInfo">Ця папка порожня.</string>
     <string name="SearchRecentFiles">Пошук нещодавніх файлів</string>
     <string name="NoFilesFoundInfo">У цьому каталозі не знайдено збігів із **%1$s**.</string>
-    <string name="UnknownNekoSettingsOption">У «N-налаштуваннях» немає такої опції.</string>
+    <string name="UnknownNekoSettingsOption">У «Nooagram-налаштуваннях» немає такої опції.</string>
     <string name="AppIconColorful">Барвистий</string>
     <string name="AppIconDarkGreen">Темно-зелений</string>
     <string name="AppIconNeon">Неон</string>
@@ -210,7 +210,7 @@
     <string name="DatacenterStatus">Стан дата-центрів</string>
     <string name="RegexFilters">Фільтри повідомлень</string>
     <string name="RestrictionReason">Причина обмеження</string>
-    <string name="N_Config">Налаштування N</string>
+    <string name="N_Config">Налаштування Nooagram</string>
     <string name="AddProxyTelegram">Додати MTProto-проксі</string>
     <string name="ImportProxyFromClipboard">Імпортувати з буфера обміну</string>
     <string name="RetestPing">Повторно перевірити пінг для всіх серверів</string>
@@ -280,7 +280,7 @@
     <string name="RegexFiltersShadowBanEmpty">Тіньових блокувань ще немає. Натисніть +, щоб додати.</string>
     <string name="CloudConfigSyncFailed">Не вдалося синхронізувати налаштування з хмарою</string>
     <string name="CloudConfig">Налаштування хмарного сховища</string>
-    <string name="CloudConfigDesc">Збережіть свої N-налаштування у хмарі Telegram.</string>
+    <string name="CloudConfigDesc">Збережіть свої Nooagram-налаштування у хмарі Telegram.</string>
     <string name="CloudConfigRestore">Відновити з хмари</string>
     <string name="CloudConfigSync">Синхронізувати з хмарою</string>
     <string name="CloudConfigSyncing">Синхронізація...</string>
@@ -290,7 +290,7 @@
     <string name="DeleteCloudBackupFailed">Не вдалося очистити дані з хмари</string>
     <string name="DeleteCloudBackupSuccess">Дані в хмарі очищено</string>
     <string name="CloudConfigAutoSync">Автоматична синхронізація</string>
-    <string name="CloudConfigAutoSyncDesc">Автоматично синхронізувати з хмарою після внесення змін до N-налаштувань.</string>
+    <string name="CloudConfigAutoSyncDesc">Автоматично синхронізувати з хмарою після внесення змін до Nooagram-налаштувань.</string>
     <string name="CloudConfigSyncDate" formatted="false">Остання синхронізація: %s, хмара: %s</string>
     <string name="CloudConfigSyncDateNever">ніколи</string>
     <string name="EmojiSetRemoved">Набір емодзі видалено.</string>
@@ -372,12 +372,12 @@
     <string name="PasscodeNeko">Код блокування</string>
     <string name="PasscodePanicCodeEdit">Змінити екстрений код</string>
     <string name="PasscodePanicCodeSet">Встановити екстрений код</string>
-    <string name="PasscodeShowInSettings">Показати в N-налаштуваннях</string>
+    <string name="PasscodeShowInSettings">Показати в Nooagram-налаштуваннях</string>
     <string name="PasscodePanicCode">Екстрений код</string>
     <string name="PasscodeAbout">Встановлюйте різні паролі для кожного акаунта й перемикайтеся між ними шляхом введення відповідного коду.</string>
     <string name="PasscodePanicCodeAbout">Використовуйте екстрений код для швидкого скидання сесій та виходу з акаунтів у критичній ситуації.</string>
     <string name="PasscodeShowInSettingsAbout">Після приховування ви зможете відкрити цю сторінку **ЛИШЕ** за посиланням:</string>
-    <string name="ResetSettingsAlert">Ви дійсно бажаєте повернути всі N-налаштування до типових?</string>
+    <string name="ResetSettingsAlert">Ви дійсно бажаєте повернути всі Nooagram-налаштування до типових?</string>
     <string name="OfficialChannel">Канал Nagram</string>
     <string name="SourceCode">Вихідний код</string>
     <string name="TransSite">Допомогти з перекладом</string>

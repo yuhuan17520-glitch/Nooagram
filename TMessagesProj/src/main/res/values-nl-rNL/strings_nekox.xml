@@ -85,9 +85,9 @@
     <string name="SortByUnmuted">Sorteer op ongedempt</string>
     <string name="SortByUser">Sorteren op gebruiker</string>
     <string name="SortByContacts">Sorteren op contacten</string>
-    <string name="NekoXPushService">Nagram push-service</string>
-    <string name="EnablePushAlert">Activeer de \"NekoX Push Service\"</string>
-    <string name="DisablePushAlert">Schakel alstublieft \"NekoX Push Service\" uit</string>
+    <string name="NekoXPushService">Nooagram push-service</string>
+    <string name="EnablePushAlert">Activeer de \"Nooagram Push Service\"</string>
+    <string name="DisablePushAlert">Schakel alstublieft \"Nooagram Push Service\" uit</string>
     <string name="DisableUndo">Uitschakelen ongedaan maken</string>
     <string name="DisableSystemAccount">Systeemaccount uitschakelen</string>
     <string name="FilterMenu">Dialoog Filter Menu</string>
@@ -262,7 +262,7 @@
     <string name="rememberAllBackMessages">Onthoud alle geklikt antwoorden</string>
     <string name="DisableInstantCamera">Schakel directe camera uit</string>
     <string name="showSeconds">Tijdstempel in seconden weergeven</string>
-    <string name="AppUpdateNekoX">Nagram bijwerken</string>
+    <string name="AppUpdateNekoX">Nooagram bijwerken</string>
     <string name="NekoXUpdateTranslationHint">Klik om de veranderingenlog te vertalen</string>
     <string name="Name">naam</string>
     <string name="channelAlias">Kanaal alias</string>

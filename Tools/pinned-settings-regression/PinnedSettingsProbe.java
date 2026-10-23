@@ -23,7 +23,7 @@ public class PinnedSettingsProbe {
 
     public static void main(String[] args) throws Exception {
         root = Path.of(args[0]).resolve("TMessagesProj/src/main/java");
-        check("experimental page rebuild preserves saved options and ghost mode", ExperimentalSettingsProbe::verify);
+        check("experimental options remain visible without changing saved choices", ExperimentalSettingsProbe::verify);
         check("active-account legacy data is quarantined without automatic assignment", () -> {
             login(0, 1001);
             prefs().edit().putString("hidden_pinned_0", "[-20, -10, -20, 0]").apply();

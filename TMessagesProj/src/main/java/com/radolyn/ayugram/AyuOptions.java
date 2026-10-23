@@ -55,8 +55,7 @@ public final class AyuOptions {
     }
     public static String getCustomSavePath() {
         if (!enableCustomSavePath.Bool()) return "";
-        String path = customSavePath.String().trim();
-        return path.isEmpty() || "Nagram".equalsIgnoreCase(path) ? "Nooagram" : path;
+        return AyuCustomSavePath.normalize(customSavePath.String());
     }
     public static final tw.nekomimi.nekogram.config.ConfigItem regexFiltersEnabled = ayuBoolean(
             "RegexFiltersEnabled", () -> AyuConfig.INSTANCE.getRegexFiltersEnabled());

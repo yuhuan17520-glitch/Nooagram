@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">تكوين N-Config</string>
+    <string name="NekoSettings">تكوين Nooagram Settings</string>
     <string name="IPv6">الاتصال من خلال IPv6</string>
     <string name="MessageMenu">قائمة الرسائل</string>
     <string name="HidePhone">إخفاء رقم هاتفي</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">شريط الحالة الشفاف</string>
     <string name="EnableResidentNotification">إظهار إشعار المقيم</string>
     <string name="DisableResidentNotification">تعطيل سكان الإعلام</string>
-    <string name="NekogramRunning">تطبيق نيكوجرام يعمل</string>
+    <string name="NekogramRunning">تطبيق Nooagram يعمل</string>
     <string name="EventType">مجموعة أيقونات الشريط الجانبي</string>
     <string name="ChristmasHat">إظهار قبعة سانتا كل يوم</string>
     <string name="ActionBarDecoration">زينة شريط العنوان</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">تحسين سرعة التحميل والتنزيل</string>
     <string name="mapDriftingFixForGoogleMaps">إصلاح خرائط جوجل المنجرفة في الصين</string>
     <string name="useOSMDroidMap">استخدم خريطة OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">لا يوجد خيار تكوين N-Config من هذا القبيل.</string>
+    <string name="UnknownNekoSettingsOption">لا يوجد خيار تكوين Nooagram Settings من هذا القبيل.</string>
     <string name="PasscodeNeeded">يجب عليك تمكين قفل رمز المرور أولاً</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">إظهار في N-Config</string>
+    <string name="PasscodeShowInSettings">إظهار في Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">بعد الاختفاء، يمكنك **فقط** فتح هذه الصفحة عن طريق الرابط:</string>
     <string name="PasscodeSet">تعيين رمز المرور</string>
     <string name="PasscodeEdit">تغيير رمز المرور</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">مسح المحادثة الأخيرة</string>
     <string name="ClearRecentChatAlert">هل تريد مسح محادثاتك الأخيرة؟</string>
     <string name="CloudConfig">إعدادات السحابة</string>
-    <string name="CloudConfigDesc">حفظ تكوين N-Config الخاص بك إلى سحابة تيليجرام.</string>
+    <string name="CloudConfigDesc">حفظ تكوين Nooagram Settings الخاص بك إلى سحابة تيليجرام.</string>
     <string name="CloudConfigSyncDate">آخر مزامنة: %s، السحابة: %s</string>
     <string name="CloudConfigSyncDateNever">أبداً</string>
     <string name="CloudConfigSync">المزامنة إلى السحابة</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">إستعادة</string>
     <string name="CloudConfigSyncing">مزامنة...</string>
     <string name="CloudConfigAutoSync">المزامنة التلقائية</string>
-    <string name="CloudConfigAutoSyncDesc">المزامنة إلى السحابة تلقائيًا بعد إجراء تغييرات على N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">المزامنة إلى السحابة تلقائيًا بعد إجراء تغييرات على Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">فشل مزامنة الإعدادات إلى السحابة.</string>
     <string name="CloudConfigRestoreFailed">فشل في استعادة الإعدادات من السحابة.</string>
     <string name="CopyCallback">نسخ بيانات رد المكالمات</string>

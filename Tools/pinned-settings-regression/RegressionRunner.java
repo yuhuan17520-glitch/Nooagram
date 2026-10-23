@@ -59,9 +59,9 @@ public class RegressionRunner {
 
     private static JavaFileObject experimentalSettingsMethods(Path file) throws Exception {
         String body = methodBodies(file).get("setCanNotChange");
-        var matcher = java.util.regex.Pattern.compile("[a-zA-Z]+Row|headerStory|dividerStory").matcher(body);
+        var matcher = java.util.regex.Pattern.compile("private final AbstractConfigCell ([a-zA-Z0-9]+)").matcher(Files.readString(file));
         var rows = new java.util.LinkedHashSet<String>();
-        while (matcher.find()) rows.add(matcher.group());
+        while (matcher.find()) rows.add(matcher.group(1));
         String fields = rows.stream().map(name -> "final Object " + name + " = new Object();").collect(java.util.stream.Collectors.joining());
         return source("ExperimentalSettingsProbe", """
                 import java.util.*;
@@ -75,8 +75,9 @@ public class RegressionRunner {
                     static class NaConfig {
                         static final NaConfig INSTANCE = new NaConfig();
                         final Option hidden = new Option();
+                        final Option channelIcon = new Option();
                         Option getShowHiddenFeature() { return hidden; }
-                        Option getShowChannelIcon() { return new Option(); }
+                        Option getShowChannelIcon() { return channelIcon; }
                         Option getForceCopy() { return new Option(); }
                         Option getDisableFlagSecure() { return new Option(); }
                         Option getDisableSendReadStories() { return new Option(); }
@@ -93,7 +94,9 @@ public class RegressionRunner {
                 """ + fields + "public void setCanNotChange() " + body + """
                     public static void verify() {
                         for (boolean hidden : new boolean[]{false, true}) {
+                          for (boolean channelIcon : new boolean[]{false, true}) {
                             NaConfig.INSTANCE.hidden.value = hidden;
+                            NaConfig.INSTANCE.channelIcon.value = channelIcon;
                             ExperimentalSettingsProbe page = new ExperimentalSettingsProbe();
                             for (var field : ExperimentalSettingsProbe.class.getDeclaredFields()) {
                                 if (field.getType() == Object.class) {
@@ -103,8 +106,18 @@ public class RegressionRunner {
                             }
                             page.setCanNotChange();
                             page.setCanNotChange();
+                            if (Collections.frequency(page.cellGroup.rows, page.customCustomChannelLabelRow) != (channelIcon ? 0 : 1)) {
+                                throw new AssertionError("Channel label visibility or duplicate row after rebuild");
+                            }
                             if (!NekoXConfig.disableFlagSecure) throw new AssertionError("Page reset secure-window choice");
-                            if (page.cellGroup.rows.contains(page.localPremiumRow) != hidden) throw new AssertionError("Hidden row visibility wrong");
+                            for (var field : ExperimentalSettingsProbe.class.getDeclaredFields()) {
+                                if (field.getType() == Object.class && !field.getName().equals("customCustomChannelLabelRow")) {
+                                    try {
+                                        if (!page.cellGroup.rows.contains(field.get(page))) throw new AssertionError("Experimental option hidden: " + field.getName());
+                                    } catch (ReflectiveOperationException e) { throw new AssertionError(e); }
+                                }
+                            }
+                          }
                         }
                     }
                 }

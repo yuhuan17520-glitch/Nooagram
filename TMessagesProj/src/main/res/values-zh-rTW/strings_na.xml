@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N - 設定</string>
+    <string name="N_Config">Nooagram設定</string>
+    <string name="UpstreamChannel">上游頻道</string>
+    <string name="UpstreamTipsChannel">上游技巧頻道</string>
     <string name="ForceCopy">強制複製</string>
     <string name="disableSecondAddress">禁用請求備用伺服器位址</string>
     <string name="InvertReply">反轉</string>
@@ -22,7 +24,7 @@
     <string name="SendReactions">表情回應</string>
     <string name="ShowReactions">顯示表情回應選單</string>
     <string name="CustomTitle">自訂標題</string>
-    <string name="CustomTitleHint">留空則使用 Nagram</string>
+    <string name="CustomTitleHint">留空則使用 Nooagram</string>
     <string name="CodeSyntaxHighlight">程式碼語法高亮</string>
     <string name="CreateMono">建立等寬</string>
     <string name="CreateMonoLanguage">等寬語言</string>
@@ -63,7 +65,7 @@
     <string name="QuickToggleAnonymousNotice">如果你是頻道的持有者則可以使用頻道匿名發言</string>
     <string name="RealHideTimeForSticker">真正的隱藏貼圖傳送時間</string>
     <string name="ResetSettings">重置設定</string>
-    <string name="ResetSettingsAlert">您確定要重置所有 N-設定 嗎？</string>
+    <string name="ResetSettingsAlert">您確定要重置所有 Nooagram設定 嗎？</string>
     <string name="HideTitle">隱藏標題和頭像</string>
     <string name="IgnoreFolderCount">忽略資料夾標籤上的未讀計數</string>
     <string name="SendWithoutMarkdown">禁用 Markdown</string>
@@ -95,7 +97,7 @@
     <string name="ShowForumAsNormalChat">以普通對話模式打開話題模式群組</string>
     <string name="DecorationNone">無</string>
     <string name="ChatDecoration">聊天框裝飾</string>
-    <string name="NeedChangeNekoSettings">此設置已被 N-設置 覆蓋，無法修改</string>
+    <string name="NeedChangeNekoSettings">此設置已被 Nooagram設定 覆蓋，無法修改</string>
     <string name="DoNotUnarchiveBySwipe">禁用滑動取消歸檔</string>
     <string name="DoNotShareMyPhoneNumber">禁用分享我的手機號碼</string>
     <string name="DefaultDeleteMenu">默認刪除菜單</string>

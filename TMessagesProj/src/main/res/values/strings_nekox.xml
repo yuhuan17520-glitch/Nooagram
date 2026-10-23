@@ -86,9 +86,9 @@
     <string name="SortByUnmuted">Sort By Unmuted</string>
     <string name="SortByUser">Sort By User</string>
     <string name="SortByContacts">Sort By Contacts</string>
-    <string name="NekoXPushService">Nagram Push Service</string>
-    <string name="EnablePushAlert">Please enable "NekoX Push Service"</string>
-    <string name="DisablePushAlert">Please disable "NekoX Push Service"</string>
+    <string name="NekoXPushService">Nooagram Push Service</string>
+    <string name="EnablePushAlert">Please enable "Nooagram Push Service"</string>
+    <string name="DisablePushAlert">Please disable "Nooagram Push Service"</string>
     <string name="DisableUndo">Disable Undo</string>
     <string name="DisableSystemAccount">Disable System Account</string>
     <string name="FilterMenu">Dialogs Filter Menu</string>
@@ -264,7 +264,7 @@
     <string name="rememberAllBackMessages">Remember all clicked replies</string>
     <string name="DisableInstantCamera">Disable instant camera</string>
     <string name="showSeconds">Show timestamp in seconds</string>
-    <string name="AppUpdateNekoX">Update Nagram</string>
+    <string name="AppUpdateNekoX">Update Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Press to translate the change log</string>
     <string name="Name">Name</string>
     <string name="channelAlias">Channel alias</string>

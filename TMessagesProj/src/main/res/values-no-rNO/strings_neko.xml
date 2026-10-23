@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-konfigurasjon</string>
+    <string name="NekoSettings">Nooagram-konfigurasjon</string>
     <string name="IPv6">Tilkobling gjennom IPv6</string>
     <string name="MessageMenu">Meldingsmeny</string>
     <string name="HidePhone">Skjul mitt telefonnummer</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Gjennomsiktig statusfelt</string>
     <string name="EnableResidentNotification">Vis vedvarende merknad</string>
     <string name="DisableResidentNotification">Skru av vedvarende merknad</string>
-    <string name="NekogramRunning">Nekogram kjører</string>
+    <string name="NekogramRunning">Nooagram kjører</string>
     <string name="EventType">Innstilling for sidefeltsikon</string>
     <string name="ChristmasHat">Vis nisselue hver dag</string>
     <string name="ActionBarDecoration">Tittellinje-dekorasjon</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Forbedre nedlastingshastighet</string>
     <string name="mapDriftingFixForGoogleMaps">Fiks Google Maps drifting i Kina</string>
     <string name="useOSMDroidMap">Bruk OSMDroid Map</string>
-    <string name="UnknownNekoSettingsOption">Det finnes ingen slike N-Config alternativer.</string>
+    <string name="UnknownNekoSettingsOption">Det finnes ingen slike Nooagram Settings alternativer.</string>
     <string name="PasscodeNeeded">Du må aktivere låsen med passord først</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Vis i N-konfigurasjon</string>
+    <string name="PasscodeShowInSettings">Vis i Nooagram-konfigurasjon</string>
     <string name="PasscodeShowInSettingsAbout">Etter å ha gjemt kan du **KUN ** åpne denne siden med lenke:</string>
     <string name="PasscodeSet">Angi passord</string>
     <string name="PasscodeEdit">Endre pinkode</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Slett nylige sludringer</string>
     <string name="ClearRecentChatAlert">Vil du tømme dine siste chatter?</string>
     <string name="CloudConfig">Cloud innstillinger</string>
-    <string name="CloudConfigDesc">Lagre N-konfig til Telegram sky.</string>
+    <string name="CloudConfigDesc">Lagre Nooagram-konfig til Telegram sky.</string>
     <string name="CloudConfigSyncDate">Sist synkronisert: %s, skyen: %s</string>
     <string name="CloudConfigSyncDateNever">aldri</string>
     <string name="CloudConfigSync">Synkroniser til sky</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Gjenopprett</string>
     <string name="CloudConfigSyncing">Synkroniserer...</string>
     <string name="CloudConfigAutoSync">Autosynk</string>
-    <string name="CloudConfigAutoSyncDesc">Synkroniser i skyen automatisk etter endringer i N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Synkroniser i skyen automatisk etter endringer i Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Kunne ikke synkronisere innstillingene til skyen.</string>
     <string name="CloudConfigRestoreFailed">Gjenoppretting av innstillingene fra skyen mislyktes.</string>
     <string name="CopyCallback">Kopier tilbakeringingsdata</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Beskytt denne QR-koden med et passord</string>
     <string name="ConfirmNewPassword">Bekreft passord</string>
     <string name="PassQRAbout">Lagrer tilgangsnøkkelen som en kryptert QR-kode. Du kan skanne den for å logge på en annen enhet.</string>
-    <string name="PassQREncryption">Skann med Nagram for å logge inn.</string>
+    <string name="PassQREncryption">Skann med Nooagram for å logge inn.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Passordet må være minst 8 tegn</string>
     <string name="PassQRPasswordWarning">Sikkerhetsadvarsel: dette passordet er det eneste som beskytter nøkkelen din. Et svakt passord kan sprekkes offline, så bland store bokstaver, små bokstaver og symboler.</string>

@@ -18,13 +18,10 @@ import android.widget.LinearLayout;
 import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.FileLoader;
-import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
-import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
@@ -35,7 +32,6 @@ import org.telegram.ui.Components.MotionBackgroundDrawable;
 
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.TimeStringHelper;
-import tw.nekomimi.nekogram.utils.UpdateUtil;
 import xyz.nextalone.nagram.NaConfig;
 
 @SuppressLint("ViewConstructor")
@@ -124,7 +120,7 @@ public class MessagesPreviewCell extends LinearLayout {
         messages[1] = new MessageObject(account, pollMessage, true, false);
 
         TLRPC.TL_message linkMessage = createMessage(44, date + 240);
-        String url = "https://nagram.app";
+        String url = "https://github.com/yuhuan17520-glitch/Nooagram";
         String appName = LocaleController.getString(R.string.NekoX);
         linkMessage.message = url;
         TLRPC.TL_messageEntityUrl urlEntity = new TLRPC.TL_messageEntityUrl();
@@ -147,7 +143,7 @@ public class MessagesPreviewCell extends LinearLayout {
 
         TimeStringHelper.getForwardsDrawable();
         for (int i = 0; i < cells.length; i++) {
-            messages[i].customName = "Nagram";
+            messages[i].customName = appName;
             messages[i].forceAvatar = true;
             cells[i] = new ChatMessageCell(context, account) {
                 @Override
@@ -202,33 +198,6 @@ public class MessagesPreviewCell extends LinearLayout {
             }
         });
 
-        refreshMessages();
-        loadPreviewChannel(account);
-    }
-
-    private void loadPreviewChannel(int account) {
-        MessagesController controller = MessagesController.getInstance(account);
-        TLObject cachedChannel = controller.getUserOrChat(UpdateUtil.channelUsername);
-        if (cachedChannel instanceof TLRPC.Chat) {
-            setPreviewChannel((TLRPC.Chat) cachedChannel);
-        }
-        controller.getUserNameResolver().resolve(UpdateUtil.channelUsername, peerId -> {
-            if (peerId != null && peerId < 0) {
-                TLRPC.Chat channel = controller.getChat(-peerId);
-                if (channel != null) {
-                    setPreviewChannel(channel);
-                }
-            }
-        });
-    }
-
-    private void setPreviewChannel(TLRPC.Chat channel) {
-        if (channel.photo != null) {
-            FileLoader.getInstance(messages[0].currentAccount).loadFile(ImageLocation.getForChat(messages[0].currentAccount, channel, ImageLocation.TYPE_SMALL), channel, null, 1, 1);
-        }
-        for (MessageObject message : messages) {
-            message.messageOwner.from_id.channel_id = channel.id;
-        }
         refreshMessages();
     }
 

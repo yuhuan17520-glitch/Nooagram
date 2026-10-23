@@ -85,9 +85,9 @@
     <string name="SortByUnmuted">Sortare după mutare</string>
     <string name="SortByUser">Sortare după utilizator</string>
     <string name="SortByContacts">Sortare după contacte</string>
-    <string name="NekoXPushService">Serviciu de push Nagram</string>
-    <string name="EnablePushAlert">Vă rugăm să activați „NekoX Push Service”</string>
-    <string name="DisablePushAlert">Vă rugăm să dezactivați „NekoX Push Service”</string>
+    <string name="NekoXPushService">Serviciu de push Nooagram</string>
+    <string name="EnablePushAlert">Vă rugăm să activați „Nooagram Push Service”</string>
+    <string name="DisablePushAlert">Vă rugăm să dezactivați „Nooagram Push Service”</string>
     <string name="DisableUndo">Dezactiveați anulare</string>
     <string name="DisableSystemAccount">Dezactivați contul de sistem</string>
     <string name="FilterMenu">Meniu filtre dialoguri</string>
@@ -262,7 +262,7 @@
     <string name="rememberAllBackMessages">Amintiţi-vă toate răspunsurile apăsate</string>
     <string name="DisableInstantCamera">Dezactivează camera instantanee</string>
     <string name="showSeconds">Arată marcajul de timp în secunde</string>
-    <string name="AppUpdateNekoX">Actualizare Nagram</string>
+    <string name="AppUpdateNekoX">Actualizare Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Apăsați pentru a traduce jurnalul de modificări</string>
     <string name="Name">Nume</string>
     <string name="channelAlias">Alias canal</string>

@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Sortera efter otystad</string>
     <string name="SortByUser">Sortera efter Användare</string>
     <string name="SortByContacts">Sortera efter Kontakter</string>
-    <string name="NekoXPushService">Nagram Push Service</string>
-    <string name="EnablePushAlert">Vänligen aktivera NekoX Push Service</string>
-    <string name="DisablePushAlert">Vänligen avaktivera NekoX Push Service</string>
+    <string name="NekoXPushService">Nooagram Push Service</string>
+    <string name="EnablePushAlert">Vänligen aktivera Nooagram Push Service</string>
+    <string name="DisablePushAlert">Vänligen avaktivera Nooagram Push Service</string>
     <string name="DisableUndo">Inaktivera ångra</string>
     <string name="DisableSystemAccount">Inaktivera Systemkonto</string>
     <string name="FilterMenu">Meny för Dialogfilter</string>
@@ -264,7 +264,7 @@
     <string name="rememberAllBackMessages">Kom ihåg alla klickade svar</string>
     <string name="DisableInstantCamera">Inaktivera omedelbar kamera</string>
     <string name="showSeconds">Visa tidsstämpel i sekunder</string>
-    <string name="AppUpdateNekoX">Uppdatera Nagram</string>
+    <string name="AppUpdateNekoX">Uppdatera Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Tryck för att översätta ändringsloggen</string>
     <string name="Name">Namn</string>
     <string name="channelAlias">Kanal alias</string>

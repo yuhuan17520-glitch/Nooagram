@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Config</string>
+    <string name="NekoSettings">Nooagram Settings</string>
     <string name="IPv6">Conectarea prin IPv6</string>
     <string name="MessageMenu">Meniu de mesaje</string>
     <string name="HidePhone">Ascunde numărul meu de telefon</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Bara de stare transparentă</string>
     <string name="EnableResidentNotification">Afișați o notificare rezidentă</string>
     <string name="DisableResidentNotification">Dezactivați notificare rezidentă</string>
-    <string name="NekogramRunning">Nekogram rulează</string>
+    <string name="NekogramRunning">Nooagram rulează</string>
     <string name="EventType">Set de pictograme din bară laterală</string>
     <string name="ChristmasHat">Arată pălăria de Crăciun în fiecare zi</string>
     <string name="ActionBarDecoration">Decorarea barei de titlu</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Îmbunătățește viteza de încărcare și de descărcare</string>
     <string name="mapDriftingFixForGoogleMaps">Repară derivă din Google Maps în China</string>
     <string name="useOSMDroidMap">Foloseste OSMDroid Map</string>
-    <string name="UnknownNekoSettingsOption">Nu există o astfel de opţiune N-Config.</string>
+    <string name="UnknownNekoSettingsOption">Nu există o astfel de opţiune Nooagram Settings.</string>
     <string name="PasscodeNeeded">Trebuie să activați blocarea codului de acces mai întâi</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Arată în N-Config</string>
+    <string name="PasscodeShowInSettings">Arată în Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">După ascundere, puteţi **DOAR** deschide această pagină prin link:</string>
     <string name="PasscodeSet">Setare parolă</string>
     <string name="PasscodeEdit">Schimbă parola</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Curăță conversațiile recente</string>
     <string name="ClearRecentChatAlert">Vrei să ștergi conversațiile recente?</string>
     <string name="CloudConfig">Setări Cloud</string>
-    <string name="CloudConfigDesc">Salvează N-Config în Norul Telegram.</string>
+    <string name="CloudConfigDesc">Salvează Nooagram Settings în Norul Telegram.</string>
     <string name="CloudConfigSyncDate">Ultima sincronizare: %s, nor: %s</string>
     <string name="CloudConfigSyncDateNever">niciodată</string>
     <string name="CloudConfigSync">Sincronizare în cloud</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Restaurează</string>
     <string name="CloudConfigSyncing">Sincronizare...</string>
     <string name="CloudConfigAutoSync">Auto sincronizare</string>
-    <string name="CloudConfigAutoSyncDesc">Sincronizare automată în cloud după efectuarea modificărilor în N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Sincronizare automată în cloud după efectuarea modificărilor în Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Sincronizarea setărilor în nor a eșuat.</string>
     <string name="CloudConfigRestoreFailed">Nu s-au putut restaura setările din cloud.</string>
     <string name="CopyCallback">Copiază datele Callback</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Protejează acest cod QR cu o parolă</string>
     <string name="ConfirmNewPassword">Confirmare parolă</string>
     <string name="PassQRAbout">Salvează parola ca un cod QR criptat. Îl poți scana pentru a te autentifica pe un alt dispozitiv.</string>
-    <string name="PassQREncryption">Scanare cu Nagram pentru autentificare.</string>
+    <string name="PassQREncryption">Scanare cu Nooagram pentru autentificare.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Parola trebuie să conțină cel puțin 8 caractere</string>
     <string name="PassQRPasswordWarning">Avertisment de securitate: această parolă este singurul lucru care vă protejează cheia. O parolă slabă poate fi spartă offline, deci amestecați majuscule, litere mici, numere și simboluri.</string>

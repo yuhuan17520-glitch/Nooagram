@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Configuration</string>
+    <string name="NekoSettings">Nooagram-Configuration</string>
     <string name="IPv6">Connexion via IPv6</string>
     <string name="MessageMenu">Menu des messages</string>
     <string name="HidePhone">Cacher mon numéro de téléphone</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Barre de notifications transparente</string>
     <string name="EnableResidentNotification">Afficher une notification permanente</string>
     <string name="DisableResidentNotification">Désactiver la notification permanente</string>
-    <string name="NekogramRunning">Nekogram est en cours d\'éxécution</string>
+    <string name="NekogramRunning">Nooagram est en cours d\'éxécution</string>
     <string name="EventType">Set d\'icônes de la barre latérale</string>
     <string name="ChristmasHat">Afficher le bonnet de noël tous les jours</string>
     <string name="ActionBarDecoration">Décoration de la barre de titre</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Amélioration de la vitesse d\'upload et de téléchargement</string>
     <string name="mapDriftingFixForGoogleMaps">Corriger la dérive de Google Maps en Chine</string>
     <string name="useOSMDroidMap">Utiliser la carte OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">Il n\'y a pas d\'option N-Config.</string>
+    <string name="UnknownNekoSettingsOption">Il n\'y a pas d\'option Nooagram Settings.</string>
     <string name="PasscodeNeeded">Vous devez d\'abord activer le verrouillage par mot de passe</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Afficher dans N-Config</string>
+    <string name="PasscodeShowInSettings">Afficher dans Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">Après avoir masqué, vous pouvez **SEULEMENT** ouvrir cette page par lien :</string>
     <string name="PasscodeSet">Définir le code d\'accès</string>
     <string name="PasscodeEdit">Changer le code d\'accès</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Effacer les conversations récentes</string>
     <string name="ClearRecentChatAlert">Voulez-vous effacer vos conversations récentes ?</string>
     <string name="CloudConfig">Paramètres du Cloud</string>
-    <string name="CloudConfigDesc">Enregistrez votre N-Config dans le nuage de Telegram.</string>
+    <string name="CloudConfigDesc">Enregistrez votre Nooagram Settings dans le nuage de Telegram.</string>
     <string name="CloudConfigSyncDate">Dernière synchronisation : %s, cloud : %s</string>
     <string name="CloudConfigSyncDateNever">Jamais</string>
     <string name="CloudConfigSync">Synchroniser vers le cloud</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Restaurer</string>
     <string name="CloudConfigSyncing">Synchronisation en cours...</string>
     <string name="CloudConfigAutoSync">Synchronisation automatique</string>
-    <string name="CloudConfigAutoSyncDesc">Synchroniser automatiquement vers le cloud après avoir modifié N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Synchroniser automatiquement vers le cloud après avoir modifié Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Impossible de synchroniser les paramètres sur le cloud.</string>
     <string name="CloudConfigRestoreFailed">Impossible de restaurer les paramètres à partir du cloud.</string>
     <string name="CopyCallback">Copier les données de rappel</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Protéger ce code QR avec un mot de passe</string>
     <string name="ConfirmNewPassword">Confirmer le mot de passe</string>
     <string name="PassQRAbout">Enregistre votre mot de passe en tant que code QR chiffré. Vous pouvez le scanner pour vous connecter sur un autre appareil.</string>
-    <string name="PassQREncryption">Analyser avec Nagram pour vous connecter.</string>
+    <string name="PassQREncryption">Analyser avec Nooagram pour vous connecter.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Le mot de passe doit comporter au moins 8 caractères</string>
     <string name="PassQRPasswordWarning">Avertissement de sécurité: ce mot de passe est la seule chose qui protège votre clé. Un mot de passe faible peut être piraté hors ligne, donc mélanger majuscules, minuscules, chiffres et symboles.</string>

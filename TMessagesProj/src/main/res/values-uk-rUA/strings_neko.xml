@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-конфігурації</string>
+    <string name="NekoSettings">Nooagram-конфігурації</string>
     <string name="IPv6">Підключення через IPv6</string>
     <string name="MessageMenu">Меню повідомлень</string>
     <string name="HidePhone">Сховати мій номер телефону</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Прозорий рядок стану</string>
     <string name="EnableResidentNotification">Показувати сповіщення редактора</string>
     <string name="DisableResidentNotification">Вимкнути сповіщення резидента</string>
-    <string name="NekogramRunning">Некограм працює</string>
+    <string name="NekogramRunning">Nooagram працює</string>
     <string name="EventType">Набір іконок бічної панелі</string>
     <string name="ChristmasHat">Шапка Санти щодня</string>
     <string name="ActionBarDecoration">Прикраса заголовка</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Підвищити швидкість завантаження</string>
     <string name="mapDriftingFixForGoogleMaps">Виправити дрейф Google Maps у Китаї</string>
     <string name="useOSMDroidMap">Використовувати карту OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">Немає такого параметра N-конфігурації.</string>
+    <string name="UnknownNekoSettingsOption">Немає такого параметра Nooagram-конфігурації.</string>
     <string name="PasscodeNeeded">Спочатку необхідно увімкнути блокування паролем</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Показати у N-конфігурації</string>
+    <string name="PasscodeShowInSettings">Показати у Nooagram-конфігурації</string>
     <string name="PasscodeShowInSettingsAbout">Після приховування, ви можете **ОНЛАЙ** відкрити цю сторінку за посиланням:</string>
     <string name="PasscodeSet">Встановити пароль</string>
     <string name="PasscodeEdit">Змінити пароль</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Очистити недавні чати</string>
     <string name="ClearRecentChatAlert">Ви хочете очистити свої останні чати?</string>
     <string name="CloudConfig">Налаштування Хмари</string>
-    <string name="CloudConfigDesc">Зберігайте ваші N-конфігурації в хмару Telegram.</string>
+    <string name="CloudConfigDesc">Зберігайте ваші Nooagram-конфігурації в хмару Telegram.</string>
     <string name="CloudConfigSyncDate">Остання синхронізація: %s, хмара: %s</string>
     <string name="CloudConfigSyncDateNever">ніколи</string>
     <string name="CloudConfigSync">Синхронізація у хмару</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Відновити</string>
     <string name="CloudConfigSyncing">Синхронізація...</string>
     <string name="CloudConfigAutoSync">Автоматична синхронізація</string>
-    <string name="CloudConfigAutoSyncDesc">Автоматично синхронізувати з хмарою після внесення змін до N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Автоматично синхронізувати з хмарою після внесення змін до Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Не вдалося синхронізувати налаштування до хмари.</string>
     <string name="CloudConfigRestoreFailed">Не вдалося відновити настройки з хмари.</string>
     <string name="CopyCallback">Копіювати вхідні дані</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">Preferencias de na</string>
+    <string name="NekoSettings">Preferencias de Nooagram</string>
     <string name="IPv6">Conexión a través de IPv6</string>
     <string name="MessageMenu">Menú contextual</string>
     <string name="HidePhone">Ocultar mi número de teléfono</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Barra de estado transparente</string>
     <string name="EnableResidentNotification">Mostrar una notificación permanente</string>
     <string name="DisableResidentNotification">Desactivar notificación permanente</string>
-    <string name="NekogramRunning">Nekogram está en funcionamiento</string>
+    <string name="NekogramRunning">Nooagram está en funcionamiento</string>
     <string name="EventType">Grupo de iconos de la barra lateral</string>
     <string name="ChristmasHat">Mostrar el sombrero de navidad cada día</string>
     <string name="ActionBarDecoration">Decoración de la barra de título</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Mejorar la velocidad de Descarga</string>
     <string name="mapDriftingFixForGoogleMaps">Corregir el desfase de Google Maps en China</string>
     <string name="useOSMDroidMap">Usar El Mapa de OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">No existe tal opción N-Config.</string>
+    <string name="UnknownNekoSettingsOption">No existe tal opción Nooagram Settings.</string>
     <string name="PasscodeNeeded">Tienes que activar primero el bloqueo de contraseña</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Mostrar en N-Configuración</string>
+    <string name="PasscodeShowInSettings">Mostrar en Nooagram-Configuración</string>
     <string name="PasscodeShowInSettingsAbout">Después de ocultarlo, **SÓLO puede** abrir esta página mediante enlace:</string>
     <string name="PasscodeSet">Definir contraseña</string>
     <string name="PasscodeEdit">Cambiar contraseña</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Borrar chats recientes</string>
     <string name="ClearRecentChatAlert">¿Quieres borrar tus chats recientes?</string>
     <string name="CloudConfig">Ajustes de la nube</string>
-    <string name="CloudConfigDesc">Guarda tu N-Config en la nube de Telegram.</string>
+    <string name="CloudConfigDesc">Guarda tu Nooagram Settings en la nube de Telegram.</string>
     <string name="CloudConfigSyncDate">Última sincronización: %s, nube: %s</string>
     <string name="CloudConfigSyncDateNever">nunca</string>
     <string name="CloudConfigSync">Sincronizar en la nube</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Restaurar</string>
     <string name="CloudConfigSyncing">Sincronizando...</string>
     <string name="CloudConfigAutoSync">Auto sincronización</string>
-    <string name="CloudConfigAutoSyncDesc">Sincronizar a la nube automáticamente después de hacer cambios en N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Sincronizar a la nube automáticamente después de hacer cambios en Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Error al sincronizar los ajustes en la nube.</string>
     <string name="CloudConfigRestoreFailed">Error al restaurar los ajustes desde la nube.</string>
     <string name="CopyCallback">Copiar datos de llamada</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Protege este código QR con una contraseña</string>
     <string name="ConfirmNewPassword">Confirmar contraseña</string>
     <string name="PassQRAbout">Guarda tu clave de acceso como un código QR cifrado. Puedes escanearla para iniciar sesión en otro dispositivo.</string>
-    <string name="PassQREncryption">Escanear con Nagrama para iniciar sesión.</string>
+    <string name="PassQREncryption">Escanear con Nooagrama para iniciar sesión.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">La contraseña debe tener al menos 8 caracteres</string>
     <string name="PassQRPasswordWarning">Advertencia de seguridad: esta contraseña es lo único que protege su clave. Una contraseña débil puede ser extraída sin conexión, así que mezcla mayúsculas, minúsculas, números y símbolos.</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Konfiguracja</string>
+    <string name="N_Config">Nooagram-Konfiguracja</string>
     <string name="ForceCopy">Wymuś kopiowanie</string>
     <string name="disableSecondAddress">Wyłącz żądanie drugiego adresu</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Wyślij reakcje</string>
     <string name="ShowReactions">Pokaż reakcje</string>
     <string name="CustomTitle">Własny tytuł</string>
-    <string name="CustomTitleHint">Pozostaw puste, aby użyć Nagram</string>
+    <string name="CustomTitleHint">Pozostaw puste, aby użyć Nooagram</string>
     <string name="CodeSyntaxHighlight">Podświetlenie składni kodu</string>
     <string name="CreateMono">Utwórz niedopasowanie</string>
     <string name="CreateMonoLanguage">Język kodu</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Jeśli jesteś właścicielem grupy</string>
     <string name="RealHideTimeForSticker">Prawdziwy czas ukrycia naklejek</string>
     <string name="ResetSettings">Resetuj ustawienia</string>
-    <string name="ResetSettingsAlert">Czy na pewno chcesz zresetować wszystkie N-konfiguracje?</string>
+    <string name="ResetSettingsAlert">Czy na pewno chcesz zresetować wszystkie Nooagram-konfiguracje?</string>
     <string name="HideTitle">Ukryj tytuł</string>
     <string name="IgnoreFolderCount">Ignoruj liczbę folderów</string>
     <string name="SendWithoutMarkdown">Wyślij bez markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Pokaż forum jako zwykły czat</string>
     <string name="DecorationNone">Brak</string>
     <string name="ChatDecoration">Dekoracja czatu</string>
-    <string name="NeedChangeNekoSettings">Musisz zmienić N-Config</string>
+    <string name="NeedChangeNekoSettings">Musisz zmienić Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Nie cofaj archiwum przesuwając palcem</string>
     <string name="DoNotShareMyPhoneNumber">Nie udostępniaj mojego numeru telefonu</string>
     <string name="DefaultDeleteMenu">Domyślne Usuń Menu</string>

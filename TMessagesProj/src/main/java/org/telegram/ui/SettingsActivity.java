@@ -503,10 +503,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         });
         versionView.setOnLongClickListener(v -> {
             versionViewPressCount++;
-            if (versionViewPressCount >= 5) {
-                NaConfig.INSTANCE.getShowHiddenFeature().toggleConfigBool();
-                Toast.makeText(getParentActivity(), LocaleController.getString("ErrorOccurred", R.string.ErrorOccurred), Toast.LENGTH_SHORT).show();
-            }
             if (versionViewPressCount < 2 && !BuildVars.DEBUG_PRIVATE_VERSION) {
                 try {
                     Toast.makeText(getParentActivity(), getString(R.string.DebugMenuLongPress), Toast.LENGTH_SHORT).show();
@@ -1502,7 +1498,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             listView.adapter.update(true);
         });
         o.add(R.drawable.msg_retry, LocaleController.getString(R.string.SwitchVersion), () -> {
-            Browser.openUrl(getContext(), "https://github.com/NextAlone/Nagram/releases");
+            Browser.openUrl(getContext(), "https://github.com/yuhuan17520-glitch/Nooagram/releases");
         });
 
         o.add(R.drawable.msg_search, LocaleController.getString(R.string.CheckUpdate), () -> {

@@ -145,7 +145,7 @@
     <string name="NoFilesInfo">이 폴더는 비어 있습니다.</string>
     <string name="SearchRecentFiles">최근 파일 검색</string>
     <string name="NoFilesFoundInfo">현재 디렉터리에 **%1$s**와(과) 일치하는 항목이 없습니다.</string>
-    <string name="UnknownNekoSettingsOption">해당 N-Settings 옵션이 없습니다.</string>
+    <string name="UnknownNekoSettingsOption">해당 Nooagram Settings 옵션이 없습니다.</string>
     <string name="AppIconColorful">컬러풀</string>
     <string name="AppIconDarkGreen">다크 그린</string>
     <string name="AppIconNeon">네온</string>
@@ -220,7 +220,7 @@
     <string name="RegexFiltersShadowBanEmpty">아직 섀도우 밴한 대상이 없습니다. +를 탭하여 추가하세요.</string>
     <string name="CloudConfigSyncFailed">설정을 클라우드에 동기화하지 못했습니다</string>
     <string name="CloudConfig">클라우드 동기화</string>
-    <string name="CloudConfigDesc">N-Settings를 Telegram 클라우드에 저장합니다.</string>
+    <string name="CloudConfigDesc">Nooagram Settings를 Telegram 클라우드에 저장합니다.</string>
     <string name="CloudConfigRestore">클라우드에서 복원</string>
     <string name="CloudConfigSync">클라우드에 동기화</string>
     <string name="CloudConfigSyncing">동기화 중…</string>
@@ -230,7 +230,7 @@
     <string name="DeleteCloudBackupFailed">클라우드 데이터를 지우지 못했습니다</string>
     <string name="DeleteCloudBackupSuccess">클라우드 데이터가 지워졌습니다</string>
     <string name="CloudConfigAutoSync">자동 동기화</string>
-    <string name="CloudConfigAutoSyncDesc">N-Settings를 변경한 뒤 자동으로 클라우드에 동기화합니다.</string>
+    <string name="CloudConfigAutoSyncDesc">Nooagram Settings를 변경한 뒤 자동으로 클라우드에 동기화합니다.</string>
     <string name="CloudConfigSyncDate">마지막 동기화: %s, 클라우드: %s</string>
     <string name="CloudConfigSyncDateNever">없음</string>
     <string name="EmojiSetRemoved">이모지 세트가 제거되었습니다.</string>
@@ -287,12 +287,12 @@
     <string name="PasscodeNeko">암호</string>
     <string name="PasscodePanicCodeEdit">패닉 코드 변경</string>
     <string name="PasscodePanicCodeSet">패닉 코드 설정</string>
-    <string name="PasscodeShowInSettings">N-Settings에 표시</string>
+    <string name="PasscodeShowInSettings">Nooagram Settings에 표시</string>
     <string name="PasscodePanicCode">패닉 코드</string>
     <string name="PasscodeAbout">각 계정에 서로 다른 암호를 설정하고, 해당 암호를 입력해 계정을 전환합니다.</string>
     <string name="PasscodePanicCodeAbout">문제가 생기면 패닉 코드를 사용해 계정에서 로그아웃할 수 있습니다.</string>
     <string name="PasscodeShowInSettingsAbout">숨긴 후에는 이 페이지를 **링크로만** 열 수 있습니다:</string>
-    <string name="ResetSettingsAlert">모든 N-Settings를 초기화하시겠습니까?</string>
+    <string name="ResetSettingsAlert">모든 Nooagram Settings를 초기화하시겠습니까?</string>
     <string name="ResetSettings">설정 초기화</string>
     <string name="DeleteAllFromSelfAdmin">관리자 권한으로</string>
     <string name="DeleteAllFromSelfAlertBefore">경고! 이 채팅에서 **%s 이전의 내 모든 메시지**가 **모든** 참가자에게서 삭제됩니다.</string>

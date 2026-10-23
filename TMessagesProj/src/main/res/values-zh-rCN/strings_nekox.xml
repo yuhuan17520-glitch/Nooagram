@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">允许通知优先排序</string>
     <string name="SortByUser">用户优先排序</string>
     <string name="SortByContacts">联系人优先排序</string>
-    <string name="NekoXPushService">Nagram推送服务</string>
-    <string name="EnablePushAlert">请启用 \"Nagram 通知服务\"</string>
-    <string name="DisablePushAlert">请禁用 \"Nagram 通知服务\"</string>
+    <string name="NekoXPushService">Nooagram推送服务</string>
+    <string name="EnablePushAlert">请启用 \"Nooagram 通知服务\"</string>
+    <string name="DisablePushAlert">请禁用 \"Nooagram 通知服务\"</string>
     <string name="DisableUndo">禁用五秒内后悔</string>
     <string name="DisableSystemAccount">禁用系统帐户</string>
     <string name="FilterMenu">分类菜单</string>
@@ -267,7 +267,7 @@
     <string name="rememberAllBackMessages">记住已点击的回复</string>
     <string name="DisableInstantCamera">禁用相机即时预览</string>
     <string name="showSeconds">以秒为单位显示时间戳</string>
-    <string name="AppUpdateNekoX">更新 Nagram</string>
+    <string name="AppUpdateNekoX">更新 Nooagram</string>
     <string name="NekoXUpdateTranslationHint">长按以翻译更新日志</string>
     <string name="Name">输入别名</string>
     <string name="channelAlias">频道别名</string>

@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Seřadit Podle Neztlumených</string>
     <string name="SortByUser">Seřadit Podle Uživatele</string>
     <string name="SortByContacts">Seřadit Podle Kontaktů</string>
-    <string name="NekoXPushService">Nagram Push Service</string>
-    <string name="EnablePushAlert">Prosím povolte \"NekoX Push Service\"</string>
-    <string name="DisablePushAlert">Zakažte \"NekoX Push Service\"</string>
+    <string name="NekoXPushService">Nooagram Push Service</string>
+    <string name="EnablePushAlert">Prosím povolte \"Nooagram Push Service\"</string>
+    <string name="DisablePushAlert">Zakažte \"Nooagram Push Service\"</string>
     <string name="DisableUndo">Zakázat Zpět</string>
     <string name="DisableSystemAccount">Vypnout Systémový Účet</string>
     <string name="FilterMenu">Nabídka filtru Dialogů</string>
@@ -266,7 +266,7 @@
     <string name="rememberAllBackMessages">Zapamatovat všechny kliknuté odpovědi</string>
     <string name="DisableInstantCamera">Vypnout instantní kameru</string>
     <string name="showSeconds">Zobrazit časové razítko v sekundách</string>
-    <string name="AppUpdateNekoX">Aktualizovat Nagram</string>
+    <string name="AppUpdateNekoX">Aktualizovat Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Stisknutím přeložíte protokol změn</string>
     <string name="Name">Název</string>
     <string name="channelAlias">Alias kanálu</string>

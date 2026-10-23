@@ -85,9 +85,9 @@
     <string name="SortByUnmuted">Lajittele Mykistämättömien Mukaan</string>
     <string name="SortByUser">Järjestä Käyttäjän Mukaan</string>
     <string name="SortByContacts">Järjestä Yhteystietojen Mukaan</string>
-    <string name="NekoXPushService">Nagram Push Service</string>
-    <string name="EnablePushAlert">Ota käyttöön \"NekoX Push Service\"</string>
-    <string name="DisablePushAlert">Poista \"NekoX Push Service\" käytöstä</string>
+    <string name="NekoXPushService">Nooagram Push Service</string>
+    <string name="EnablePushAlert">Ota käyttöön \"Nooagram Push Service\"</string>
+    <string name="DisablePushAlert">Poista \"Nooagram Push Service\" käytöstä</string>
     <string name="DisableUndo">Poista Peruminen Käytöstä</string>
     <string name="DisableSystemAccount">Poista Järjestelmätili Käytöstä</string>
     <string name="FilterMenu">Dialogien Suodatinvalikko</string>
@@ -262,7 +262,7 @@
     <string name="rememberAllBackMessages">Muista kaikki klikkatut vastaukset</string>
     <string name="DisableInstantCamera">Poista pikakamera käytöstä</string>
     <string name="showSeconds">Näytä aikaleima sekunneissa</string>
-    <string name="AppUpdateNekoX">Päivitä Nagram</string>
+    <string name="AppUpdateNekoX">Päivitä Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Paina kääntääksesi muutoslokin</string>
     <string name="Name">Nimi</string>
     <string name="channelAlias">Kanavan alias</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">Настройки N</string>
+    <string name="NekoSettings">Настройки Nooagram</string>
     <string name="IPv6">Предпочитать IPv6 соединение</string>
     <string name="MessageMenu">Меню действий с сообщением</string>
     <string name="HidePhone">Скрыть мой номер телефона</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Прозрачная полоска статуса</string>
     <string name="EnableResidentNotification">Отображать постоянное уведомление</string>
     <string name="DisableResidentNotification">Скрыть постоянное уведомление</string>
-    <string name="NekogramRunning">Nekogram запущен</string>
+    <string name="NekogramRunning">Nooagram запущен</string>
     <string name="EventType">Набор значков бокового меню</string>
     <string name="ChristmasHat">Рождественский колпак в заголовке</string>
     <string name="ActionBarDecoration">Оформление заголовка</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Увеличить скорость загрузки</string>
     <string name="mapDriftingFixForGoogleMaps">Исправить дрейф Карт Google в Китае</string>
     <string name="useOSMDroidMap">Используйте карту OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">Нет такой опции N-Config .</string>
+    <string name="UnknownNekoSettingsOption">Нет такой опции Nooagram Settings .</string>
     <string name="PasscodeNeeded">Сначала включите блокировку паролем</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Показать в N-Config</string>
+    <string name="PasscodeShowInSettings">Показать в Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">После скрытия, вы можете **ТОЛЬКО ** открыть эту страницу по ссылке:</string>
     <string name="PasscodeSet">Установить пароль</string>
     <string name="PasscodeEdit">Изменить пароль</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Очистить недавние чаты</string>
     <string name="ClearRecentChatAlert">Вы хотите очистить недавние чаты?</string>
     <string name="CloudConfig">Настройки облака</string>
-    <string name="CloudConfigDesc">Сохраните N-Config в облаке Telegram.</string>
+    <string name="CloudConfigDesc">Сохраните Nooagram Settings в облаке Telegram.</string>
     <string name="CloudConfigSyncDate">Последняя синхронизация: %s, облак: %s</string>
     <string name="CloudConfigSyncDateNever">никогда</string>
     <string name="CloudConfigSync">Синхронизировать с облаком</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Восстановить</string>
     <string name="CloudConfigSyncing">Синхронизация...</string>
     <string name="CloudConfigAutoSync">Автосинхронизация</string>
-    <string name="CloudConfigAutoSyncDesc">Синхронизировать с облаком автоматически после внесения изменений в N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Синхронизировать с облаком автоматически после внесения изменений в Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Не удалось синхронизировать настройки с облаком.</string>
     <string name="CloudConfigRestoreFailed">Не удалось восстановить настройки из облака.</string>
     <string name="CopyCallback">Копировать данные обратного вызова</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Защитите этот QR-код паролем</string>
     <string name="ConfirmNewPassword">Подтверждение пароля</string>
     <string name="PassQRAbout">Сохраняет ваш пароль как зашифрованный QR-код. Вы можете отсканировать его для входа на другое устройство.</string>
-    <string name="PassQREncryption">Сканируйте с Nagram для входа.</string>
+    <string name="PassQREncryption">Сканируйте с Nooagram для входа.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Пароль должен содержать не менее 8 символов</string>
     <string name="PassQRPasswordWarning">Предупреждение безопасности: этот пароль - единственное, что защищает ваш ключ. Слабый пароль может быть взломан оффлайн, поэтому смешивайте заглавные буквы, цифры и символы.</string>

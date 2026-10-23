@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Configuration</string>
+    <string name="N_Config">Nooagram-Configuration</string>
     <string name="ForceCopy">Forcer la copie</string>
     <string name="disableSecondAddress">Désactiver la demande de deuxième adresse</string>
     <string name="InvertReply">Inverser</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Envoyer des réactions</string>
     <string name="ShowReactions">Afficher les réactions</string>
     <string name="CustomTitle">Titre personnalisé</string>
-    <string name="CustomTitleHint">Laisser vide pour utiliser Nagram</string>
+    <string name="CustomTitleHint">Laisser vide pour utiliser Nooagram</string>
     <string name="CodeSyntaxHighlight">Surbrillance de la syntaxe du code</string>
     <string name="CreateMono">Créer un Monospace</string>
     <string name="CreateMonoLanguage">Langue du code</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Si vous êtes propriétaire du groupe</string>
     <string name="RealHideTimeForSticker">Temps réel pour cacher les autocollants</string>
     <string name="ResetSettings">Réinitialiser les paramètres</string>
-    <string name="ResetSettingsAlert">Êtes-vous sûr de vouloir réinitialiser tous les N-Config?</string>
+    <string name="ResetSettingsAlert">Êtes-vous sûr de vouloir réinitialiser tous les Nooagram Settings?</string>
     <string name="HideTitle">Cacher le titre</string>
     <string name="IgnoreFolderCount">Ignorer le nombre de dossiers</string>
     <string name="SendWithoutMarkdown">Envoyer sans marquage</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Afficher le forum comme la discussion normale</string>
     <string name="DecorationNone">Aucun</string>
     <string name="ChatDecoration">Décoration de Discussion</string>
-    <string name="NeedChangeNekoSettings">Vous devez changer N-Config</string>
+    <string name="NeedChangeNekoSettings">Vous devez changer Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Ne pas désarchiver par balayage</string>
     <string name="DoNotShareMyPhoneNumber">Ne pas partager mon numéro de téléphone</string>
     <string name="DefaultDeleteMenu">Menu de suppression par défaut</string>

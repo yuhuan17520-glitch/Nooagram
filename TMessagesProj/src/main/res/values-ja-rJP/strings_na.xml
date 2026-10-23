@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-構成</string>
+    <string name="N_Config">Nooagram設定</string>
     <string name="ForceCopy">強制コピー</string>
     <string name="disableSecondAddress">2番目のアドレスリクエストを無効にする</string>
     <string name="InvertReply">反転</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">リアクションを送信</string>
     <string name="ShowReactions">リアクションの表示</string>
     <string name="CustomTitle">カスタムタイトル</string>
-    <string name="CustomTitleHint">Nagramを使用するには空白のままにしてください</string>
+    <string name="CustomTitleHint">Nooagramを使用するには空白のままにしてください</string>
     <string name="CodeSyntaxHighlight">コードの構文ハイライト</string>
     <string name="CreateMono">Monospaceを作成</string>
     <string name="CreateMonoLanguage">コード言語</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">あなたがグループの所有者である場合</string>
     <string name="RealHideTimeForSticker">ステッカーをリアルタイムに隠す</string>
     <string name="ResetSettings">設定をリセット</string>
-    <string name="ResetSettingsAlert">N-Configをすべてリセットしてもよろしいですか？</string>
+    <string name="ResetSettingsAlert">Nooagram-Configをすべてリセットしてもよろしいですか？</string>
     <string name="HideTitle">タイトルを隠す</string>
     <string name="IgnoreFolderCount">フォルダ数を無視</string>
     <string name="SendWithoutMarkdown">マークダウンなしで送信</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">通常のチャットとしてフォーラムを表示</string>
     <string name="DecorationNone">なし</string>
     <string name="ChatDecoration">別荘外観をチャットする</string>
-    <string name="NeedChangeNekoSettings">N-Config を変更する必要があります</string>
+    <string name="NeedChangeNekoSettings">Nooagram Settings を変更する必要があります</string>
     <string name="DoNotUnarchiveBySwipe">スワイプでアーカイブを解除しない</string>
     <string name="DoNotShareMyPhoneNumber">自分の電話番号を共有しない</string>
     <string name="DefaultDeleteMenu">デフォルトの削除メニュー</string>

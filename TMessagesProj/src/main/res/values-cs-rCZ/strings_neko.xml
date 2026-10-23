@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">Konfigurace N-</string>
+    <string name="NekoSettings">Konfigurace Nooagram</string>
     <string name="IPv6">Připojení přes IPv6</string>
     <string name="MessageMenu">Nabídka zpráv</string>
     <string name="HidePhone">Skrýt moje číslo</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Průhledný stavový řádek</string>
     <string name="EnableResidentNotification">Zobrazit rezidentní oznámení</string>
     <string name="DisableResidentNotification">Zakázat rezidentní oznámení</string>
-    <string name="NekogramRunning">Nekogram běží</string>
+    <string name="NekogramRunning">Nooagram běží</string>
     <string name="EventType">Sada ikon postranního panelu</string>
     <string name="ChristmasHat">Ukáže vánoční čepici každý den</string>
     <string name="ActionBarDecoration">Dekorace záhlaví</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Zvýšit rychlost nahrávání a stahování</string>
     <string name="mapDriftingFixForGoogleMaps">Opravit Google Maps uniftující v Číně</string>
     <string name="useOSMDroidMap">Použít OSMDroid mapu</string>
-    <string name="UnknownNekoSettingsOption">Žádná taková volba N-Config neexistuje.</string>
+    <string name="UnknownNekoSettingsOption">Žádná taková volba Nooagram Settings neexistuje.</string>
     <string name="PasscodeNeeded">Nejprve musíte povolit PIN zámek</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Zobrazit v nastavení N-</string>
+    <string name="PasscodeShowInSettings">Zobrazit v nastavení Nooagram</string>
     <string name="PasscodeShowInSettingsAbout">Po skrytí můžeš **POUZE otevřít tuto stránku odkazem:</string>
     <string name="PasscodeSet">Nastavit přístupový kód</string>
     <string name="PasscodeEdit">Změnit heslo</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Vymazat nedávné chaty</string>
     <string name="ClearRecentChatAlert">Chcete vymazat své nedávné chaty?</string>
     <string name="CloudConfig">Nastavení Cloudu</string>
-    <string name="CloudConfigDesc">Uložte svůj N-Config do Telegram cloudu.</string>
+    <string name="CloudConfigDesc">Uložte svůj Nooagram Settings do Telegram cloudu.</string>
     <string name="CloudConfigSyncDate">Poslední synchronizace: %s, cloud: %s</string>
     <string name="CloudConfigSyncDateNever">nikdy</string>
     <string name="CloudConfigSync">Synchronizovat do cloudu</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Obnovit</string>
     <string name="CloudConfigSyncing">Synchronizace...</string>
     <string name="CloudConfigAutoSync">Automatická synchronizace</string>
-    <string name="CloudConfigAutoSyncDesc">Synchronizovat do cloudu automaticky po provedení změn v N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Synchronizovat do cloudu automaticky po provedení změn v Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Nepodařilo se synchronizovat nastavení do cloudu.</string>
     <string name="CloudConfigRestoreFailed">Nepodařilo se obnovit nastavení z cloudu.</string>
     <string name="CopyCallback">Kopírovat data zpětného volání</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Chraňte tento QR kód heslem</string>
     <string name="ConfirmNewPassword">Potvrzení hesla</string>
     <string name="PassQRAbout">Uloží vaše heslo jako šifrovaný QR kód. Můžete jej naskenovat a přihlásit se na jiném zařízení.</string>
-    <string name="PassQREncryption">Naskenujte Nagram pro přihlášení.</string>
+    <string name="PassQREncryption">Naskenujte Nooagram pro přihlášení.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Heslo musí mít alespoň 8 znaků</string>
     <string name="PassQRPasswordWarning">Bezpečnostní varování: toto heslo je jediná věc, která chrání váš klíč. Slabé heslo může být roztrženo offline, takže se promísí velká velká a malá písmena, čísla a symboly.</string>

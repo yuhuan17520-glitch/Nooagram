@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Κατά Μη σε Σίγαση</string>
     <string name="SortByUser">Ταξινόμηση κατά χρήστη</string>
     <string name="SortByContacts">Ταξινόμηση κατά επαφές</string>
-    <string name="NekoXPushService">Υπηρεσία Nagram Push</string>
-    <string name="EnablePushAlert">Ενεργ/στε την υπηρεσία προώθησης NekoX</string>
-    <string name="DisablePushAlert">Απενεργ/στε την υπηρεσία προώθησης NekoX</string>
+    <string name="NekoXPushService">Υπηρεσία Nooagram Push</string>
+    <string name="EnablePushAlert">Ενεργ/στε την υπηρεσία προώθησης Nooagram</string>
+    <string name="DisablePushAlert">Απενεργ/στε την υπηρεσία προώθησης Nooagram</string>
     <string name="DisableUndo">Απενεργ/ση αναίρεσης</string>
     <string name="DisableSystemAccount">Απενεργ/ση Λογ/σμού Συστήματος</string>
     <string name="FilterMenu">Μενού φίλτρου διαλόγων</string>
@@ -267,7 +267,7 @@
     <string name="rememberAllBackMessages">Απομνημόνευση όλων των απαντήσεων με κλικ</string>
     <string name="DisableInstantCamera">Απενεργ/ση άμεσης κάμερας</string>
     <string name="showSeconds">Εμφάνιση χρονικής σήμανσης σε δευτ.</string>
-    <string name="AppUpdateNekoX">Ενημέρωση Nekogram X</string>
+    <string name="AppUpdateNekoX">Ενημέρωση Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Πατήστε για να μεταφράσετε το changelog</string>
     <string name="Name">Όνομα</string>
     <string name="channelAlias">Ψευδώνυμο καναλιού</string>

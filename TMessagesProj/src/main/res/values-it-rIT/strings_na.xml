@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Config</string>
+    <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Forza Copia</string>
     <string name="disableSecondAddress">Disabilita Richiesta Secondo Indirizzo</string>
     <string name="InvertReply">Invert</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Se sei proprietario del gruppo</string>
     <string name="RealHideTimeForSticker">Tempo di nascondersi reale per gli adesivi</string>
     <string name="ResetSettings">Ripristina le Impostazioni</string>
-    <string name="ResetSettingsAlert">Sei sicuro di voler resettare tutto N-Config?</string>
+    <string name="ResetSettingsAlert">Sei sicuro di voler resettare tutto Nooagram Settings?</string>
     <string name="HideTitle">Nascondi Titolo</string>
     <string name="IgnoreFolderCount">Ignora Conteggio Cartelle</string>
     <string name="SendWithoutMarkdown">Invia senza markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Mostra il forum come chat normale</string>
     <string name="DecorationNone">Nessuno</string>
     <string name="ChatDecoration">Decorazione Chat</string>
-    <string name="NeedChangeNekoSettings">È necessario modificare N-Config</string>
+    <string name="NeedChangeNekoSettings">È necessario modificare Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Non disarchiviare per scorrimento</string>
     <string name="DoNotShareMyPhoneNumber">Non condividere il mio numero di telefono</string>
     <string name="DefaultDeleteMenu">Menu Di Cancellazione Predefinito</string>

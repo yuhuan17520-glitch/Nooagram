@@ -3645,7 +3645,7 @@ public class AndroidUtilities {
         }
         File storageDir = null;
         if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Nagram");
+            storageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Nooagram");
             if (!storageDir.mkdirs()) {
                 if (!storageDir.exists()) {
                     if (BuildVars.LOGS_ENABLED) {
@@ -6640,7 +6640,7 @@ public class AndroidUtilities {
 
     public static String getBuildVersionInfo() {
         String[] abi = Build.SUPPORTED_ABIS[0].toLowerCase(Locale.ROOT).split("-");
-        return "Nagram v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TIMESTAMP + ") " + abi[abi.length - 1];
+        return "Nooagram v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TIMESTAMP + ") " + abi[abi.length - 1];
 //        try {
 //            PackageInfo pInfo = ApplicationLoader.applicationContext.getPackageManager().getPackageInfo(ApplicationLoader.applicationContext.getPackageName(), 0);
 //            int code = pInfo.versionCode / 10;

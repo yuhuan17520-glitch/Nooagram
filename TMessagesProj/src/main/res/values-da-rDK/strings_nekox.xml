@@ -85,9 +85,9 @@
     <string name="SortByUnmuted">Sortér Efter Unmuted</string>
     <string name="SortByUser">Sortér Efter Bruger</string>
     <string name="SortByContacts">Sortér Efter Kontakter</string>
-    <string name="NekoXPushService">Nagram Push-tjeneste</string>
-    <string name="EnablePushAlert">Aktivér venligst \"NekoX Push Service\"</string>
-    <string name="DisablePushAlert">Deaktivér venligst \"NekoX Push Service\"</string>
+    <string name="NekoXPushService">Nooagram Push-tjeneste</string>
+    <string name="EnablePushAlert">Aktivér venligst \"Nooagram Push Service\"</string>
+    <string name="DisablePushAlert">Deaktivér venligst \"Nooagram Push Service\"</string>
     <string name="DisableUndo">Deaktivér Fortryd</string>
     <string name="DisableSystemAccount">Deaktivér Systemkonto</string>
     <string name="FilterMenu">Dialoger Filtermenu</string>
@@ -262,7 +262,7 @@
     <string name="rememberAllBackMessages">Husk alle klikkede svar</string>
     <string name="DisableInstantCamera">Deaktivér øjeblikkeligt kamera</string>
     <string name="showSeconds">Vis tidsstempel i sekunder</string>
-    <string name="AppUpdateNekoX">Opdater Nagram</string>
+    <string name="AppUpdateNekoX">Opdater Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Tryk for at oversætte ændringsloggen</string>
     <string name="Name">Navn</string>
     <string name="channelAlias">Kanal alias</string>

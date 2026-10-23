@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Config</string>
+    <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Copiere forțată</string>
     <string name="disableSecondAddress">Dezactivează cererea de adresă secundară</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Trimite reactii</string>
     <string name="ShowReactions">Arată reacțiile</string>
     <string name="CustomTitle">Titlu personalizat</string>
-    <string name="CustomTitleHint">Lăsați necompletat pentru a utiliza Nagram</string>
+    <string name="CustomTitleHint">Lăsați necompletat pentru a utiliza Nooagram</string>
     <string name="CodeSyntaxHighlight">Evidențiere sintaxă cod</string>
     <string name="CreateMono">Creează Monospace</string>
     <string name="CreateMonoLanguage">Limbă cod</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Dacă sunteți proprietarul grupului</string>
     <string name="RealHideTimeForSticker">Timp real ascuns pentru stickere</string>
     <string name="ResetSettings">Resetare setări</string>
-    <string name="ResetSettingsAlert">Sunteţi sigur că doriţi să resetaţi toate N-Configurile?</string>
+    <string name="ResetSettingsAlert">Sunteţi sigur că doriţi să resetaţi toate Nooagram-Configurile?</string>
     <string name="HideTitle">Ascunde titlul</string>
     <string name="IgnoreFolderCount">Ignoră numărul de dosare</string>
     <string name="SendWithoutMarkdown">Trimite fără marcaj</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Arată forumul ca chat normal</string>
     <string name="DecorationNone">Niciunul</string>
     <string name="ChatDecoration">Decorație Chat</string>
-    <string name="NeedChangeNekoSettings">Trebuie să schimbați N-Config</string>
+    <string name="NeedChangeNekoSettings">Trebuie să schimbați Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Nu dezarhiva prin glisare</string>
     <string name="DoNotShareMyPhoneNumber">Nu partajați numărul meu de telefon</string>
     <string name="DefaultDeleteMenu">Meniul de ștergere implicit</string>

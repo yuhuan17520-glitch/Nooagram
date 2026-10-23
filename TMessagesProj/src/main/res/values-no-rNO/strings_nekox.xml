@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Sorter etter ikke forstummet</string>
     <string name="SortByUser">Sorter etter bruker</string>
     <string name="SortByContacts">Sorter etter kontakter</string>
-    <string name="NekoXPushService">Nagram-dyttingstjeneste</string>
-    <string name="EnablePushAlert">Skru på NekoX-dyttingstjenesten</string>
-    <string name="DisablePushAlert">Skru av NekoX-dyttingstjenesten</string>
+    <string name="NekoXPushService">Nooagram-dyttingstjeneste</string>
+    <string name="EnablePushAlert">Skru på Nooagram-dyttingstjenesten</string>
+    <string name="DisablePushAlert">Skru av Nooagram-dyttingstjenesten</string>
     <string name="DisableUndo">Skru av angring</string>
     <string name="DisableSystemAccount">Skru av systemkonto</string>
     <string name="FilterMenu">Dialogfiltermeny</string>
@@ -267,7 +267,7 @@
     <string name="rememberAllBackMessages">Husk alle klikkede svar</string>
     <string name="DisableInstantCamera">Skru av umiddelbart kamera</string>
     <string name="showSeconds">Vis tidsstempel i sekuder</string>
-    <string name="AppUpdateNekoX">Oppgrader Nagram</string>
+    <string name="AppUpdateNekoX">Oppgrader Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Trykk for å oversette endringsloggen</string>
     <string name="Name">Navn</string>
     <string name="channelAlias">Kanalalias</string>

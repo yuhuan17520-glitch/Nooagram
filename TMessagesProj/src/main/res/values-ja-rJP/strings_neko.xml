@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-構成</string>
+    <string name="NekoSettings">Nooagram設定</string>
     <string name="IPv6">IPv6を介した接続</string>
     <string name="MessageMenu">メッセージメニュー</string>
     <string name="HidePhone">あなたの携帯電話番号を隠す</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">完全に透明なステータスバーを使う</string>
     <string name="EnableResidentNotification">常駐通知を表示する</string>
     <string name="DisableResidentNotification">常駐通知を無効にする</string>
-    <string name="NekogramRunning">Nekogram ランニング</string>
+    <string name="NekogramRunning">Nooagram ランニング</string>
     <string name="EventType">サイドバーアイコンの設定</string>
     <string name="ChristmasHat">クリスマスの帽子を毎日表示</string>
     <string name="ActionBarDecoration">タイトルバーの装飾</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">アップロードとダウンロード速度を向上させる</string>
     <string name="mapDriftingFixForGoogleMaps">中国でGoogleマップが漂流しているのを修正</string>
     <string name="useOSMDroidMap">OSMDroid マップを使用</string>
-    <string name="UnknownNekoSettingsOption">N-Config オプションはありません。</string>
+    <string name="UnknownNekoSettingsOption">Nooagram Settings オプションはありません。</string>
     <string name="PasscodeNeeded">最初にパスコードロックを有効にする必要があります</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">N-Config に表示</string>
+    <string name="PasscodeShowInSettings">Nooagram Settings に表示</string>
     <string name="PasscodeShowInSettingsAbout">非表示になったら、このページのみリンクで開くことができます：</string>
     <string name="PasscodeSet">パスコードを設定</string>
     <string name="PasscodeEdit">パスコードの変更</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">最近のチャットをクリア</string>
     <string name="ClearRecentChatAlert">チャットをクリアしますか？</string>
     <string name="CloudConfig">クラウド設定</string>
-    <string name="CloudConfigDesc">N-ConfigをTelegramに保存します。</string>
+    <string name="CloudConfigDesc">Nooagram-ConfigをTelegramに保存します。</string>
     <string name="CloudConfigSyncDate">最終同期: %s, クラウド: %s</string>
     <string name="CloudConfigSyncDateNever">決してない</string>
     <string name="CloudConfigSync">クラウドに同期</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">復元</string>
     <string name="CloudConfigSyncing">同期中...</string>
     <string name="CloudConfigAutoSync">自動同期</string>
-    <string name="CloudConfigAutoSyncDesc">N-Config に変更を加えると自動的にクラウドに同期します。</string>
+    <string name="CloudConfigAutoSyncDesc">Nooagram Settings に変更を加えると自動的にクラウドに同期します。</string>
     <string name="CloudConfigSyncFailed">設定をクラウドに同期できませんでした。</string>
     <string name="CloudConfigRestoreFailed">クラウドから設定を復元できませんでした。</string>
     <string name="CopyCallback">コールバックデータをコピー</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">このQRコードをパスワードで保護</string>
     <string name="ConfirmNewPassword">パスワードの確認</string>
     <string name="PassQRAbout">パスキーを暗号化されたQRコードとして保存します。スキャンして別の端末にログインできます。</string>
-    <string name="PassQREncryption">Nagramでスキャンしてログインします。</string>
+    <string name="PassQREncryption">Nooagramでスキャンしてログインします。</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">パスワードは8文字以上でなければなりません</string>
     <string name="PassQRPasswordWarning">セキュリティ上の警告：このパスワードはキーを保護する唯一のものです。弱いパスワードはオフラインで割れる可能性があります。大文字、小文字、数字、記号を混ぜてください。</string>

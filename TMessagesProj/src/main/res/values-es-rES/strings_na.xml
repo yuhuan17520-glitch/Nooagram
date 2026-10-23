@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">Preferencias de na</string>
+    <string name="N_Config">Preferencias de Nooagram</string>
     <string name="ForceCopy">Forzar copiado</string>
     <string name="disableSecondAddress">Desactivar segunda solicitud de dirección</string>
     <string name="InvertReply">Invertir</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Enviar reacciones</string>
     <string name="ShowReactions">Mostrar reacciones</string>
     <string name="CustomTitle">Título personalizado</string>
-    <string name="CustomTitleHint">Dejar en blanco para usar Nagram</string>
+    <string name="CustomTitleHint">Dejar en blanco para usar Nooagram</string>
     <string name="CodeSyntaxHighlight">Resaltar la sintaxis del código</string>
     <string name="CreateMono">Crear monoespaciado</string>
     <string name="CreateMonoLanguage">Lenguaje de código</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Si eres el dueño del grupo</string>
     <string name="RealHideTimeForSticker">Tiempo de ocultación real para stickers</string>
     <string name="ResetSettings">Restablecer Ajustes</string>
-    <string name="ResetSettingsAlert">¿Está seguro de que desea restablecer toda la N-Config?</string>
+    <string name="ResetSettingsAlert">¿Está seguro de que desea restablecer toda la Nooagram Settings?</string>
     <string name="HideTitle">Ocultar el título</string>
     <string name="IgnoreFolderCount">Ignorar contador de carpetas</string>
     <string name="SendWithoutMarkdown">Enviar sin markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Mostrar el foro como un chat normal</string>
     <string name="DecorationNone">Ninguna</string>
     <string name="ChatDecoration">Decoración del chat</string>
-    <string name="NeedChangeNekoSettings">Necesitas cambiar N-Config</string>
+    <string name="NeedChangeNekoSettings">Necesitas cambiar Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">No desarchivar al deslizar</string>
     <string name="DoNotShareMyPhoneNumber">No compartir mi número de teléfono</string>
     <string name="DefaultDeleteMenu">Menú de eliminación predeterminado</string>

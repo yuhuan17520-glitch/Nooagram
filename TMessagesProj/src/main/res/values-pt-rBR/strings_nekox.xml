@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Ordenar por Não silenciadas</string>
     <string name="SortByUser">Ordenar por Usuário</string>
     <string name="SortByContacts">Ordenar por Contatos</string>
-    <string name="NekoXPushService">Serviço de Notificação Nagram</string>
-    <string name="EnablePushAlert">Por favor, ative o \"Serviço de Notificação NekoX\"</string>
-    <string name="DisablePushAlert">Por favor, desative o \"Serviço de Notificação NekoX\"</string>
+    <string name="NekoXPushService">Serviço de Notificação Nooagram</string>
+    <string name="EnablePushAlert">Por favor, ative o \"Serviço de Notificação Nooagram\"</string>
+    <string name="DisablePushAlert">Por favor, desative o \"Serviço de Notificação Nooagram\"</string>
     <string name="DisableUndo">Desativar Desfazer</string>
     <string name="DisableSystemAccount">Desativar Conta do Sistema</string>
     <string name="FilterMenu">Menu de Filtro de Chats</string>
@@ -267,7 +267,7 @@
     <string name="rememberAllBackMessages">Lembrar de todas as respostas clicadas</string>
     <string name="DisableInstantCamera">Desativar câmera instantânea</string>
     <string name="showSeconds">Mostrar carimbo de data/hora em segundos</string>
-    <string name="AppUpdateNekoX">Atualizar Nagram</string>
+    <string name="AppUpdateNekoX">Atualizar Nooagram</string>
     <string name="NekoXUpdateTranslationHint">Toque para traduzir o histórico de alterações</string>
     <string name="Name">Nome</string>
     <string name="channelAlias">Apelidar canal</string>

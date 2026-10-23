@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Ρύθμιση</string>
+    <string name="NekoSettings">Nooagram-Ρύθμιση</string>
     <string name="IPv6">Σύνδεση μέσω IPv6</string>
     <string name="MessageMenu">Μενού μηνυμάτων</string>
     <string name="HidePhone">Απόκρυψη αριθμού τηλεφώνου μου</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Διαφανή γραμμή κατάστασης</string>
     <string name="EnableResidentNotification">Εμφάνιση μόνιμης ειδοποίησης</string>
     <string name="DisableResidentNotification">Απενεργ/ση μόνιμης ειδοποίησης</string>
-    <string name="NekogramRunning">Το Nekogram εκτελείται</string>
+    <string name="NekogramRunning">Το Nooagram εκτελείται</string>
     <string name="EventType">Εικονιδ. πλευρικ. μπάρας. Αρχικής</string>
     <string name="ChristmasHat">Εμφάνιση καπέλου Άγιου Βασίλη κάθε μέρα</string>
     <string name="ActionBarDecoration">Διακόσμηση μπάρας τίτλου</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Ενίσχυση ταχύτητας λήψης</string>
     <string name="mapDriftingFixForGoogleMaps">Διόρθωση μετατόπισης Χαρτών Google στην Κίνα</string>
     <string name="useOSMDroidMap">Χρήση OSMDroid Map</string>
-    <string name="UnknownNekoSettingsOption">Δεν υπάρχει τέτοια επιλογή N-Config.</string>
+    <string name="UnknownNekoSettingsOption">Δεν υπάρχει τέτοια επιλογή Nooagram Settings.</string>
     <string name="PasscodeNeeded">Πρέπει πρώτα να ενεργοποιήσετε το κλείδωμα κωδικού πρόσβασης</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Εμφάνιση στο N-Config</string>
+    <string name="PasscodeShowInSettings">Εμφάνιση στο Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">Μετά την απόκρυψη, μπορείτε **ΜΟΝΟ ΧΡΗΣΗ** να ανοίξετε αυτή τη σελίδα ανά σύνδεσμο:</string>
     <string name="PasscodeSet">Ορισμός κωδικού πρόσβασης</string>
     <string name="PasscodeEdit">Αλλαγή κωδικού πρόσβασης</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Εκκαθάριση πρόσφατων συνομιλιών</string>
     <string name="ClearRecentChatAlert">Θέλετε να καθαρίσετε τις πρόσφατες συνομιλίες σας?</string>
     <string name="CloudConfig">Ρυθμίσεις Cloud</string>
-    <string name="CloudConfigDesc">Αποθηκεύστε το N-Config σας στο σύννεφο Telegram.</string>
+    <string name="CloudConfigDesc">Αποθηκεύστε το Nooagram Settings σας στο σύννεφο Telegram.</string>
     <string name="CloudConfigSyncDate">Τελευταίος συγχρονισμός: %s, σύννεφο: %s</string>
     <string name="CloudConfigSyncDateNever">ποτέ</string>
     <string name="CloudConfigSync">Συγχρονισμός με το cloud</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Επαναφορά</string>
     <string name="CloudConfigSyncing">Συγχρονισμός...</string>
     <string name="CloudConfigAutoSync">Αυτόματος συγχρονισμός</string>
-    <string name="CloudConfigAutoSyncDesc">Συγχρονισμός στο cloud αυτόματα μετά από αλλαγές στη ρύθμιση Ν.</string>
+    <string name="CloudConfigAutoSyncDesc">Συγχρονισμός στο cloud αυτόματα μετά από αλλαγές στη ρύθμιση Nooagram.</string>
     <string name="CloudConfigSyncFailed">Αποτυχία συγχρονισμού ρυθμίσεων στο σύννεφο.</string>
     <string name="CloudConfigRestoreFailed">Αποτυχία επαναφοράς ρυθμίσεων από το σύννεφο.</string>
     <string name="CopyCallback">Αντιγραφή Δεδομένων Επανάκλησης</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Προστασία αυτού του κωδικού QR με κωδικό πρόσβασης</string>
     <string name="ConfirmNewPassword">Επιβεβαίωση Κωδικού Πρόσβασης</string>
     <string name="PassQRAbout">Αποθηκεύει το συνθηματικό σας ως κρυπτογραφημένο κωδικό QR. Μπορείτε να το σαρώσετε για να συνδεθείτε σε άλλη συσκευή.</string>
-    <string name="PassQREncryption">Σαρώστε με τον Nagram για να συνδεθείτε.</string>
+    <string name="PassQREncryption">Σαρώστε με τον Nooagram για να συνδεθείτε.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Ο κωδικός πρόσβασης πρέπει να περιέχει τουλάχιστον 8 χαρακτήρες</string>
     <string name="PassQRPasswordWarning">Προειδοποίηση ασφαλείας: αυτός ο κωδικός πρόσβασης είναι το μόνο πράγμα που προστατεύει το κλειδί σας. Ένας αδύναμος κωδικός πρόσβασης μπορεί να ραγιστεί εκτός σύνδεσης, οπότε ανακατέψτε τα κεφαλαία, τα πεζά, τους αριθμούς και τα σύμβολα.</string>

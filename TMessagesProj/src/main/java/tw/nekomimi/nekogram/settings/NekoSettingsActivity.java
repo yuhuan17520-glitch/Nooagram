@@ -115,7 +115,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
         } else if (position == channelTipsRow) {
             getMessagesController().openByUserName(channelUsernameTips, this, 1);
         } else if (position == sourceCodeRow) {
-            Browser.openUrl(getParentActivity(), "https://github.com/NextAlone/Nagram");
+            Browser.openUrl(getParentActivity(), "https://github.com/yuhuan17520-glitch/Nooagram");
         } else if (position == translationRow) {
             Browser.openUrl(getParentActivity(), "https://xtaolabs.crowdin.com/nagram");
         } else if (position == datacenterRow) {
@@ -203,9 +203,9 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
                 case TYPE_SETTINGS: {
                     TextSettingsCell textCell = (TextSettingsCell) holder.itemView;
                     if (position == channelRow) {
-                        textCell.setTextAndValue(LocaleController.getString(R.string.OfficialChannel), "@" + channelUsername, divider);
+                        textCell.setTextAndValue(LocaleController.getString("UpstreamChannel"), "@" + channelUsername, divider);
                     } else if (position == channelTipsRow) {
-                        textCell.setTextAndValue(LocaleController.getString(R.string.TipsChannel), "@" + channelUsernameTips, divider);
+                        textCell.setTextAndValue(LocaleController.getString("UpstreamTipsChannel"), "@" + channelUsernameTips, divider);
                     } else if (position == sourceCodeRow) {
                         textCell.setText(LocaleController.getString(R.string.SourceCode), divider);
                     } else if (position == translationRow) {

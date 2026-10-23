@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Config</string>
+    <string name="NekoSettings">Nooagram Settings</string>
     <string name="IPv6">اتصال از طریق IPv6</string>
     <string name="MessageMenu">منوی پیام</string>
     <string name="HidePhone">مخفی کردن شماره تلفن</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">نوار وضعیت شفاف</string>
     <string name="EnableResidentNotification">نشان دادن اعلان ساکن</string>
     <string name="DisableResidentNotification">غیرفعال کردن اعلان ساکن</string>
-    <string name="NekogramRunning">نكوگرام در حال اجرا است</string>
+    <string name="NekogramRunning">Nooagram در حال اجرا است</string>
     <string name="EventType">مجموعه آیکون‌های نوار کناری</string>
     <string name="ChristmasHat">نمایش همیشگی کلاه کریسمس</string>
     <string name="ActionBarDecoration">دکوراسیون نوار عنوان</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">بهبود سرعت دانلود</string>
     <string name="mapDriftingFixForGoogleMaps">رفع انحراف نقشه گوگل در چین</string>
     <string name="useOSMDroidMap">بکارگیری نقشه OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">چنین گزینه‌ای در N-Config وجود ندارد.</string>
+    <string name="UnknownNekoSettingsOption">چنین گزینه‌ای در Nooagram Settings وجود ندارد.</string>
     <string name="PasscodeNeeded">ابتدا باید قفل کد عبور را فعال کنید</string>
     <string name="PasscodeNeko">کد عبور</string>
-    <string name="PasscodeShowInSettings">نمایش در N-Config</string>
+    <string name="PasscodeShowInSettings">نمایش در Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">پس از پنهان‌سازی، این صفحه را **فقط** می‌توانید از طریق لینک باز کنید:</string>
     <string name="PasscodeSet">تنظیم کد عبور</string>
     <string name="PasscodeEdit">تغییر کد عبور</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">پاک کردن گفتگوهای اخیر</string>
     <string name="ClearRecentChatAlert">آیا می‌‌خواهید گفتگوهای اخیر خود را پاک کنید؟</string>
     <string name="CloudConfig">تنظیمات فضای ابری</string>
-    <string name="CloudConfigDesc">ذخیره N-Config خود در فضای ابری تلگرام.</string>
+    <string name="CloudConfigDesc">ذخیره Nooagram Settings خود در فضای ابری تلگرام.</string>
     <string name="CloudConfigSyncDate">آخرین همگام‌سازی: %s، فضای ابری: %s</string>
     <string name="CloudConfigSyncDateNever">هیچ‌وقت</string>
     <string name="CloudConfigSync">همگام‌سازی با فضای ابری</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">بازیابی</string>
     <string name="CloudConfigSyncing">در حال همگام‌سازی...</string>
     <string name="CloudConfigAutoSync">همگام‌سازی خودکار</string>
-    <string name="CloudConfigAutoSyncDesc">همگام‌سازی خودکار با فضای ابری پس از اعمال تغییرات در N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">همگام‌سازی خودکار با فضای ابری پس از اعمال تغییرات در Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">خطا در همگام‌سازی تنظیمات با فضای ابری.</string>
     <string name="CloudConfigRestoreFailed">خطا در بازیابی تنظیمات از فضای ابری.</string>
     <string name="CopyCallback">کپی داده Callback</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">محافظت از این کد QR با یک گذرواژه</string>
     <string name="ConfirmNewPassword">تأیید گذرواژه</string>
     <string name="PassQRAbout">کلید عبور شما را به صورت یک کد QR رمزگذاری‌شده ذخیره می‌کند. می‌توانید آن را برای ورود به سیستم در دستگاه دیگری اسکن کنید.</string>
-    <string name="PassQREncryption">برای ورود با Nagram اسکن کنید.</string>
+    <string name="PassQREncryption">برای ورود با Nooagram اسکن کنید.</string>
     <string name="InvalidPassQr">کد QR کلید عبور نامعتبر است</string>
     <string name="PassQRPasswordTooShort">گذرواژه باید حداقل شامل ۸ نویسه باشد</string>
     <string name="PassQRPasswordWarning">هشدار امنیتی: این گذرواژه تنها چیزی است که از کلید شما محافظت می‌کند. یک گذرواژه ضعیف می‌تواند به صورت آفلاین کرک شود، بنابراین از ترکیب حروف بزرگ، کوچک، اعداد و نمادها استفاده کنید.</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Config</string>
+    <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Kopyalamaya Zorla</string>
     <string name="disableSecondAddress">Disable Second Address Request</string>
     <string name="InvertReply">Tersine Çevir</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Tepkileri Gönder</string>
     <string name="ShowReactions">Tepkileri Göster</string>
     <string name="CustomTitle">Özel Başlık</string>
-    <string name="CustomTitleHint">Nagram\'ı kullanmak için boş bırakın</string>
+    <string name="CustomTitleHint">Nooagram\'ı kullanmak için boş bırakın</string>
     <string name="CodeSyntaxHighlight">Kod söz dizimini vurgulama</string>
     <string name="CreateMono">Tek Boşluk Oluştur</string>
     <string name="CreateMonoLanguage">Kod dili</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Grubun sahibiyseniz</string>
     <string name="RealHideTimeForSticker">Çıkartmalar için gerçek saklanma süresi</string>
     <string name="ResetSettings">Ayarları Sıfırla</string>
-    <string name="ResetSettingsAlert">Tüm N-Ayarlarını sıfırlamak istediğinizden emin misiniz?</string>
+    <string name="ResetSettingsAlert">Tüm Nooagram-Ayarlarını sıfırlamak istediğinizden emin misiniz?</string>
     <string name="HideTitle">Başlığı Gizle</string>
     <string name="IgnoreFolderCount">Klasör Sayısını Yoksay</string>
     <string name="SendWithoutMarkdown">İşaretlemeden gönder</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Forumu normal sohbet olarak göster</string>
     <string name="DecorationNone">Yok</string>
     <string name="ChatDecoration">Sohbet Dekorasyonu</string>
-    <string name="NeedChangeNekoSettings">N-Config\'i değiştirmeniz gerekiyor</string>
+    <string name="NeedChangeNekoSettings">Nooagram Settings\'i değiştirmeniz gerekiyor</string>
     <string name="DoNotUnarchiveBySwipe">Kaydırarak arşivden çıkarmayın</string>
     <string name="DoNotShareMyPhoneNumber">Telefon numaramı paylaşma</string>
     <string name="DefaultDeleteMenu">Varsayılan Silme Menüsü</string>

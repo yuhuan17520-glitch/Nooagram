@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">Seslilere Göre Sırala</string>
     <string name="SortByUser">Kullanıcıya Göre Sırala</string>
     <string name="SortByContacts">Kişilere Göre Sırala</string>
-    <string name="NekoXPushService">Nagram Bildirim Hizmeti</string>
-    <string name="EnablePushAlert">Lütfen \"NekoX Bildirim Hizmeti\"ni etkinleştirin</string>
-    <string name="DisablePushAlert">Lütfen \"NekoX Bildirim Hizmeti\"ni devre dışı bırakın</string>
+    <string name="NekoXPushService">Nooagram Bildirim Hizmeti</string>
+    <string name="EnablePushAlert">Lütfen \"Nooagram Bildirim Hizmeti\"ni etkinleştirin</string>
+    <string name="DisablePushAlert">Lütfen \"Nooagram Bildirim Hizmeti\"ni devre dışı bırakın</string>
     <string name="DisableUndo">Geri Almayı Devre Dışı Bırak</string>
     <string name="DisableSystemAccount">Sistem Hesabını Devre Dışı Bırak</string>
     <string name="FilterMenu">Mesajlaşma Filtresi Menüsü</string>
@@ -267,7 +267,7 @@
     <string name="rememberAllBackMessages">Bütün dokunulmuş yanıtları hatırla</string>
     <string name="DisableInstantCamera">Hızlı kamerayı devre dışı bırak</string>
     <string name="showSeconds">Zaman bilgisini saniye türünde göster</string>
-    <string name="AppUpdateNekoX">Nekogram X\'i güncelle</string>
+    <string name="AppUpdateNekoX">Nooagram\'i güncelle</string>
     <string name="NekoXUpdateTranslationHint">Değişim günlüğünü çevirmek için dokunun</string>
     <string name="Name">İsim</string>
     <string name="channelAlias">Kanal takma adı</string>

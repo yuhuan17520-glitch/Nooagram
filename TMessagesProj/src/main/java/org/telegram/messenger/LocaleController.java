@@ -4547,27 +4547,17 @@ public class LocaleController {
     @Nullable
     private String getStringV2(String key, @StringRes int stringRes, String fallback) {
         final Context context = ApplicationLoader.applicationContext;
-        String value;
-
-        if (BuildVars.USE_CLOUD_STRINGS) {
-            value = localizationExternal.getByResNameOrResId(context, key, stringRes);
-            if (value != null) {
-                return value;
-            }
-
-            value = localizationExternal.getByResName(fallback);
-            if (value != null) {
-                return value;
-            }
-        }
 
         checkLocalizationInternal();
-        value = localizationInternal.getByResNameOrResId(context, key, stringRes);
-        if (value != null) {
-            return value;
-        }
-
-        return localizationInternal.getByResName(fallback);
+        return org.telegram.utils.localization.ProductBrandingLocalization.resolve(
+                localizationInternal,
+                localizationExternal,
+                context,
+                key,
+                stringRes,
+                fallback,
+                BuildVars.USE_CLOUD_STRINGS
+        );
     }
 
 

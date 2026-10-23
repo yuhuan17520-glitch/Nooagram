@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Konfiguracja</string>
+    <string name="NekoSettings">Nooagram-Konfiguracja</string>
     <string name="IPv6">Łączenie przez IPv6</string>
     <string name="MessageMenu">Menu wiadomości</string>
     <string name="HidePhone">Ukryj mój numer telefonu</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Przezroczysty pasek stanu</string>
     <string name="EnableResidentNotification">Pokaż stałe powiadomienie</string>
     <string name="DisableResidentNotification">Wyłącz stałe powiadomienie</string>
-    <string name="NekogramRunning">Nekogram działa</string>
+    <string name="NekogramRunning">Nooagram działa</string>
     <string name="EventType">Ustawienia ikon paska bocznego</string>
     <string name="ChristmasHat">Zawsze pokazuj kapelusz świąteczny</string>
     <string name="ActionBarDecoration">Dekoracja nagłówka</string>
@@ -93,7 +93,7 @@
     <string name="DisableNumberRounding">Wyłącz zaokrąglanie liczb</string>
     <string name="Categories">Kategorie</string>
     <string name="OfficialChannel">Oficjalny kanał</string>
-    <string name="About">Informacje o Nagram</string>
+    <string name="About">Informacje o Nooagram</string>
     <string name="IgnoreBlockedAbout">Nie będziesz już widział wiadomości od zablokowanych użytkowników w grupach.</string>
     <string name="GooglePlay">Sklep Play</string>
     <string name="SourceCode">Kod źródłowy na GitHubie</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Zwiększ prędkość pobierania</string>
     <string name="mapDriftingFixForGoogleMaps">Napraw działanie Map Google w Chinach</string>
     <string name="useOSMDroidMap">Użyj mapy OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">Nie ma takiej opcji N-Config.</string>
+    <string name="UnknownNekoSettingsOption">Nie ma takiej opcji Nooagram Settings.</string>
     <string name="PasscodeNeeded">Musisz najpierw włączyć blokadę hasła</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Pokaż w N-Konfiguracji</string>
+    <string name="PasscodeShowInSettings">Pokaż w Nooagram-Konfiguracji</string>
     <string name="PasscodeShowInSettingsAbout">Po ukryciu, możesz **TYLKO ** otworzyć tę stronę przez link:</string>
     <string name="PasscodeSet">Ustaw kod dostępu</string>
     <string name="PasscodeEdit">Zmień hasło</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Wyczyść ostatnie czaty</string>
     <string name="ClearRecentChatAlert">Czy chcesz wyczyścić ostatnie czaty?</string>
     <string name="CloudConfig">Ustawienia chmury</string>
-    <string name="CloudConfigDesc">Zapisz swoją N-Config w chmurze Telegram.</string>
+    <string name="CloudConfigDesc">Zapisz swoją Nooagram Settings w chmurze Telegram.</string>
     <string name="CloudConfigSyncDate">Ostatnia synchronizacja: %s, chmura: %s</string>
     <string name="CloudConfigSyncDateNever">nigdy</string>
     <string name="CloudConfigSync">Synchronizuj z chmurą</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Przywróć</string>
     <string name="CloudConfigSyncing">Synchronizacja...</string>
     <string name="CloudConfigAutoSync">Automatyczna synchronizacja</string>
-    <string name="CloudConfigAutoSyncDesc">Synchronizuj z chmurą automatycznie po wprowadzeniu zmian do N- Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Synchronizuj z chmurą automatycznie po wprowadzeniu zmian do Nooagram-Config.</string>
     <string name="CloudConfigSyncFailed">Nie udało się zsynchronizować ustawień z chmurą.</string>
     <string name="CloudConfigRestoreFailed">Nie udało się przywrócić ustawień z chmury.</string>
     <string name="CopyCallback">Skopiuj dane wywołania zwrotnego</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Zabezpiecz ten kod QR hasłem</string>
     <string name="ConfirmNewPassword">Potwierdź hasło</string>
     <string name="PassQRAbout">Zapisuje Twoje hasło jako zaszyfrowany kod QR. Możesz go zeskanować, aby zalogować się na innym urządzeniu.</string>
-    <string name="PassQREncryption">Zeskanuj za pomocą Nagramu, aby się zalogować.</string>
+    <string name="PassQREncryption">Zeskanuj za pomocą Nooagramu, aby się zalogować.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Hasło musi mieć co najmniej 8 znaków</string>
     <string name="PassQRPasswordWarning">Ostrzeżenie dotyczące bezpieczeństwa: to hasło jest jedyną rzeczą chroniącą twój klucz. Słabe hasło może być złamane w trybie offline, więc mieszać duże litery, małe litery, cyfry i symbole.</string>

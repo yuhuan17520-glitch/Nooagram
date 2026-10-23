@@ -77,9 +77,9 @@
     <string name="SortByUnmuted">可通知優先排序</string>
     <string name="SortByUser">用戶優先排序</string>
     <string name="SortByContacts">聯絡人優先排序</string>
-    <string name="NekoXPushService">Nagram 通知服務</string>
-    <string name="EnablePushAlert">請啓用 \"NekoX 通知服務\"</string>
-    <string name="DisablePushAlert">請禁用 \"NekoX 通知服務\"</string>
+    <string name="NekoXPushService">Nooagram 通知服務</string>
+    <string name="EnablePushAlert">請啓用 \"Nooagram 通知服務\"</string>
+    <string name="DisablePushAlert">請禁用 \"Nooagram 通知服務\"</string>
     <string name="DisableUndo">禁用五秒內後悔</string>
     <string name="DisableSystemAccount">禁用系統賬戶</string>
     <string name="FilterMenu">分類菜單</string>

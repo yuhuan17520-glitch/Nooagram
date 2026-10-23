@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-konfigurasjon</string>
+    <string name="N_Config">Nooagram-konfigurasjon</string>
     <string name="ForceCopy">Tving kopi</string>
     <string name="disableSecondAddress">Deaktiver annenstedsforespørsel</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Send reaksjoner</string>
     <string name="ShowReactions">Vis Reaksjoner</string>
     <string name="CustomTitle">Tilpasset tittel</string>
-    <string name="CustomTitleHint">La stå tomt for å bruke Nagram</string>
+    <string name="CustomTitleHint">La stå tomt for å bruke Nooagram</string>
     <string name="CodeSyntaxHighlight">Fremheving av kode syntaks</string>
     <string name="CreateMono">Opprett monospace</string>
     <string name="CreateMonoLanguage">Kode språk</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">Hvis du er eier av gruppen</string>
     <string name="RealHideTimeForSticker">Sannsynlig tid for klistremerker</string>
     <string name="ResetSettings">Tilbakestill innstillinger</string>
-    <string name="ResetSettingsAlert">Er du sikker på at du vil tilbakestille all N-konfig?</string>
+    <string name="ResetSettingsAlert">Er du sikker på at du vil tilbakestille all Nooagram-konfig?</string>
     <string name="HideTitle">Skjul tittel</string>
     <string name="IgnoreFolderCount">Ignorer mappetelling</string>
     <string name="SendWithoutMarkdown">Send uten markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Vis forum som normal chat</string>
     <string name="DecorationNone">Ingen</string>
     <string name="ChatDecoration">Chat dekorasjon</string>
-    <string name="NeedChangeNekoSettings">Du må endre N-konfigurasjon</string>
+    <string name="NeedChangeNekoSettings">Du må endre Nooagram-konfigurasjon</string>
     <string name="DoNotUnarchiveBySwipe">Ikke hent vekk opptak ved å dra</string>
     <string name="DoNotShareMyPhoneNumber">Ikke del mitt telefonnummer</string>
     <string name="DefaultDeleteMenu">Standard slett menyen</string>

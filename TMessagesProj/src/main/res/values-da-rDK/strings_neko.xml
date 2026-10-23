@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">Switch to @Cherry_gram</string>
+    <string name="NekoSettings">Nooagram Settings</string>
     <string name="IPv6">Forbinder via IPv6</string>
     <string name="MessageMenu">Besked menu</string>
     <string name="HidePhone">Skjul mit telefonnummer</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Gennemsigtig statuslinje</string>
     <string name="EnableResidentNotification">Vis en resident meddelelse</string>
     <string name="DisableResidentNotification">Deaktiver residente notifikationer</string>
-    <string name="NekogramRunning">Nekogram kører</string>
+    <string name="NekogramRunning">Nooagram kører</string>
     <string name="EventType">Sidebjælke ikon sæt</string>
     <string name="ChristmasHat">Vis santa hat hver dag</string>
     <string name="ActionBarDecoration">Titel bar dekoration</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Forbedre upload og download hastighed</string>
     <string name="mapDriftingFixForGoogleMaps">Fix Google Maps drivende i Kina</string>
     <string name="useOSMDroidMap">Brug OSMDroid-kort</string>
-    <string name="UnknownNekoSettingsOption">Der er ingen sådan N-Config mulighed.</string>
+    <string name="UnknownNekoSettingsOption">Der er ingen sådan Nooagram Settings mulighed.</string>
     <string name="PasscodeNeeded">Du skal først aktivere adgangskodelås</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Vis i N-Config</string>
+    <string name="PasscodeShowInSettings">Vis i Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">Efter at have gemt dig kan du **KUN ** åbne denne side ved link:</string>
     <string name="PasscodeSet">Angiv adgangskode</string>
     <string name="PasscodeEdit">Skift adgangskode</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Ryd seneste chats</string>
     <string name="ClearRecentChatAlert">Vil du rydde dine seneste chats?</string>
     <string name="CloudConfig">Sky Indstillinger</string>
-    <string name="CloudConfigDesc">Gem din N-konfig til Telegram sky.</string>
+    <string name="CloudConfigDesc">Gem din Nooagram-konfig til Telegram sky.</string>
     <string name="CloudConfigSyncDate">Sidst synkroniseret: %s, cloud: %s</string>
     <string name="CloudConfigSyncDateNever">aldrig</string>
     <string name="CloudConfigSync">Synkroniser til sky</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Gendan</string>
     <string name="CloudConfigSyncing">Synkroniserer...</string>
     <string name="CloudConfigAutoSync">Automatisk synkronisering</string>
-    <string name="CloudConfigAutoSyncDesc">Synkronisér automatisk til cloud efter ændringer til N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Synkronisér automatisk til cloud efter ændringer til Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Kunne ikke synkronisere indstillinger til cloud.</string>
     <string name="CloudConfigRestoreFailed">Kunne ikke gendanne indstillinger fra cloud.</string>
     <string name="CopyCallback">Kopier Tilbagekaldsdata</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Beskyt denne QR-kode med en adgangskode</string>
     <string name="ConfirmNewPassword">Bekræft Adgangskode</string>
     <string name="PassQRAbout">Gemmer din adgangsnøgle som en krypteret QR-kode. Du kan scanne den for at logge ind på en anden enhed.</string>
-    <string name="PassQREncryption">Scan med Nagram for at logge ind.</string>
+    <string name="PassQREncryption">Scan med Nooagram for at logge ind.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Adgangskoden skal være på mindst 8 tegn</string>
     <string name="PassQRPasswordWarning">Sikkerhedsadvarsel: Denne adgangskode er den eneste ting der beskytter din nøgle. En svag adgangskode kan være revnet offline, så mix store bogstaver, små bogstaver, tal og symboler.</string>

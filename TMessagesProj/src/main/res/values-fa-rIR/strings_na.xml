@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="N_Config">N-Config</string>
+    <string name="N_Config">Nooagram Settings</string>
     <string name="ForceCopy">Force Copy</string>
     <string name="disableSecondAddress">غیرفعال‌سازی درخواست آدرس دوم</string>
     <string name="InvertReply">Invert</string>
@@ -22,7 +22,7 @@
     <string name="SendReactions">Send Reactions</string>
     <string name="ShowReactions">Show Reactions</string>
     <string name="CustomTitle">Custom Title</string>
-    <string name="CustomTitleHint">Leave blank to use Nagram</string>
+    <string name="CustomTitleHint">Leave blank to use Nooagram</string>
     <string name="CodeSyntaxHighlight">Code syntax highlight</string>
     <string name="CreateMono">Create Monospace</string>
     <string name="CreateMonoLanguage">Code language</string>
@@ -63,7 +63,7 @@
     <string name="QuickToggleAnonymousNotice">If you\'re owner of the group</string>
     <string name="RealHideTimeForSticker">Real hide time for stickers</string>
     <string name="ResetSettings">بازنشانی تنظیمات</string>
-    <string name="ResetSettingsAlert">آیا مطمئن هستید که می‌خواهید تمام N-Config را بازنشانی کنید؟</string>
+    <string name="ResetSettingsAlert">آیا مطمئن هستید که می‌خواهید تمام Nooagram Settings را بازنشانی کنید؟</string>
     <string name="HideTitle">Hide Title</string>
     <string name="IgnoreFolderCount">Ignore Folder Count</string>
     <string name="SendWithoutMarkdown">Send without markdown</string>
@@ -95,7 +95,7 @@
     <string name="ShowForumAsNormalChat">Show forum as normal chat</string>
     <string name="DecorationNone">None</string>
     <string name="ChatDecoration">Chat Decoration</string>
-    <string name="NeedChangeNekoSettings">You need to change N-Config</string>
+    <string name="NeedChangeNekoSettings">You need to change Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Do not unarchive by swipe</string>
     <string name="DoNotShareMyPhoneNumber">Do not share my phone number</string>
     <string name="DefaultDeleteMenu">Default Delete Menu</string>

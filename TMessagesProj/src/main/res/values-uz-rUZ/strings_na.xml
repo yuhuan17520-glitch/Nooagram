@@ -19,7 +19,7 @@
     <string name="SendReactions">Send Reactions</string>
     <string name="ShowReactions">Show Reactions</string>
     <string name="CustomTitle">Custom Title</string>
-    <string name="CustomTitleHint">Leave blank to use Nagram</string>
+    <string name="CustomTitleHint">Leave blank to use Nooagram</string>
     <string name="CodeSyntaxHighlight">Code syntax highlight</string>
     <string name="CreateMono">Create Monospace</string>
     <string name="CreateMonoLanguage">Code language</string>
@@ -89,7 +89,7 @@
     <string name="ShowForumAsNormalChat">Show forum as normal chat</string>
     <string name="DecorationNone">None</string>
     <string name="ChatDecoration">Chat Decoration</string>
-    <string name="NeedChangeNekoSettings">You need to change N-Config</string>
+    <string name="NeedChangeNekoSettings">You need to change Nooagram Settings</string>
     <string name="DoNotUnarchiveBySwipe">Do not unarchive by swipe</string>
     <string name="DoNotShareMyPhoneNumber">Do not share my phone number</string>
     <string name="DefaultDeleteMenu">Default Delete Menu</string>

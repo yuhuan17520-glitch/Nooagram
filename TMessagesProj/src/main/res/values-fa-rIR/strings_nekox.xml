@@ -87,9 +87,9 @@
     <string name="SortByUnmuted">ترتیب بر اساس صدا دار</string>
     <string name="SortByUser">ترتیب بر اساس کاربر</string>
     <string name="SortByContacts">ترتیب بر اساس مخاطبین</string>
-    <string name="NekoXPushService">خدمات ارسال اعلان Nagram</string>
-    <string name="EnablePushAlert">لطفا خدمات ارسال اعلان NekoX را فعال کنید</string>
-    <string name="DisablePushAlert">لطفا خدمات ارسال اعلان NekoX را غیرفعال کنید</string>
+    <string name="NekoXPushService">خدمات ارسال اعلان Nooagram</string>
+    <string name="EnablePushAlert">لطفا خدمات ارسال اعلان Nooagram را فعال کنید</string>
+    <string name="DisablePushAlert">لطفا خدمات ارسال اعلان Nooagram را غیرفعال کنید</string>
     <string name="DisableUndo">غیرفعال کردن واگرد</string>
     <string name="DisableSystemAccount">غیرفعال کردن حساب سیستم</string>
     <string name="FilterMenu">منوی فیلتر گفتگوها</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Configuratie</string>
+    <string name="NekoSettings">Nooagram-Configuratie</string>
     <string name="IPv6">Verbinden via IPv6</string>
     <string name="MessageMenu">Bericht menu</string>
     <string name="HidePhone">Verberg mijn telefoonnummer</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Transparante statusbalk</string>
     <string name="EnableResidentNotification">Toon een melding in woning</string>
     <string name="DisableResidentNotification">Schakel melding resident uit</string>
-    <string name="NekogramRunning">Nekogram wordt uitgevoerd</string>
+    <string name="NekogramRunning">Nooagram wordt uitgevoerd</string>
     <string name="EventType">Sidebar icoon set</string>
     <string name="ChristmasHat">Toon santa hoed elke dag</string>
     <string name="ActionBarDecoration">Titelbalk decoratie</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Upload en download snelheid verbeteren</string>
     <string name="mapDriftingFixForGoogleMaps">Repareer het driften van Google Maps in China</string>
     <string name="useOSMDroidMap">Gebruik OSMDroid Kaart</string>
-    <string name="UnknownNekoSettingsOption">Er bestaat geen dergelijke optie voor N-Config</string>
+    <string name="UnknownNekoSettingsOption">Er bestaat geen dergelijke optie voor Nooagram Settings</string>
     <string name="PasscodeNeeded">Je moet eerst de toegangscode vergrendeling inschakelen</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Weergeven in N-Configuratie</string>
+    <string name="PasscodeShowInSettings">Weergeven in Nooagram-Configuratie</string>
     <string name="PasscodeShowInSettingsAbout">Na het verbergen kun je **ALLEEN** deze pagina openen via link:</string>
     <string name="PasscodeSet">Toegangscode instellen</string>
     <string name="PasscodeEdit">Toegangscode wijzigen</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Recente chats wissen</string>
     <string name="ClearRecentChatAlert">Wil je je recente gesprekken wissen?</string>
     <string name="CloudConfig">Cloud instellingen</string>
-    <string name="CloudConfigDesc">Sla je N-Config op in de Telegram-cloud.</string>
+    <string name="CloudConfigDesc">Sla je Nooagram Settings op in de Telegram-cloud.</string>
     <string name="CloudConfigSyncDate">Laatst gesynchroniseerd: %s, wolk: %s</string>
     <string name="CloudConfigSyncDateNever">Nooit</string>
     <string name="CloudConfigSync">Sync naar cloud</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">Herstellen</string>
     <string name="CloudConfigSyncing">Synchroniseren...</string>
     <string name="CloudConfigAutoSync">Automatisch synchroniseren</string>
-    <string name="CloudConfigAutoSyncDesc">Sync automatisch naar cloud na het wijzigen van de N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Sync automatisch naar cloud na het wijzigen van de Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Kan instellingen niet synchroniseren naar cloud.</string>
     <string name="CloudConfigRestoreFailed">Instellingen herstellen vanuit cloud mislukt.</string>
     <string name="CopyCallback">Callback gegevens kopiëren</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Bescherm deze QR-code met een wachtwoord</string>
     <string name="ConfirmNewPassword">Bevestig wachtwoord</string>
     <string name="PassQRAbout">Slaat je toegangscode op als een gecodeerde QR-code. Je kunt deze scannen om in te loggen op een ander apparaat.</string>
-    <string name="PassQREncryption">Scan met Nagram om in te loggen.</string>
+    <string name="PassQREncryption">Scan met Nooagram om in te loggen.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">Wachtwoord moet ten minste 8 tekens bevatten</string>
     <string name="PassQRPasswordWarning">Beveiligingswaarschuwing: dit wachtwoord is het enige dat je sleutel beschermt. Een zwak wachtwoord kan offline gescheurd worden, dus mix hoofdletters, kleine letters, cijfers en symbolen.</string>

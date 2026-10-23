@@ -29,6 +29,10 @@ bound view tags when row positions have changed. Import probes execute the
 confirmation callbacks and verify persistence before exactly one callback, typed values, cancellation,
 invalid input, and reserved characters after decoding. Filter-notification
 probes verify all activated accounts receive updates regardless of selection.
+The experimental-page probe executes the current page-rebuild method with both
+legacy hidden-feature values and channel-icon choices. All experimental options
+remain visible, the dependent channel-label row appears exactly once when needed,
+and rebuilding the page must not write any saved option or ghost-mode choice.
 
 Startup/logout ordering, row binding, chat event subscription, and the URI
 encoding/decoding API pairing are source checks. These do not simulate Android

@@ -442,7 +442,7 @@ public class NotificationsController extends BaseController implements Notificat
                         currentAccount, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
                 NotificationCompat.Builder builder = new NotificationCompat.Builder(ApplicationLoader.applicationContext, channelId)
                         .setSmallIcon(R.drawable.notification)
-                        .setContentTitle(LocaleController.getString(R.string.AppName))
+                        .setContentTitle(LocaleController.getString(R.string.NekoX))
                         .setContentText(message)
                         .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
                         .setCategory(NotificationCompat.CATEGORY_EVENT)
@@ -4438,7 +4438,7 @@ public class NotificationsController extends BaseController implements Notificat
                         name = LocaleController.getString(R.string.NotificationHiddenName);
                     }
                 } else {
-                    name = LocaleController.getString(R.string.AppName);
+                    name = LocaleController.getString(R.string.NekoX);
                 }
                 replace = false;
             } else {

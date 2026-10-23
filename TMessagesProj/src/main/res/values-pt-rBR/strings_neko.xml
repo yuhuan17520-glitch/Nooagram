@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="NekoSettings">N-Configuração</string>
+    <string name="NekoSettings">Nooagram-Configuração</string>
     <string name="IPv6">Conexão via IPv6</string>
     <string name="MessageMenu">Menu de mensagens</string>
     <string name="HidePhone">Ocultar meu número de telefone</string>
@@ -28,7 +28,7 @@
     <string name="TransparentStatusBar">Barra de status transparente</string>
     <string name="EnableResidentNotification">Exibir notificação persistente</string>
     <string name="DisableResidentNotification">Desativar notificação persistente</string>
-    <string name="NekogramRunning">Nekogram está em execução</string>
+    <string name="NekogramRunning">Nooagram está em execução</string>
     <string name="EventType">Pacote de ícones da barra lateral</string>
     <string name="ChristmasHat">Mostrar chapéu de papai noel todos os dias</string>
     <string name="ActionBarDecoration">Decoração da barra de título</string>
@@ -157,10 +157,10 @@
     <string name="enhancedFileLoader">Melhorar a velocidade de download</string>
     <string name="mapDriftingFixForGoogleMaps">Corrigir Google Maps derrapando na China</string>
     <string name="useOSMDroidMap">Usar Mapa OSMDroid</string>
-    <string name="UnknownNekoSettingsOption">Não existe tal opção de N-Config.</string>
+    <string name="UnknownNekoSettingsOption">Não existe tal opção de Nooagram Settings.</string>
     <string name="PasscodeNeeded">Você deve primeiro ativar o bloqueio de senha</string>
     <string name="PasscodeNeko">Passcode</string>
-    <string name="PasscodeShowInSettings">Mostrar em N-Config</string>
+    <string name="PasscodeShowInSettings">Mostrar em Nooagram Settings</string>
     <string name="PasscodeShowInSettingsAbout">Após se esconder, você pode **APENAS** abrir esta página por link:</string>
     <string name="PasscodeSet">Definir senha</string>
     <string name="PasscodeEdit">Alterar senha</string>
@@ -204,7 +204,7 @@
     <string name="ClearRecentChats">Limpar conversas recentes</string>
     <string name="ClearRecentChatAlert">Você quer limpar os seus bate-papos recentes?</string>
     <string name="CloudConfig">Configurações da Nuvem</string>
-    <string name="CloudConfigDesc">Salve sua N-Config na nuvem do Telegram.</string>
+    <string name="CloudConfigDesc">Salve sua Nooagram Settings na nuvem do Telegram.</string>
     <string name="CloudConfigSyncDate">Última sincronização: %s, cloud: %s</string>
     <string name="CloudConfigSyncDateNever">Nunca</string>
     <string name="CloudConfigSync">Sincronizar para a nuvem</string>
@@ -213,7 +213,7 @@
     <string name="CloudConfigRestoreShort">RESTAURAR</string>
     <string name="CloudConfigSyncing">Sincronizando...</string>
     <string name="CloudConfigAutoSync">Sincronização automática</string>
-    <string name="CloudConfigAutoSyncDesc">Sincronizar para a nuvem automaticamente após fazer alterações no N-Config.</string>
+    <string name="CloudConfigAutoSyncDesc">Sincronizar para a nuvem automaticamente após fazer alterações no Nooagram Settings.</string>
     <string name="CloudConfigSyncFailed">Falha ao sincronizar as configurações com a nuvem.</string>
     <string name="CloudConfigRestoreFailed">Falha ao restaurar as configurações da nuvem.</string>
     <string name="CopyCallback">Copiar Dados de Callback</string>
@@ -232,7 +232,7 @@
     <string name="PassQRNewPassword">Proteja este código QR com uma senha</string>
     <string name="ConfirmNewPassword">Confirmar senha</string>
     <string name="PassQRAbout">Salva sua senha como um código QR criptografado. Você pode digitalizá-la para fazer login em outro dispositivo.</string>
-    <string name="PassQREncryption">Escaneie com Nagrama para entrar.</string>
+    <string name="PassQREncryption">Escaneie com Nooagrama para entrar.</string>
     <string name="InvalidPassQr">Invalid Passkey QR</string>
     <string name="PassQRPasswordTooShort">A senha deve ter pelo menos 8 caracteres</string>
     <string name="PassQRPasswordWarning">Aviso de segurança: esta senha é a única coisa que protege a sua chave. Uma senha fraca pode ser quebrada off-line, então mistura maiúsculas, números e símbolos.</string>

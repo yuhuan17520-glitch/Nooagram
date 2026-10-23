@@ -64,7 +64,7 @@ jobs:
         run: java Tools/PrepareNooagramSigning.java
       - name: Run migration regressions
         if: matrix.abi == 'arm64-v8a'
-        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --no-daemon --max-workers=2
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --no-daemon --max-workers=2
       - name: Build production-signed candidate, never publish
         env:
           LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}

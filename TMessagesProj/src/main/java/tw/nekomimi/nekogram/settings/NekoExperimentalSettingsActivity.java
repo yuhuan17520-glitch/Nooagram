@@ -557,32 +557,8 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             cellGroup.rows.add(cellGroup.rows.indexOf(showChannelIconRow) + 1, customCustomChannelLabelRow);
         }
 
-        if (!NaConfig.INSTANCE.getShowHiddenFeature().Bool()) {
-            cellGroup.rows.remove(localPremiumRow);
-            cellGroup.rows.remove(localQuoteColorRow);
-            cellGroup.rows.remove(externalGhostModeRow);
-            cellGroup.rows.remove(enhancedFileLoaderRow);
-            cellGroup.rows.remove(disableFilteringRow);
-            cellGroup.rows.remove(unlimitedFavedStickersRow);
-            cellGroup.rows.remove(unlimitedPinnedDialogsRow);
-            cellGroup.rows.remove(enableStickerPinRow);
-
-            cellGroup.rows.remove(forceCopyRow);
-            cellGroup.rows.remove(disableFlagSecureRow);
-            cellGroup.rows.remove(hideSponsoredMessageRow);
-            cellGroup.rows.remove(ignoreBlockedRow);
-            cellGroup.rows.remove(regexFiltersEnabledRow);
-            cellGroup.rows.remove(regexFiltersEnableInChatsRow);
-            cellGroup.rows.remove(disableChatActionRow);
-            cellGroup.rows.remove(disableChoosingStickerRow);
-
-            cellGroup.rows.remove(headerStory);
-            cellGroup.rows.remove(disableStoriesRow);
-            cellGroup.rows.remove(disableSendReadStoriesRow);
-            cellGroup.rows.remove(dividerStory);
-
-            // Visibility must not reset choices also exposed by AyuMoments.
-        }
+        // Nooagram exposes experimental options without an unlock gesture.
+        // Keep each saved option unchanged when rebuilding the page.
 
         addRowsToMap();
     }
