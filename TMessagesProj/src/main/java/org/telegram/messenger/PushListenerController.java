@@ -1861,6 +1861,10 @@ public class PushListenerController {
     public static IPushListenerServiceProvider getProvider() {
         if (instance != null)
             return instance;
+        if (BuildConfig.MIGRATION_TEST_BUILD) {
+            instance = new DummyPushProvider();
+            return instance;
+        }
         switch (NaConfig.INSTANCE.getPushServiceType().Int()) {
             case 1:
             case 3: {

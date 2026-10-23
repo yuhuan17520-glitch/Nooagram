@@ -9,6 +9,7 @@
 package org.telegram.messenger;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 import static org.telegram.messenger.AndroidUtilities.find;
 import static org.telegram.messenger.AndroidUtilities.replaceTags;
 import static org.telegram.messenger.LocaleController.formatPluralSpannable;
@@ -248,6 +249,7 @@ public class MessageObject {
     public boolean isDateObject;
     public boolean isVideoConversionObject;
     public boolean isPlayingExplanationObject;
+    public boolean skipAyuFiltering;
     public TLObject photoThumbsObject;
     public TLObject photoThumbsObject2;
     public ArrayList<TLRPC.PhotoSize> photoThumbs;
@@ -660,8 +662,11 @@ public class MessageObject {
     }
 
     public boolean hasMediaSpoilers() {
-        if (NekoConfig.showSpoilersDirectly.Bool()) return false;
-        return !isRepostPreview && (messageOwner.media != null && messageOwner.media.spoiler || needDrawBluredPreview()) || isHiddenSensitive();
+        boolean maskMessage = AyuFilter.shouldMaskMessage(this, null);
+        boolean hasMaskableMedia = maskMessage && (messageOwner.media != null || needDrawBluredPreview() || isHiddenSensitive());
+        boolean hasNativeMediaSpoilers = (!isRepostPreview && ((messageOwner.media != null && messageOwner.media.spoiler) || needDrawBluredPreview())) || isHiddenSensitive();
+        if (NekoConfig.showSpoilersDirectly.Bool() && !hasMaskableMedia) return false;
+        return hasMaskableMedia || hasNativeMediaSpoilers;
     }
 
     public Boolean isSensitiveCached;
@@ -807,7 +812,7 @@ public class MessageObject {
         if (messageOwner.media != null && old.messageOwner.media != null) {
             messageOwner.media.storyItem = old.messageOwner.media.storyItem;
         }
-        if (isSpoilersRevealed && textLayoutBlocks != null) {
+        if (isSpoilersRevealed && !AyuFilter.shouldMaskMessage(this, null) && textLayoutBlocks != null) {
             for (TextLayoutBlock block : textLayoutBlocks) {
                 block.spoilers.clear();
             }
@@ -4328,6 +4333,12 @@ public class MessageObject {
 
     public boolean isSponsored() {
         return sponsoredId != null;
+    }
+
+    public boolean isTranslated() { return translated; }
+
+    public boolean isAyuDeleted() {
+        return messageOwner != null && messageOwner.ayuDeleted;
     }
 
     public long getPollId() {
@@ -8017,16 +8028,23 @@ public class MessageObject {
         if (text == null) {
             return false;
         }
+        boolean added;
         if (isRestrictedMessage || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaUnsupported) {
             ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
             TLRPC.TL_messageEntityItalic entityItalic = new TLRPC.TL_messageEntityItalic();
             entityItalic.offset = 0;
             entityItalic.length = text.length();
             entities.add(entityItalic);
-            return addEntitiesToText(text, entities, isOutOwner(), true, photoViewer, useManualParse);
+            added = addEntitiesToText(text, entities, isOutOwner(), true, photoViewer, useManualParse);
         } else {
-            return addEntitiesToText(text, getEntities(), isOutOwner(), true, photoViewer, useManualParse);
+            ArrayList<TLRPC.MessageEntity> entities = getEntities();
+            entities = AyuFilter.addSpoilerEntities(this, entities, text);
+            added = addEntitiesToText(text, entities, isOutOwner(), true, photoViewer, useManualParse);
         }
+        if (text instanceof Spannable spannable) {
+            AyuFilter.syncMaskMarkerSpan(spannable, this, null);
+        }
+        return added;
     }
 
     public void replaceEmojiToLottieFrame(CharSequence text, int[] emojiOnly) {
@@ -9184,7 +9202,7 @@ public class MessageObject {
             linesOffset += currentBlockLinesCount;
 
             block.spoilers.clear();
-            if (!isSpoilersRevealed && !spoiledLoginCode) {
+            if ((!isSpoilersRevealed || AyuFilter.shouldMaskMessage(this, null)) && !spoiledLoginCode) {
                 int right = linesMaxWidthWithLeft;
                 if (block.quote) {
                     right -= AndroidUtilities.dp(32);
@@ -9633,7 +9651,7 @@ public class MessageObject {
                 }
 
                 linesOffset += currentBlockLinesCount;
-                if (messageObject != null && !messageObject.isSpoilersRevealed && !messageObject.spoiledLoginCode) {
+                if (messageObject != null && (!messageObject.isSpoilersRevealed || AyuFilter.shouldMaskMessage(messageObject, null)) && !messageObject.spoiledLoginCode) {
                     int right = linesMaxWidthWithLeft;
                     if (block.quote) {
                         right -= AndroidUtilities.dp(32);
@@ -11731,9 +11749,9 @@ public class MessageObject {
     }
 
     public boolean canForwardMessage() {
-        if (isQuickReply()) return false;
+        if (isQuickReply() || isEphemeralAndNotWelcome()) return false;
         if (type == TYPE_GIFT_STARS || type == TYPE_GIFT_THEME_UPDATE || type == TYPE_SUGGEST_BIRTHDAY || type == TYPE_GIFT_OFFER || type == TYPE_SHARING_OFFER || type == TYPE_COMMUNITY_CHANGED) return false;
-        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !messageOwner.noforwards;
+        return !(messageOwner instanceof TLRPC.TL_message_secret) && !needDrawBluredPreview() && !isLiveLocation() && type != MessageObject.TYPE_PHONE_CALL && !isSponsored() && !messageOwner.noforwards && !isAyuDeleted();
     }
 
     public boolean canEditMedia() {
@@ -11870,7 +11888,7 @@ public class MessageObject {
     public boolean canDeleteMessage(boolean inScheduleMode, TLRPC.Chat chat) {
         return (
             isStory() && messageOwner != null && messageOwner.dialog_id == UserConfig.getInstance(currentAccount).getClientUserId() ||
-            eventId == 0 && sponsoredId == null && canDeleteMessage(currentAccount, inScheduleMode, messageOwner, chat) || isEphemeral()
+            eventId == 0 && sponsoredId == null && canDeleteMessage(currentAccount, inScheduleMode, messageOwner, chat) || isEphemeral() || isAyuDeleted()
         );
     }
 

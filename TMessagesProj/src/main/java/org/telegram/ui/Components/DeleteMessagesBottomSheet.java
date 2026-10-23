@@ -1,6 +1,7 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import com.radolyn.ayugram.utils.AyuState;
 import static org.telegram.messenger.LocaleController.formatPluralString;
 import static org.telegram.messenger.LocaleController.formatString;
 import static org.telegram.messenger.LocaleController.getString;
@@ -1293,9 +1294,15 @@ public class DeleteMessagesBottomSheet extends BottomSheetWithRecyclerListView {
             }
         } else {
             if (!supergroupMessageIds.isEmpty()) {
+                for (int i = 0; i < supergroupMessageIds.size(); i++) {
+                    AyuState.permitDeleteMessage(-inChat.id, supergroupMessageIds.get(i));
+                }
                 MessagesController.getInstance(currentAccount).deleteMessages(supergroupMessageIds, null, null, -inChat.id, topicId, false, mode);
             }
             if (!groupMessageIds.isEmpty()) {
+                for (int i = 0; i < groupMessageIds.size(); i++) {
+                    AyuState.permitDeleteMessage(mergeDialogId, groupMessageIds.get(i));
+                }
                 MessagesController.getInstance(currentAccount).deleteMessages(groupMessageIds, null, null, mergeDialogId, topicId, true, mode);
             }
         }
@@ -1324,6 +1331,7 @@ public class DeleteMessagesBottomSheet extends BottomSheetWithRecyclerListView {
         report.forEachSelected((participant, i) -> {
             final ArrayList<Integer> ids = messages.stream()
                     .filter(msg -> msg.messageOwner.peer_id != null && msg.messageOwner.peer_id.chat_id != -mergeDialogId)
+                    .filter(msg -> !msg.isAyuDeleted())
                     .filter(msg -> {
                         if (participant instanceof TLRPC.User) {
                             return msg.messageOwner.from_id.user_id == ((TLRPC.User) participant).id;

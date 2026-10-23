@@ -1,6 +1,7 @@
 package org.telegram.ui.Stories;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Stories.StoriesController.STATE_UNREAD;
@@ -1432,7 +1433,13 @@ public class StoriesUtilities {
                 if (parent instanceof RecyclerView) {
                     placeProvider = StoriesListPlaceProvider.of((RecyclerListView) parent);
                 }
-                fragment.getOrCreateStoryViewer().open(fragment.getContext(), dialogId, placeProvider);
+                final StoriesListPlaceProvider finalPlaceProvider = placeProvider;
+                int account = UserConfig.selectedAccount;
+                Runnable proceed = () -> fragment.getOrCreateStoryViewer().open(fragment.getContext(), dialogId, finalPlaceProvider);
+                if (com.radolyn.ayugram.utils.AyuGhostUtils.maybeSuggestGhostBeforeStory(fragment.getContext(), account, dialogId, proceed)) {
+                    return;
+                }
+                proceed.run();
             }
         }
 

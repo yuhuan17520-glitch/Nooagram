@@ -9,6 +9,9 @@
 package org.telegram.messenger;
 
 import static org.telegram.ui.PhotoViewer.getTempFileAbsolutePath;
+import com.radolyn.ayugram.AyuConstants;
+
+import com.radolyn.ayugram.utils.AyuMediaFolders;
 
 import android.Manifest;
 import android.animation.Animator;
@@ -3856,6 +3859,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             if (exists) {
                 if (!messageObject.mediaExists && cacheFile != file) {
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(NotificationCenter.fileLoaded, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
+                    if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && messageObject.isAyuDeleted()) {
+                        AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
+                    }
                 }
                 videoPlayer.preparePlayer(Uri.fromFile(cacheFile), "other");
             } else {
@@ -3954,6 +3960,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 if (exists) {
                     if (!messageObject.mediaExists && cacheFile != file) {
                         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(NotificationCenter.fileLoaded, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
+                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && messageObject.isAyuDeleted()) {
+                            AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(messageObject.currentAccount).postNotificationName(AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION, FileLoader.getAttachFileName(messageObject.getDocument()), cacheFile));
+                        }
                     }
                     audioPlayer.preparePlayer(Uri.fromFile(cacheFile), "other");
                     isStreamingCurrentAudio = false;
@@ -5141,7 +5150,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                                 FileLog.d("saving file: correcting path from " + path + " to " + (sourceFile == null ? null : sourceFile.getAbsolutePath()));
                             }
                             if (sourceFile != null && sourceFile.exists()) {
-                                saveFileInternal(isMusic ? 3 : 2, sourceFile, name);
+                                saveFileInternal(isMusic ? 3 : 2, sourceFile, name, message);
                                 copiedFiles++;
                             }
                         }
@@ -5152,7 +5161,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         } else {
                             dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                         }
-                        dir.mkdir();
+                        final File baseDir = dir;
                         for (int b = 0, N = messageObjects.size(); b < N; b++) {
                             MessageObject message = messageObjects.get(b);
                             if (processLivePhotoMessage(message)) {
@@ -5163,6 +5172,8 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                                 document = message.qualityToSave;
                             }
                             String name = FileLoader.getDocumentFileName(document);
+                            dir = new File(baseDir, AyuMediaFolders.getFolderName(message));
+                            dir.mkdirs();
                             File destFile = new File(dir, name);
                             if (destFile.exists()) {
                                 int idx = name.lastIndexOf('.');
@@ -5303,7 +5314,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
             if (Build.VERSION.SDK_INT >= 29) {
                 final ContentValues cv = new ContentValues();
                 final Uri uriToInsert = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                final File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, "Telegram");
+                final File dirDest = new File(Environment.DIRECTORY_DOWNLOADS, AyuMediaFolders.getFolderName(messageObject));
                 cv.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                 cv.put(MediaStore.Downloads.DISPLAY_NAME, filename);
                 cv.put(MediaStore.MediaColumns.MIME_TYPE, outputMime);
@@ -5325,7 +5336,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     }
                 }
             } else {
-                final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Telegram");
+                final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), AyuMediaFolders.getFolderName(messageObject));
                 destDir.mkdirs();
                 File destFile = new File(destDir, filename);
                 if (!destFile.exists()) {
@@ -5467,6 +5478,10 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public static void saveFile(String fullPath, Context context, final int type, final String name, final String mime, final Utilities.Callback<Uri> onSaved, boolean showProgress) {
+        saveFile(fullPath, context, type, name, mime, onSaved, showProgress, null);
+    }
+
+    public static void saveFile(String fullPath, Context context, final int type, final String name, final String mime, final Utilities.Callback<Uri> onSaved, boolean showProgress, MessageObject selectedObject) {
         if (fullPath == null || context == null) {
             return;
         }
@@ -5489,7 +5504,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
 
             int notificationId = SaveToDownloadReceiver.createNotificationId();
             final boolean[] finished = new boolean[1];
-            if (context != null && type != 0) {
+            if (showProgress && context != null && type != 0) {
                 try {
                     final AlertDialog dialog = new AlertDialog(context, AlertDialog.ALERT_TYPE_LOADING);
                     dialog.setMessage(LocaleController.getString(R.string.Loading));
@@ -5510,9 +5525,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 try {
                     Uri uri;
                     boolean result = true;
-                    final String folderName = NekoConfig.customSavePath.String();
+                    final String folderName = AyuMediaFolders.getFolderName(selectedObject);
                     if (Build.VERSION.SDK_INT >= 29) {
-                        uri = saveFileInternal(type, sourceFile, name);
+                        uri = saveFileInternal(type, sourceFile, name, selectedObject);
                         result = uri != null;
                     } else {
                         File destFile;
@@ -5618,13 +5633,17 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     public static void saveFile(String fullPath, String liveVideoPath, Context context, final Utilities.Callback<Uri> onSaved) {
+        saveFile(fullPath, liveVideoPath, context, onSaved, null);
+    }
+
+    public static void saveFile(String fullPath, String liveVideoPath, Context context, final Utilities.Callback<Uri> onSaved, MessageObject selectedObject) {
         if (TextUtils.isEmpty(fullPath) || TextUtils.isEmpty(liveVideoPath) || context == null) {
             return;
         }
         final File photoFile = new File(fullPath);
         final File videoFile = new File(liveVideoPath);
         if (!photoFile.exists() || !videoFile.exists()) {
-            saveFile(fullPath, context, 0, null, null, onSaved);
+            saveFile(fullPath, context, 0, null, null, onSaved, true, selectedObject);
             return;
         }
         if (AndroidUtilities.isInternalUri(Uri.fromFile(photoFile)) || AndroidUtilities.isInternalUri(Uri.fromFile(videoFile))) {
@@ -5659,7 +5678,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     final String filename = AndroidUtilities.generateFileName(0, "jpg");
                     final ContentValues cv = new ContentValues();
                     final Uri uriToInsert = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
-                    final File dirDest = new File(Environment.DIRECTORY_PICTURES, "Telegram");
+                    final File dirDest = new File(Environment.DIRECTORY_PICTURES, AyuMediaFolders.getFolderName(selectedObject));
                     cv.put(MediaStore.MediaColumns.RELATIVE_PATH, dirDest + File.separator);
                     cv.put(MediaStore.Images.Media.DISPLAY_NAME, filename);
                     cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
@@ -5681,7 +5700,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                         }
                     }
                 } else {
-                    final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "Telegram");
+                    final File destDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), AyuMediaFolders.getFolderName(selectedObject));
                     destDir.mkdirs();
                     File destFile = new File(destDir, AndroidUtilities.generateFileName(0, "jpg"));
                     if (!destFile.exists()) {
@@ -5790,7 +5809,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     @RequiresApi(api = Build.VERSION_CODES.Q)
-    private static Uri saveFileInternal(int type, File sourceFile, String filename) {
+    private static Uri saveFileInternal(int type, File sourceFile, String filename, MessageObject selectedObject) {
         try {
             int selectedType = type;
             ContentValues contentValues = new ContentValues();
@@ -5808,7 +5827,7 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                     selectedType = 1;
                 }
             }
-            final String folderName = NekoConfig.customSavePath.String();
+            final String folderName = AyuMediaFolders.getFolderName(selectedObject);
             if (selectedType == 0) {
                 if (filename == null) {
                     filename = AndroidUtilities.generateFileName(0, extension);

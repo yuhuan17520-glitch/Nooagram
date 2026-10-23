@@ -9,6 +9,7 @@
 package org.telegram.messenger;
 
 import android.annotation.TargetApi;
+import com.radolyn.ayugram.AyuConstants;
 import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -1690,6 +1691,16 @@ public class ImageLoader {
 
         private void onPostExecute(final Drawable drawable) {
             AndroidUtilities.runOnUIThread(() -> {
+                // save deleted media from cache
+                if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && cacheImage.finalFilePath != null && cacheImage.parentObject instanceof MessageObject messageObject) {
+                    if (messageObject.isAyuDeleted()) {
+                        String fileName = cacheImage.finalFilePath.getName();
+                        if (fileName.endsWith(".jpg") || fileName.endsWith(".mp4")) {
+                            NotificationCenter.getInstance(cacheImage.currentAccount).postNotificationName(AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION, fileName, cacheImage.finalFilePath);
+                        }
+                    }
+                }
+
                 Drawable toSet = null;
                 String decrementKey = null;
                 if (drawable instanceof RLottieDrawable) {
@@ -2217,12 +2228,14 @@ public class ImageLoader {
                 public void fileDidLoaded(final String location, final File finalFile, Object parentObject, final int type) {
                     fileProgresses.remove(location);
                     AndroidUtilities.runOnUIThread(() -> {
+                        boolean ayuDeleted = false;
                         if (finalFile != null && (location.endsWith(".mp4") || location.endsWith(".jpg"))) {
                             FilePathDatabase.FileMeta meta = FileLoader.getFileMetadataFromParent(currentAccount, parentObject);
                             if (meta != null) {
                                 MessageObject messageObject = null;
                                 if (parentObject instanceof MessageObject) {
                                     messageObject = (MessageObject) parentObject;
+                                    ayuDeleted = messageObject.isAyuDeleted();
                                 }
                                 long dialogId = meta.dialogId;
                                 int flag;
@@ -2241,6 +2254,9 @@ public class ImageLoader {
                             }
                         }
                         NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.fileLoaded, location, finalFile);
+                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && ayuDeleted) {
+                            NotificationCenter.getInstance(currentAccount).postNotificationName(AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION, location, finalFile);
+                        }
                         ImageLoader.this.fileDidLoaded(location, finalFile, type);
                     });
                 }

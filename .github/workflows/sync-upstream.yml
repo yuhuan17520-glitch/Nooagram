@@ -1,0 +1,29 @@
+name: Propose Nagram stable updates
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+concurrency:
+  group: nooagram-nagram-sync
+  cancel-in-progress: false
+jobs:
+  propose:
+    # Opt in only after promoting the migration. Never rewrite or publish ayu automatically.
+    if: github.repository == 'yuhuan17520-glitch/Nooagram' && vars.NOOAGRAM_NAGRAM_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ayu
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Propose stable main on an isolated review branch
+        run: bash Tools/propose-nagram-update.sh

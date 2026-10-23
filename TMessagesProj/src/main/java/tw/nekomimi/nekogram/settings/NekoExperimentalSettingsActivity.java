@@ -77,7 +77,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             null, null,
             (input) -> input.isEmpty() ? (String) NaConfig.INSTANCE.getCustomChannelLabel().defaultValue : input));
     private final AbstractConfigCell externalGhostModeRow = cellGroup.appendCell(new ConfigCellText("GhostMode", () -> {
-        presentFragment(new NekoGhostModeActivity());
+        presentFragment(new com.radolyn.ayugram.settings.GhostModeActivity());
     }));
 
 //    private final AbstractConfigCell smoothKeyboardRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.smoothKeyboard));
@@ -115,8 +115,8 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
     private final AbstractConfigCell hideProxySponsorChannelRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.hideProxySponsorChannel));
     private final AbstractConfigCell hideSponsoredMessageRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.hideSponsoredMessage));
     private final AbstractConfigCell ignoreBlockedRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.ignoreBlocked, LocaleController.getString("IgnoreBlockedAbout")));
-    private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getRegexFiltersEnabled()));
-    private final AbstractConfigCell regexFiltersEnableInChatsRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getRegexFiltersEnableInChats()));
+    private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellTextCheck(com.radolyn.ayugram.AyuOptions.regexFiltersEnabled));
+    private final AbstractConfigCell regexFiltersEnableInChatsRow = cellGroup.appendCell(new ConfigCellTextCheck(com.radolyn.ayugram.AyuOptions.regexFiltersEnableInChats));
     private final AbstractConfigCell disableChatActionRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableChatAction));
     private final AbstractConfigCell disableChoosingStickerRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableChoosingSticker));
     private final AbstractConfigCell openUrlOutBotWebViewRegexRow = cellGroup.appendCell(new ConfigCellTextInput(null, NaConfig.INSTANCE.getOpenUrlOutBotWebViewRegex(),
@@ -222,7 +222,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             AbstractConfigCell a = cellGroup.rows.get(position);
             if (a instanceof ConfigCellTextCheck) {
                 if (position == cellGroup.rows.indexOf(regexFiltersEnabledRow) && (LocaleController.isRTL && x > AndroidUtilities.dp(76) || !LocaleController.isRTL && x < (view.getMeasuredWidth() - AndroidUtilities.dp(76)))) {
-                    presentFragment(new RegexFiltersSettingActivity());
+                    presentFragment(new tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity());
                     return;
                 }
                 ((ConfigCellTextCheck) a).onClick((TextCheckCell) view);
@@ -588,7 +588,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             NekoXConfig.disableFlagSecure = false;
             NekoConfig.hideSponsoredMessage.setConfigBool(false);
             NekoConfig.ignoreBlocked.setConfigBool(false);
-            NaConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(false);
+            com.radolyn.ayugram.AyuConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(false);
             NekoConfig.disableChatAction.setConfigBool(false);
             NekoConfig.disableChoosingSticker.setConfigBool(false);
             NaConfig.INSTANCE.getDisableSendReadStories().setConfigBool(false);

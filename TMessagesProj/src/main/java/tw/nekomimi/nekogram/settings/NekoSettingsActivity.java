@@ -62,6 +62,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
     private int generalRow;
     private int accountRow;
     private int chatRow;
+    private int ayuMomentsRow;
     private int passcodeRow;
     private int experimentRow;
     private int debugRow;
@@ -101,6 +102,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
             presentFragment(new NekoAccountSettingsActivity());
         } else if (position == chatRow) {
             presentFragment(new NekoChatSettingsActivity());
+        } else if (position == ayuMomentsRow) {
+            presentFragment(new com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity());
         } else if (position == passcodeRow) {
             presentFragment(new NekoPasscodeSettingsActivity());
         } else if (position == experimentRow) {
@@ -162,6 +165,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
         generalRow = addRow("general");
         accountRow = addRow("account");
         chatRow = addRow("chat");
+        ayuMomentsRow = addRow("ayumoments");
         if (!PasscodeHelper.isSettingsHidden()) {
             passcodeRow = addRow("passcode");
         } else {
@@ -238,6 +242,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.Account), R.drawable.msg_contacts, divider);
                     } else if (position == chatRow) {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.Chat), R.drawable.msg_discussion, divider);
+                    } else if (position == ayuMomentsRow) {
+                        textCell.setTextAndIcon(LocaleController.getString(R.string.AyuMoments), R.drawable.msg2_reactions2, divider);
                     } else if (position == passcodeRow) {
                         textCell.setTextAndIcon(LocaleController.getString(R.string.PasscodeNeko), R.drawable.msg_secret, divider);
                     } else if (position == experimentRow) {

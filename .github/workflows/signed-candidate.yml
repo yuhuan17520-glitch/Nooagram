@@ -1,0 +1,86 @@
+name: Nooagram signed release candidate
+on:
+  push:
+    branches: [nooagram-nagram-migration]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nooagram-signed-candidate-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'yuhuan17520-glitch/Nooagram' && github.ref == 'refs/heads/nooagram-nagram-migration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86_64]
+    env:
+      COMPILE_NATIVE: '1'
+      NOOAGRAM_SIGNED_CANDIDATE: '1'
+      NATIVE_TARGET: ${{ matrix.abi }}
+      NOOAGRAM_VERSION_CODE: '125001000'
+      NOOAGRAM_VERSION_NAME: '1.3.0-13.0.2.n1255+125001000'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;36.0.0 platforms;android-36 ndk;27.2.12479018 cmake;3.22.1'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare pinned native sources
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nasm
+          chmod +x gradlew
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cd TMessagesProj/jni
+          git -C tgcalls apply --check ../patches/tgcalls-0001-feat-custom-group-voip-audio-bitrate.patch
+          git -C tgcalls apply ../patches/tgcalls-0001-feat-custom-group-voip-audio-bitrate.patch
+      - name: Validate metadata (public release remains guarded)
+        shell: pwsh
+        run: ./Tools/check-nagram-migration.ps1
+      - name: Prepare protected signing in runner temporary directory
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+          NOOAGRAM_KEYSTORE_BASE64: ${{ secrets.NOOAGRAM_KEYSTORE_BASE64 }}
+        run: java Tools/PrepareNooagramSigning.java
+      - name: Run migration regressions
+        if: matrix.abi == 'arm64-v8a'
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --no-daemon --max-workers=2
+      - name: Build production-signed candidate, never publish
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+        run: ./gradlew :TMessagesProj:assembleCandidate --no-daemon --max-workers=2 -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g'
+      - name: Verify APK signature and signer-bound native library
+        shell: pwsh
+        run: |
+          $apks = @(Get-ChildItem TMessagesProj/build/outputs/apk/candidate/*.apk)
+          if ($apks.Count -ne 1) { throw 'Expected one candidate APK per ABI' }
+          ./Tools/check-migration-native-signer.ps1 -Apk $apks[0].FullName -AndroidSdk $env:ANDROID_HOME
+          node Tools/check-ayu-release-dex.cjs TMessagesProj/build/intermediates/dex/candidate/minifyCandidateWithR8
+          Get-FileHash $apks[0].FullName -Algorithm SHA256 | Format-List
+      - name: Remove signing material
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/nooagram-candidate.keystore"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-candidate-${{ matrix.abi }}-${{ github.sha }}
+          path: |
+            TMessagesProj/build/outputs/apk/candidate/*.apk
+            TMessagesProj/build/outputs/apk/candidate/output-metadata.json
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.abi == 'arm64-v8a'
+        with:
+          name: candidate-unit-test-reports
+          path: TMessagesProj/build/reports/tests/

@@ -9,6 +9,16 @@
 package org.telegram.messenger;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import tw.nekomimi.nekogram.filters.AyuFilter;
+import com.radolyn.ayugram.AyuConstants;
+import com.radolyn.ayugram.messages.AyuSavePreferences;
+import com.radolyn.ayugram.messages.AyuMessagesController;
+import com.radolyn.ayugram.proprietary.AyuHistoryHook;
+import com.radolyn.ayugram.proprietary.AyuHistoryPagination;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
+import com.radolyn.ayugram.utils.AyuMessageKey;
+import com.radolyn.ayugram.utils.AyuState;
+import com.radolyn.ayugram.utils.LastSeenHelper;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.messenger.NotificationsController.TYPE_CHANNEL;
 import static org.telegram.messenger.NotificationsController.TYPE_PRIVATE;
@@ -8420,7 +8430,8 @@ public class MessagesController extends BaseController implements NotificationCe
                         if (checkViewer && viewerObject != null && viewerObject.currentAccount == currentAccount && viewerObject.getDialogId() == dialogId && mids.contains(viewerObject.getId())) {
                             final int id = viewerObject.getId();
                             mids.remove((Integer) id);
-                            viewerObject.forceExpired = true;
+                            // don't render the message as expired when deleted-message saving is on
+                            viewerObject.forceExpired = !AyuSavePreferences.shouldKeepMediaFor(currentAccount, dialogId, viewerObject);
                             final long taskId = createDeleteShowOnceTask(dialogId, id);
                             SecretMediaViewer.getInstance().setOnClose(() -> doDeleteShowOnceTask(taskId, dialogId, id));
                             getNotificationCenter().postNotificationName(NotificationCenter.updateMessageMedia, viewerObject.messageOwner);
@@ -9466,6 +9477,90 @@ public class MessagesController extends BaseController implements NotificationCe
         }
     }
 
+    /**
+     * 删除归档前的多来源消息查找。
+     *
+     * <p>只查主消息表会漏掉"消息还在内存 / 通知 / 当前聊天界面，但没进 messages_v2"的情况
+     * （评论加载就是典型）。
+     *
+     * @param dialogId 会话 id；传 0 表示只有消息 id（撤回更新里常见）
+     */
+    public MessageObject getExistingMessageInAnyWay(Long dialogId, Integer messageId) {
+        if (dialogId == null || messageId == null) {
+            return null;
+        }
+        long did = dialogId;
+        int mid = messageId;
+        MessageObject messageObject = null;
+        try {
+            if (did == 0) {
+                messageObject = dialogMessagesByIds.get(mid);
+                if (!AyuMessageUtils.matchesDeletionMessage(currentAccount, did, mid, messageObject)) {
+                    messageObject = null;
+                }
+            } else {
+                ArrayList<MessageObject> list = dialogMessage.get(did);
+                if (list != null) {
+                    for (int i = 0; i < list.size(); i++) {
+                        MessageObject obj = list.get(i);
+                        if (AyuMessageUtils.matchesDeletionMessage(currentAccount, did, mid, obj)) {
+                            messageObject = obj;
+                            break;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+        if (messageObject == null) {
+            try {
+                TLRPC.Message message = getMessagesStorage().getMessageLegit(did, mid);
+                if (message != null) {
+                    messageObject = new MessageObject(currentAccount, message, false, false);
+                    if (!AyuMessageUtils.matchesDeletionMessage(currentAccount, did, mid, messageObject)) {
+                        messageObject = null;
+                    }
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+        }
+        if (messageObject == null) {
+            try {
+                messageObject = getNotificationsController().findPushedOrPopupMessage(did, mid);
+                if (!AyuMessageUtils.matchesDeletionMessage(currentAccount, did, mid, messageObject)) {
+                    messageObject = null;
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+        }
+        if (messageObject == null) {
+            try {
+                BaseFragment lastFragment = LaunchActivity.getLastFragment();
+                if (lastFragment instanceof ChatActivity && lastFragment.getCurrentAccount() == currentAccount) {
+                    ChatActivity chatActivity = (ChatActivity) lastFragment;
+                    if (chatActivity.getDialogId() == did || did == 0) {
+                        ArrayList<MessageObject> list = new ArrayList<>(chatActivity.messages);
+                        if (list != null) {
+                            for (int i = 0; i < list.size(); i++) {
+                                MessageObject obj = list.get(i);
+                                if (AyuMessageUtils.matchesDeletionMessage(currentAccount, did, mid, obj)) {
+                                    messageObject = obj;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+        }
+        return messageObject;
+    }
+
     public void deleteMessages(ArrayList<Integer> messages, ArrayList<Long> randoms, TLRPC.EncryptedChat encryptedChat, long dialogId, int topicId, boolean forAll, int mode) {
         deleteMessages(messages, randoms, encryptedChat, dialogId, forAll, mode, false, 0, null, topicId);
     }
@@ -9485,6 +9580,62 @@ public class MessagesController extends BaseController implements NotificationCe
         if ((messages == null || messages.isEmpty()) && taskId == 0) {
             return;
         }
+
+        // --- AyuGram hook
+        int ayuDeletedMessagesCount = 0;
+        if (!scheduled && !quickReplies && com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && messages != null && !messages.isEmpty()) {
+            var ayuMessagesController = AyuMessagesController.getInstance();
+            final ArrayList<Integer> messagesCopy = new ArrayList<>(messages);
+            final long dialogIdFinal = dialogId;
+            final ArrayList<Integer> permittedForAyuDeletion = new ArrayList<>();
+            final ArrayList<Integer> toSaveIds = new ArrayList<>();
+            for (var msgId : messagesCopy) {
+                if (AyuState.isDeletePermitted(dialogIdFinal, msgId)) {
+                    permittedForAyuDeletion.add(msgId);
+                } else {
+                    toSaveIds.add(msgId);
+                }
+            }
+            if (!toSaveIds.isEmpty()) {
+                // 先批量读主消息表；没命中的再走"多来源"查找（内存索引 / 通知 / 当前聊天界面），
+                // 否则未写入 messages_v2 的评论等消息会漏存
+                LongSparseArray<TLRPC.Message> resolvedMessages = new LongSparseArray<>();
+                ArrayList<TLRPC.Message> batch = com.radolyn.ayugram.helpers.AyuMessageHelper.getInstance(currentAccount).getMessagesStorageMessages(dialogIdFinal, toSaveIds);
+                if (batch != null) {
+                    for (TLRPC.Message msg : batch) {
+                        if (msg != null) {
+                            resolvedMessages.put(msg.id, msg);
+                        }
+                    }
+                }
+                ArrayList<TLRPC.Message> toArchive = new ArrayList<>();
+                for (var msgId : toSaveIds) {
+                    TLRPC.Message msg = resolvedMessages.get(msgId);
+                    if (msg == null) {
+                        MessageObject obj = getExistingMessageInAnyWay(dialogIdFinal, msgId);
+                        if (obj != null) {
+                            msg = obj.messageOwner;
+                        }
+                    }
+                    if (msg != null) {
+                        toArchive.add(msg);
+                    }
+                }
+                if (!toArchive.isEmpty()) {
+                    ayuMessagesController.saveCollectedMessages(currentAccount, dialogIdFinal, toArchive);
+                }
+            }
+            if (!permittedForAyuDeletion.isEmpty()) {
+                var userId = UserConfig.getInstance(currentAccount).clientUserId;
+                var existingMessageIds = ayuMessagesController.getExistingMessageIds(userId, dialogId, permittedForAyuDeletion);
+                if (!existingMessageIds.isEmpty()) {
+                    Utilities.globalQueue.postRunnable(() -> ayuMessagesController.deleteMessages(userId, dialogId, existingMessageIds));
+                    ayuDeletedMessagesCount = existingMessageIds.size();
+                }
+            }
+        }
+        // --- AyuGram hook
+
         ArrayList<Integer> toSend = null;
         long channelId;
         if (taskId == 0) {
@@ -9539,190 +9690,142 @@ public class MessagesController extends BaseController implements NotificationCe
             return;
         }
 
+       // nax: do not send request if deleting ayuDeleted messages
+        if (messages != null && messages.size() == ayuDeletedMessagesCount) {
+            return;
+        }
+
         long newTaskId;
         if (scheduled) {
             TLRPC.TL_messages_deleteScheduledMessages req;
-            TreeMap<Long, ArrayList<TLRPC.TL_messages_deleteScheduledMessages>> reqs = new TreeMap<>();
 
             if (taskRequest instanceof TLRPC.TL_messages_deleteScheduledMessages) {
-                if (!reqs.containsKey(taskId)) reqs.put(taskId, new ArrayList<>());
-                reqs.get(taskId).add((TLRPC.TL_messages_deleteScheduledMessages) taskRequest);
+                req = (TLRPC.TL_messages_deleteScheduledMessages) taskRequest;
+                newTaskId = taskId;
             } else {
-                ArrayList<ArrayList<Integer>> subIds = sliceThatBitch(toSend, 100);
-                for (ArrayList<Integer> ids : subIds) {
-                    req = new TLRPC.TL_messages_deleteScheduledMessages();
-                    req.id = ids;
-                    req.peer = getInputPeer(dialogId);
+                req = new TLRPC.TL_messages_deleteScheduledMessages();
+                req.id = toSend;
+                req.peer = getInputPeer(dialogId);
 
-                    NativeByteBuffer data = null;
-                    try {
-                        data = new NativeByteBuffer(12 + req.getObjectSize());
-                        data.writeInt32(24);
-                        data.writeInt64(dialogId);
-                        req.serializeToStream(data);
-                    } catch (Exception e) {
-                        FileLog.e(e);
-                    }
-                    newTaskId = getMessagesStorage().createPendingTask(data);
-                    if (!reqs.containsKey(newTaskId)) reqs.put(newTaskId, new ArrayList<>());
-                    reqs.get(newTaskId).add(req);
+                NativeByteBuffer data = null;
+                try {
+                    data = new NativeByteBuffer(12 + req.getObjectSize());
+                    data.writeInt32(24);
+                    data.writeInt64(dialogId);
+                    req.serializeToStream(data);
+                } catch (Exception e) {
+                    FileLog.e(e);
                 }
+                newTaskId = getMessagesStorage().createPendingTask(data);
             }
 
-            for (Map.Entry<Long, ArrayList<TLRPC.TL_messages_deleteScheduledMessages>> m : reqs.entrySet()) {
-                for (TLRPC.TL_messages_deleteScheduledMessages d : m.getValue()) {
-                    getConnectionsManager().sendRequest(d, (response, error) -> {
-                        if (error == null) {
-                            TLRPC.Updates updates = (TLRPC.Updates) response;
-                            processUpdates(updates, false);
-                        }
-                        if (m.getKey() != 0) {
-                            getMessagesStorage().removePendingTask(m.getKey());
-                        }
-                    });
+            getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error == null) {
+                    TLRPC.Updates updates = (TLRPC.Updates) response;
+                    processUpdates(updates, false);
                 }
-            }
+                if (newTaskId != 0) {
+                    getMessagesStorage().removePendingTask(newTaskId);
+                }
+            });
         } else if (quickReplies) {
             TLRPC.TL_messages_deleteQuickReplyMessages req;
-            TreeMap<Long, ArrayList<TLRPC.TL_messages_deleteQuickReplyMessages>> reqs = new TreeMap<>();
             if (taskRequest instanceof TLRPC.TL_messages_deleteQuickReplyMessages) {
                 req = (TLRPC.TL_messages_deleteQuickReplyMessages) taskRequest;
                 newTaskId = taskId;
             } else {
-                ArrayList<ArrayList<Integer>> subIds = sliceThatBitch(toSend, 100);
-                for (ArrayList<Integer> ids : subIds) {
-                    req = new TLRPC.TL_messages_deleteQuickReplyMessages();
-                    req.id = ids;
-                    req.shortcut_id = topicId;
+                req = new TLRPC.TL_messages_deleteQuickReplyMessages();
+                req.id = toSend;
+                req.shortcut_id = topicId;
 
-                    NativeByteBuffer data = null;
-                    try {
-                        data = new NativeByteBuffer(4 + 8 + 4 + req.getObjectSize());
-                        data.writeInt32(103);
-                        data.writeInt64(dialogId);
-                        data.writeInt32(topicId);
-                        req.serializeToStream(data);
-                    } catch (Exception e) {
-                        FileLog.e(e);
-                    }
-                    newTaskId = getMessagesStorage().createPendingTask(data);
-                    if (!reqs.containsKey(newTaskId)) reqs.put(newTaskId, new ArrayList<>());
-                    reqs.get(newTaskId).add(req);
+                NativeByteBuffer data = null;
+                try {
+                    data = new NativeByteBuffer(4 + 8 + 4 + req.getObjectSize());
+                    data.writeInt32(103);
+                    data.writeInt64(dialogId);
+                    data.writeInt32(topicId);
+                    req.serializeToStream(data);
+                } catch (Exception e) {
+                    FileLog.e(e);
                 }
+                newTaskId = getMessagesStorage().createPendingTask(data);
             }
 
-            for (Map.Entry<Long, ArrayList<TLRPC.TL_messages_deleteQuickReplyMessages>> m : reqs.entrySet()) {
-                for (TLRPC.TL_messages_deleteQuickReplyMessages d : m.getValue()) {
-                    getConnectionsManager().sendRequest(d, (response, error) -> {
-                        if (error == null) {
-                            TLRPC.Updates updates = (TLRPC.Updates) response;
-                            processUpdates(updates, false);
-                        }
-                        if (m.getKey() != 0) {
-                            getMessagesStorage().removePendingTask(m.getKey());
-                        }
-                    });
+            getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error == null) {
+                    TLRPC.Updates updates = (TLRPC.Updates) response;
+                    processUpdates(updates, false);
                 }
-            }
+                if (newTaskId != 0) {
+                    getMessagesStorage().removePendingTask(newTaskId);
+                }
+            });
         } else if (channelId != 0) {
             TLRPC.TL_channels_deleteMessages req;
-            TreeMap<Long, ArrayList<TLRPC.TL_channels_deleteMessages>> reqs = new TreeMap<>();
             if (taskRequest != null) {
-                if (!reqs.containsKey(taskId)) reqs.put(taskId, new ArrayList<>());
-                reqs.get(taskId).add((TLRPC.TL_channels_deleteMessages) taskRequest);
+                req = (TLRPC.TL_channels_deleteMessages) taskRequest;
+                newTaskId = taskId;
             } else {
-                ArrayList<ArrayList<Integer>> subIds = sliceThatBitch(toSend, 100);
-                for (ArrayList<Integer> ids : subIds) {
-                    req = new TLRPC.TL_channels_deleteMessages();
-                    req.id = ids;
-                    req.channel = getInputChannel(channelId);
+                req = new TLRPC.TL_channels_deleteMessages();
+                req.id = toSend;
+                req.channel = getInputChannel(channelId);
 
-                    NativeByteBuffer data = null;
-                    try {
-                        data = new NativeByteBuffer(12 + req.getObjectSize());
-                        data.writeInt32(24);
-                        data.writeInt64(dialogId);
-                        req.serializeToStream(data);
-                    } catch (Exception e) {
-                        FileLog.e(e);
-                    }
-                    newTaskId = getMessagesStorage().createPendingTask(data);
-                    if (!reqs.containsKey(newTaskId)) reqs.put(newTaskId, new ArrayList<>());
-                    reqs.get(newTaskId).add(req);
+                NativeByteBuffer data = null;
+                try {
+                    data = new NativeByteBuffer(12 + req.getObjectSize());
+                    data.writeInt32(24);
+                    data.writeInt64(dialogId);
+                    req.serializeToStream(data);
+                } catch (Exception e) {
+                    FileLog.e(e);
                 }
+                newTaskId = getMessagesStorage().createPendingTask(data);
             }
 
-            for (Map.Entry<Long, ArrayList<TLRPC.TL_channels_deleteMessages>> m : reqs.entrySet()) {
-                for (TLRPC.TL_channels_deleteMessages d : m.getValue()) {
-                    getConnectionsManager().sendRequest(d, (response, error) -> {
-                        if (error == null) {
-                            TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
-                            processNewChannelDifferenceParams(res.pts, res.pts_count, channelId);
-                        }
-                        if (m.getKey() != 0) {
-                            getMessagesStorage().removePendingTask(m.getKey());
-                        }
-                    });
+            getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error == null) {
+                    TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
+                    processNewChannelDifferenceParams(res.pts, res.pts_count, channelId);
                 }
-            }
+                if (newTaskId != 0) {
+                    getMessagesStorage().removePendingTask(newTaskId);
+                }
+            });
         } else {
             if (randoms != null && encryptedChat != null && !randoms.isEmpty()) {
                 getSecretChatHelper().sendMessagesDeleteMessage(encryptedChat, randoms, null);
             }
             TLRPC.TL_messages_deleteMessages req;
-            TreeMap<Long, ArrayList<TLRPC.TL_messages_deleteMessages>> reqs = new TreeMap<>();
             if (taskRequest instanceof TLRPC.TL_messages_deleteMessages) {
-                if (!reqs.containsKey(taskId)) reqs.put(taskId, new ArrayList<>());
-                reqs.get(taskId).add((TLRPC.TL_messages_deleteMessages) taskRequest);
+                req = (TLRPC.TL_messages_deleteMessages) taskRequest;
+                newTaskId = taskId;
             } else {
-                ArrayList<ArrayList<Integer>> subIds = sliceThatBitch(toSend, 100);
-                for (ArrayList<Integer> ids : subIds) {
-                    req = new TLRPC.TL_messages_deleteMessages();
-                    req.id = ids;
-                    req.revoke = forAll;
-                    NativeByteBuffer data = null;
-                    try {
-                        data = new NativeByteBuffer(12 + req.getObjectSize());
-                        data.writeInt32(24);
-                        data.writeInt64(dialogId);
-                        req.serializeToStream(data);
-                    } catch (Exception e) {
-                        FileLog.e(e);
-                    }
-                    newTaskId = getMessagesStorage().createPendingTask(data);
-                    if (!reqs.containsKey(newTaskId)) reqs.put(newTaskId, new ArrayList<>());
-                    reqs.get(newTaskId).add(req);
+                req = new TLRPC.TL_messages_deleteMessages();
+                req.id = toSend;
+                req.revoke = forAll;
+
+                NativeByteBuffer data = null;
+                try {
+                    data = new NativeByteBuffer(12 + req.getObjectSize());
+                    data.writeInt32(24);
+                    data.writeInt64(dialogId);
+                    req.serializeToStream(data);
+                } catch (Exception e) {
+                    FileLog.e(e);
                 }
+                newTaskId = getMessagesStorage().createPendingTask(data);
             }
 
-            for (Map.Entry<Long, ArrayList<TLRPC.TL_messages_deleteMessages>> m : reqs.entrySet()) {
-                for (TLRPC.TL_messages_deleteMessages d : m.getValue()) {
-                    getConnectionsManager().sendRequest(d, (response, error) -> {
-                        if (error == null) {
-                            TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
-                            processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
-                        }
-                        if (m.getKey() != 0) {
-                            getMessagesStorage().removePendingTask(m.getKey());
-                        }
-                    });
-
+            getConnectionsManager().sendRequest(req, (response, error) -> {
+                if (error == null) {
+                    TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
+                    processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
                 }
-            }
+                if (newTaskId != 0) {
+                    getMessagesStorage().removePendingTask(newTaskId);
+                }
+            });
         }
-    }
-
-    private ArrayList<ArrayList<Integer>> sliceThatBitch(ArrayList<Integer> ids, int slice) {
-        if (ids == null || ids.isEmpty()) return new ArrayList<>();
-        ArrayList<ArrayList<Integer>> sliced = new ArrayList<>(ids.size() / slice + 1);
-        int i = 0;
-        for (i = 0; i < ids.size() / slice; i++) {
-            sliced.add(new ArrayList<>(ids.subList(i * slice, (i + 1) * slice)));
-        }
-        if (ids.size() % slice > 0) {
-            sliced.add(new ArrayList<>(ids.subList(i * slice, i * slice + ids.size() % slice)));
-        }
-        return sliced;
     }
 
     public void revertWelcomeEphemeralMessage(MessageObject ephemeralMessage) {
@@ -10275,6 +10378,21 @@ public class MessagesController extends BaseController implements NotificationCe
             getMessagesStorage().deleteDialog(did, onlyHistory);
             return;
         }
+        // --- AyuGram hook: 区分用户主动删除与远端删除/撤回
+        // 无许可且属于远端删除时保存会话快照供恢复；否则清除已有快照，避免会话被恢复回列表
+        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            if (!AyuState.getAllowDeleteDialogs()
+                    && (onlyHistory == 3 || (DialogObject.isEncryptedDialog(did) && onlyHistory == 0))) {
+                AyuMessagesController.getInstance().onDialogDeleted(currentAccount, did);
+            } else {
+                AyuMessagesController.getInstance().deleteDialogRecord(currentAccount, getUserConfig().getClientUserId(), did);
+                if (first == 1 && max_id == 0) {
+                    // 下面会异步递归调用一次 deleteDialog，需要为第二趟重新放行
+                    AyuState.setAllowDeleteDialogs(true, 1);
+                }
+            }
+        }
+        // --- AyuGram hook
         for (int i = 0; i < sendAsPeers.size(); i++) {
             SendAsPeersInfo sendAsInfo = sendAsPeers.valueAt(i);
             if (sendAsInfo.sendAsPeers != null) {
@@ -11454,7 +11572,8 @@ public class MessagesController extends BaseController implements NotificationCe
                 ArrayList<PrintingUser> arr = threadEntry.getValue();
 
                 if (NekoConfig.ignoreBlocked.Bool()) {
-                    arr = arr.stream().filter(it -> getMessagesController().blockePeers.indexOfKey(it.userId) == -1).collect(Collectors.toCollection(ArrayList::new));
+                    arr = arr.stream().filter(it -> blockePeers.indexOfKey(it.userId) == -1
+                            && !AyuFilter.isCustomFilteredPeer(it.userId)).collect(Collectors.toCollection(ArrayList::new));
                 }
                 if (arr.isEmpty()) continue;
 
@@ -12360,8 +12479,29 @@ public class MessagesController extends BaseController implements NotificationCe
         final ArrayList<MessageObject> objects = new ArrayList<>();
         final ArrayList<Integer> messagesToReload = new ArrayList<>();
         final HashMap<String, ArrayList<MessageObject>> webpagesToReload = new HashMap<>();
+        final TLRPC.messages_Messages displayMessagesRes;
+        final AyuHistoryPagination.Page<?> ayuHistoryPage;
+        if (needProcess && com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && mode == 0) {
+            // 展示页的裁剪和补全不能改变已交给存储队列的服务端结果；密聊走 hook 内的负 id 分支
+            displayMessagesRes = new TLRPC.TL_messages_messages();
+            displayMessagesRes.messages = new ArrayList<>(messagesRes.messages);
+            displayMessagesRes.users = new ArrayList<>(messagesRes.users);
+            displayMessagesRes.chats = new ArrayList<>(messagesRes.chats);
+            displayMessagesRes.animatedEmoji = messagesRes.animatedEmoji == null ? null : new ArrayList<>(messagesRes.animatedEmoji);
+            int historyOffsetId = load_type == LOAD_FROM_UNREAD && max_id == 0 && first_unread != 0 ? first_unread : max_id;
+            // 迁移前群组由 mergeDialogId 的独立加载请求处理，保留各自的 ID 空间。
+            ayuHistoryPage = AyuHistoryHook.doHookSync(currentAccount, displayMessagesRes, usersDict, chatsDict, dialogId,
+                    isTopic ? threadMessageId : 0,
+                    load_type, count, historyOffsetId, offset_date, isCache,
+                    threadMessageId != 0 && !isTopic, threadMessageId, isTopic);
+        } else {
+            displayMessagesRes = messagesRes;
+            ayuHistoryPage = null;
+        }
+        final int displayMaxId = load_type == LOAD_AROUND_DATE && ayuHistoryPage != null ? ayuHistoryPage.anchorId : max_id;
+        size = displayMessagesRes.messages.size();
         for (int a = 0; a < size; a++) {
-            final TLRPC.Message message = messagesRes.messages.get(a);
+            final TLRPC.Message message = displayMessagesRes.messages.get(a);
             message.dialog_id = dialogId;
             final MessageObject messageObject = new MessageObject(currentAccount, message, usersDict, chatsDict, true, false, mode == ChatActivity.MODE_SAVED);
             messageObject.scheduled = mode == 1;
@@ -12484,11 +12624,11 @@ public class MessagesController extends BaseController implements NotificationCe
                     if (!needProcess) {
                         getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoadWithoutProcess, classGuid, resCount, isCache, isEnd, last_message_id);
                     } else {
-                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, count, objects, isCache, finalFirst_unread_final, last_message_id, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
+                        getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, count, objects, isCache, finalFirst_unread_final, last_message_id, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, displayMaxId, mentionsCount, mode, ayuHistoryPage);
                     }
                 }, classGuid, loaderLogger);
             } else {
-                getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, count, objects, isCache, first_unread_final, last_message_id, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, max_id, mentionsCount, mode);
+                getNotificationCenter().postNotificationName(NotificationCenter.messagesDidLoad, dialogId, count, objects, isCache, first_unread_final, last_message_id, unread_count, last_date, load_type, isEnd, classGuid, loadIndex, displayMaxId, mentionsCount, mode, ayuHistoryPage);
             }
 
             if (!messagesToReload.isEmpty()) {
@@ -12688,6 +12828,9 @@ public class MessagesController extends BaseController implements NotificationCe
             }
             if (!added) {
                 return 0;
+            }
+            if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+                AyuMessagesController.getInstance().updateDeletedDialogsFolder(currentAccount, dialogIds, folderId);
             }
             sortDialogs(null);
             getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
@@ -13866,6 +14009,10 @@ public class MessagesController extends BaseController implements NotificationCe
 
                 int archivedDialogsCount = 0;
                 int lastDialogDate = migrate && !allDialogs.isEmpty() ? allDialogs.get(allDialogs.size() - 1).last_message_date : 0;
+                ArrayList<Long> ayuOfficialDialogIds = null;
+                if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+                    ayuOfficialDialogIds = new ArrayList<>(new_dialogs_dict.size());
+                }
                 for (int a = 0; a < new_dialogs_dict.size(); a++) {
                     long key = new_dialogs_dict.keyAt(a);
                     TLRPC.Dialog value = new_dialogs_dict.valueAt(a);
@@ -13883,6 +14030,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         archivedDialogsCount++;
                     }
                     ArrayList<MessageObject> newMsgs = new_dialogMessage.get(value.id);
+                    if (ayuOfficialDialogIds != null) {
+                        ayuOfficialDialogIds.add(key);
+                    }
                     if (currentDialog == null) {
                         added = true;
                         dialogs_dict.put(key, value);
@@ -13997,6 +14147,10 @@ public class MessagesController extends BaseController implements NotificationCe
                             }
                         }
                     }
+                }
+
+                if (ayuOfficialDialogIds != null && !ayuOfficialDialogIds.isEmpty()) {
+                    AyuMessagesController.getInstance().onOfficialDialogsLoaded(currentAccount, ayuOfficialDialogIds);
                 }
 
                 allDialogs.clear();
@@ -14748,6 +14902,10 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markMessageAsRead2(long dialogId, int mid, TLRPC.InputChannel inputChannel, int ttl, long taskId, boolean createDeleteTask) {
+        markMessageAsRead2(dialogId, mid, inputChannel, ttl, taskId, createDeleteTask, false);
+    }
+
+    public void markMessageAsRead2(long dialogId, int mid, TLRPC.InputChannel inputChannel, int ttl, long taskId, boolean createDeleteTask, boolean explicitlyAuthorized) {
         if (mid == 0 || ttl < 0) {
             return;
         }
@@ -14777,14 +14935,14 @@ public class MessagesController extends BaseController implements NotificationCe
             newTaskId = taskId;
         }
         int time = getConnectionsManager().getCurrentTime();
-        if (createDeleteTask) {
+        if (createDeleteTask && !AyuSavePreferences.shouldKeepMediaFor(currentAccount, dialogId, 0L)) {
             getMessagesStorage().createTaskForMid(dialogId, mid, time, time, ttl, false);
         }
         if (inputChannel != null) {
             TLRPC.TL_channels_readMessageContents req = new TLRPC.TL_channels_readMessageContents();
             req.channel = inputChannel;
             req.id.add(mid);
-            getConnectionsManager().sendRequest(req, (response, error) -> {
+            getConnectionsManager().sendRequest(explicitlyAuthorized ? new com.radolyn.ayugram.utils.network.TLRPCWrappedBypass(req) : req, (response, error) -> {
                 if (newTaskId != 0) {
                     getMessagesStorage().removePendingTask(newTaskId);
                 }
@@ -14792,7 +14950,7 @@ public class MessagesController extends BaseController implements NotificationCe
         } else {
             TLRPC.TL_messages_readMessageContents req = new TLRPC.TL_messages_readMessageContents();
             req.id.add(mid);
-            getConnectionsManager().sendRequest(req, (response, error) -> {
+            getConnectionsManager().sendRequest(explicitlyAuthorized ? new com.radolyn.ayugram.utils.network.TLRPCWrappedBypass(req) : req, (response, error) -> {
                 if (error == null) {
                     TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
                     processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
@@ -14818,7 +14976,7 @@ public class MessagesController extends BaseController implements NotificationCe
         ArrayList<Long> randomIds = new ArrayList<>();
         randomIds.add(randomId);
         getSecretChatHelper().sendMessagesReadMessage(chat, randomIds, null);
-        if (ttl > 0) {
+        if (ttl > 0 && !AyuSavePreferences.shouldKeepMediaFor(currentAccount, dialogId, 0L)) {
             int time = getConnectionsManager().getCurrentTime();
             getMessagesStorage().createTaskForSecretChat(chat.id, time, time, 0, randomIds);
         }
@@ -16168,6 +16326,7 @@ public class MessagesController extends BaseController implements NotificationCe
             request = req;
         }
         if (self) {
+            AyuState.setAllowDeleteDialogs(true, 1);
             deleteDialog(-chatId, 0, revoke);
         }
         getConnectionsManager().sendRequest(request, (response, error) -> {
@@ -16432,6 +16591,9 @@ public class MessagesController extends BaseController implements NotificationCe
         } else {
             getConnectionsManager().cleanup(type == 2);
         }
+        tw.nekomimi.nekogram.helpers.NooagramPinnedHider.onAccountLogout(currentAccount);
+        com.radolyn.ayugram.AyuWorker.clearOnline(currentAccount);
+        com.radolyn.ayugram.AyuForward.stopAccount(currentAccount);
         getUserConfig().clearConfig();
         SharedPrefsHelper.cleanupAccount(currentAccount);
 
@@ -17942,35 +18104,63 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     protected void deleteMessagesByPush(long dialogId, ArrayList<Integer> ids, long channelId) {
+        if (ids == null || ids.isEmpty()) return;
+        ArrayList<Integer> messageIds = new ArrayList<>(ids);
+        long resolvedDialogId = dialogId != 0 ? dialogId : -channelId;
+        Runnable clear = () -> deleteMessagesByPushInternal(resolvedDialogId, messageIds, channelId);
+        if (!com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            clear.run();
+            return;
+        }
+        // 通知清理前保留消息对象，供后台归档读取。
+        ArrayList<MessageObject> notificationSnapshot = getNotificationsController().getDeletionSnapshot(resolvedDialogId, messageIds);
+        AyuMessagesController.getInstance().executeAsync(() -> {
+            ArrayList<TLRPC.Message> archive = new ArrayList<>();
+            for (int messageId : messageIds) {
+                MessageObject existing = getExistingMessageInAnyWay(resolvedDialogId, messageId);
+                if (existing == null) {
+                    existing = AyuMessageUtils.extractFromUpdates(currentAccount, resolvedDialogId, messageId,
+                            null, null, notificationSnapshot);
+                }
+                if (existing != null && existing.messageOwner != null && existing.getDialogId() != 0) {
+                    existing.messageOwner.dialog_id = existing.getDialogId();
+                    archive.add(existing.messageOwner);
+                }
+            }
+            AyuMessagesController.getInstance().saveCollectedMessages(currentAccount, resolvedDialogId, archive, clear);
+        }, "deleteMessagesByPush");
+    }
+
+    private void deleteMessagesByPushInternal(long dialogId, ArrayList<Integer> ids, long channelId) {
         getMessagesStorage().getStorageQueue().postRunnable(() -> {
-            AndroidUtilities.runOnUIThread(() -> {
-                getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, ids, channelId, false);
-                if (channelId == 0) {
-                    for (int b = 0, size2 = ids.size(); b < size2; b++) {
-                        Integer id = ids.get(b);
-                        MessageObject obj = dialogMessagesByIds.get(id);
-                        if (obj != null) {
-                            obj.deleted = true;
+                AndroidUtilities.runOnUIThread(() -> {
+                    getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, ids, channelId, false);
+                    if (channelId == 0) {
+                        for (int b = 0, size2 = ids.size(); b < size2; b++) {
+                            Integer id = ids.get(b);
+                            MessageObject obj = dialogMessagesByIds.get(id);
+                            if (obj != null) {
+                                obj.deleted = true;
+                            }
                         }
-                    }
-                } else {
-                    ArrayList<MessageObject> objs = dialogMessage.get(-channelId);
-                    if (objs != null) {
-                        for (int i = 0; i < objs.size(); ++i) {
-                            MessageObject obj = objs.get(i);
-                            for (int b = 0, size2 = ids.size(); b < size2; b++) {
-                                if (obj.getId() == ids.get(b)) {
-                                    obj.deleted = true;
-                                    break;
+                    } else {
+                        ArrayList<MessageObject> objs = dialogMessage.get(-channelId);
+                        if (objs != null) {
+                            for (int i = 0; i < objs.size(); ++i) {
+                                MessageObject obj = objs.get(i);
+                                for (int b = 0, size2 = ids.size(); b < size2; b++) {
+                                    if (obj.getId() == ids.get(b)) {
+                                        obj.deleted = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            });
-            getMessagesStorage().deletePushMessages(dialogId, ids);
-            ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(dialogId, ids, false, true, 0, 0);
-            getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, ids, dialogIds);
+                });
+                getMessagesStorage().deletePushMessages(dialogId, ids);
+                ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(dialogId, ids, false, true, 0, 0);
+                getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, channelId, ids, dialogIds);
         });
     }
 
@@ -20112,6 +20302,38 @@ public class MessagesController extends BaseController implements NotificationCe
                 updatesOnMainThread.add(baseUpdate);
             }
         }
+
+        // --- AyuGram request hook
+        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && deletedMessages != null) {
+            var ayuMessagesController = AyuMessagesController.getInstance();
+            var messagesToArchive = new LongSparseArray<ArrayList<TLRPC.Message>>();
+            HashSet<AyuMessageKey> collected = new HashSet<>();
+            for (int a = 0, size = deletedMessages.size(); a < size; a++) {
+                var possibleDialogId = deletedMessages.keyAt(a);
+                var messageIds = deletedMessages.valueAt(a);
+                for (var msgId : messageIds) {
+                    MessageObject existing = getExistingMessageInAnyWay(possibleDialogId, msgId);
+                    if (existing == null) {
+                        existing = AyuMessageUtils.extractFromUpdates(currentAccount, possibleDialogId, msgId,
+                                messages, messagesArr, pushMessages);
+                    }
+                    if (existing == null || existing.messageOwner == null) continue;
+                    long actualDialogId = existing.getDialogId();
+                    if (actualDialogId == 0 || !collected.add(new AyuMessageKey(actualDialogId, msgId))) continue;
+                    ArrayList<TLRPC.Message> archive = messagesToArchive.get(actualDialogId);
+                    if (archive == null) {
+                        messagesToArchive.put(actualDialogId, archive = new ArrayList<>());
+                    }
+                    existing.messageOwner.dialog_id = actualDialogId;
+                    archive.add(existing.messageOwner);
+                }
+            }
+            for (int a = 0; a < messagesToArchive.size(); a++) {
+                ayuMessagesController.saveCollectedMessages(currentAccount, messagesToArchive.keyAt(a), messagesToArchive.valueAt(a));
+            }
+        }
+        // --- AyuGram request hook
+
         if (messages != null) {
             for (int a = 0, size = messages.size(); a < size; a++) {
                 long key = messages.keyAt(a);
@@ -21644,9 +21866,20 @@ public class MessagesController extends BaseController implements NotificationCe
             for (int a = 0, size = clearHistoryMessages.size(); a < size; a++) {
                 long key = clearHistoryMessages.keyAt(a);
                 int id = clearHistoryMessages.valueAt(a);
-                getMessagesStorage().getStorageQueue().postRunnable(() -> {
-                    ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(key, id, false, true);
-                    getMessagesStorage().updateDialogsWithDeletedMessages(key, -key, new ArrayList<>(), dialogIds);
+                final long dialogId = key;
+                AyuMessagesController.getInstance().onHistoryFlushed(currentAccount, dialogId, 1, id, deletion -> {
+                    if (!deletion.captured) return;
+                    getMessagesStorage().getStorageQueue().postRunnable(() -> {
+                        boolean deleteFiles = !AyuMessageUtils.shouldSaveMedia(currentAccount, dialogId);
+                        ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(-dialogId, id, false, deleteFiles);
+                        getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, -dialogId, new ArrayList<>(), dialogIds);
+                        AndroidUtilities.runOnUIThread(() -> {
+                            getNotificationCenter().postNotificationName(NotificationCenter.historyCleared, dialogId, id, deletion);
+                            LongSparseIntArray cleared = new LongSparseIntArray();
+                            cleared.put(dialogId, id);
+                            getNotificationsController().removeDeletedHisoryFromNotifications(cleared);
+                        });
+                    });
                 });
             }
         }
@@ -23559,6 +23792,35 @@ public class MessagesController extends BaseController implements NotificationCe
                 processNewDifferenceParams(-1, res.pts, -1, res.pts_count);
                 getMessagesStorage().getStorageQueue().postRunnable(() -> {
                     ArrayList<Integer> dbMessages = getMessagesStorage().getCachedMessagesInRange(dialogId, minDate, maxDate);
+                    // --- AyuGram hook: save before range delete
+                    if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && dbMessages != null && !dbMessages.isEmpty()) {
+                        ArrayList<Integer> toSaveIds = new ArrayList<>();
+                        for (int i = 0, N = dbMessages.size(); i < N; i++) {
+                            Integer msgId = dbMessages.get(i);
+                            if (!AyuState.isDeletePermitted(dialogId, msgId)) {
+                                toSaveIds.add(msgId);
+                            }
+                        }
+                        if (!toSaveIds.isEmpty()) {
+                            ArrayList<TLRPC.Message> messagesToSave = com.radolyn.ayugram.helpers.AyuMessageHelper.getInstance(currentAccount).getMessagesStorageMessages(dialogId, toSaveIds);
+                            if (messagesToSave != null && !messagesToSave.isEmpty()) {
+                                var ayuMessagesController = AyuMessagesController.getInstance();
+                                ArrayList<Integer> savedIds = new ArrayList<>();
+                                int catchTime = (int) (System.currentTimeMillis() / 1000);
+                                for (int i = 0, N = messagesToSave.size(); i < N; i++) {
+                                    TLRPC.Message msg = messagesToSave.get(i);
+                                    long topicId = AyuSavePreferences.resolveTopicId(currentAccount, msg, dialogId);
+                                    var prefs = new AyuSavePreferences(msg, currentAccount, dialogId, topicId, msg.id, catchTime);
+                                    ayuMessagesController.onMessageDeleted(prefs);
+                                    savedIds.add(msg.id);
+                                }
+                                if (!savedIds.isEmpty()) {
+                                    AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(AyuConstants.MESSAGES_DELETED_NOTIFICATION, dialogId, savedIds));
+                                }
+                            }
+                        }
+                    }
+                    // --- AyuGram hook
                     getMessagesStorage().markMessagesAsDeleted(dialogId, dbMessages, false, true, 0, 0);
                     getMessagesStorage().updateDialogsWithDeletedMessages(dialogId, 0, dbMessages, null);
                     AndroidUtilities.runOnUIThread(() -> {

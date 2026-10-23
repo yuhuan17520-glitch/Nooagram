@@ -9,6 +9,7 @@
 package org.telegram.ui.Cells;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.LocaleController.getString;
 
@@ -150,7 +151,7 @@ import java.util.Stack;
 
 import me.vkryl.android.animator.BoolAnimator;
 
-import tw.nekomimi.nekogram.helpers.AyuFilter;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 import tw.nekomimi.nekogram.ui.MessageHelper;
 import tw.nekomimi.nekogram.NekoConfig;
 import xyz.nextalone.nagram.NaConfig;
@@ -304,6 +305,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private boolean drawForwardIcon, drawGiftIcon;
     private boolean visibleOnScreen = true;
     private boolean updateLayout;
+    private MessageObject filteredPreviewPlaceholder;
     private boolean wasDrawnOnline;
 
     public void setMoving(boolean moving) {
@@ -349,7 +351,32 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 archivedChatsDrawable.setCell(this);
             }
         }
+        // 话题的最后一条被删除后，话题单元格没有 message 可显示；用归档缓存补一个预览
+        if (forumTopic != null) {
+            applyDeletedTopicPreview(com.radolyn.ayugram.messages.AyuMessagesController.getInstance()
+                    .getLastTopicMessageCached(currentAccount, dialog_id, forumTopic.id), forumTopic.id);
+        }
         update(0, animated);
+    }
+
+    private void applyDeletedTopicPreview(MessageObject preview, long topicId) {
+        if (preview == null || preview == message || preview.messageOwner == null
+                || !com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            return;
+        }
+        if (preview.messageOwner instanceof TLRPC.TL_messageService || preview.messageOwner instanceof TLRPC.TL_messageEmpty) {
+            return;
+        }
+        if ((message == null || preview.messageOwner.date > lastMessageDate)
+                && !AyuFilter.shouldHideFilteredMessage(preview, null)) {
+            groupMessages = null;
+            message = preview;
+            lastMessageDate = preview.messageOwner.date;
+            currentEditDate = preview.messageOwner.edit_date;
+            messageId = preview.getId();
+            lastUnreadState = preview.isUnread();
+            lastSendState = preview.messageOwner.send_state;
+        }
     }
 
     public void setRightFragmentOpenedProgress(float rightFragmentOpenedProgress) {
@@ -949,6 +976,36 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
     public long getDialogId() {
         return currentDialogId;
+    }
+
+    int getCurrentAccount() {
+        return currentAccount;
+    }
+
+    private MessageObject getFilteredPreviewPlaceholder(MessageObject source, TLRPC.Dialog dialog) {
+        int date = NooagramPreviewSearch.previewDate(0, source.messageOwner.date, dialog.last_message_date);
+        int status = NooagramDialogPreviewFilter.getStatus(currentAccount, dialog.id);
+        String text = getString(status == NooagramDialogPreviewFilter.EXHAUSTED ? R.string.NooagramFilteredPreview
+                : status == NooagramDialogPreviewFilter.UNAVAILABLE ? R.string.NooagramPreviewUnavailable
+                : R.string.NooagramPreviewSearching);
+        // A placeholder belongs to this cell/dialog, never to every dialog in an account.
+        if (filteredPreviewPlaceholder == null || filteredPreviewPlaceholder.currentAccount != currentAccount
+                || filteredPreviewPlaceholder.getDialogId() != dialog.id
+                || filteredPreviewPlaceholder.messageOwner.date != date
+                || !TextUtils.equals(filteredPreviewPlaceholder.messageOwner.message, text)) {
+            TLRPC.TL_message placeholder = new TLRPC.TL_message();
+            placeholder.id = Integer.MAX_VALUE;
+            placeholder.dialog_id = dialog.id;
+            placeholder.date = date;
+            placeholder.message = text;
+            filteredPreviewPlaceholder = new MessageObject(currentAccount, placeholder, false, false);
+        }
+        return filteredPreviewPlaceholder;
+    }
+
+    void refreshFilteredPreview() {
+        updateHelper.lastDrawnMessageId = Long.MIN_VALUE;
+        update(0, false);
     }
 
     public int getMessageId() {
@@ -1964,8 +2021,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                             if (message != null) {
                                                 message.spoilLoginCode();
                                             }
-                                            if (!NekoConfig.showSpoilersDirectly.Bool())
-                                                MediaDataController.addTextStyleRuns(message.messageOwner.entities, message.caption, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
+                                            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
+                                                MediaDataController.addTextStyleRuns(message, message.caption, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                                             MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, msgBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());
                                         }
                                         messageString = new SpannableStringBuilder(emoji).append(msgBuilder);
@@ -2055,7 +2112,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                             if (message != null) {
                                                 message.spoilLoginCode();
                                             }
-                                            if (!NekoConfig.showSpoilersDirectly.Bool())
+                                            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
                                                 MediaDataController.addTextStyleRuns(message, stringBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                                             if (message != null && message.messageOwner != null) {
                                                 MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, stringBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());
@@ -2881,7 +2938,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             }
             spoilersPool.addAll(spoilers);
             spoilers.clear();
-            if (!NekoConfig.showSpoilersDirectly.Bool())
+            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.hasMaskedFilterSpan(messageLayout.getText()))
                 SpoilerEffect.addSpoilers(this, messageLayout, -2, -2, spoilersPool, spoilers);
         } catch (Exception e) {
             messageLayout = null;
@@ -3356,15 +3413,25 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         clearingDialog = MessagesController.getInstance(currentAccount).isClearingDialog(dialog.id);
                         groupMessages = MessagesController.getInstance(currentAccount).dialogMessage.get(dialog.id);
                         message = groupMessages != null && groupMessages.size() > 0 ? groupMessages.get(0) : null;
-                        if (message != null && NekoConfig.ignoreBlocked.Bool() && MessagesController.getInstance(currentAccount).blockePeers.indexOfKey(message.getSenderId()) >= 0) {
-                            if (MessagesController.getInstance(currentAccount).dialogMessageFromUnblocked.get(dialog.id) != null)
-                                message = MessagesController.getInstance(currentAccount).dialogMessageFromUnblocked.get(dialog.id);
-                            else {
-                                message = MessageHelper.getInstance(currentAccount).getLastMessageFromUnblock(dialog.id);
-                                MessagesController.getInstance(currentAccount).dialogMessageFromUnblocked.put(dialog.id, message);
+                        if (message == null) {
+                            MessageObject ayuPreview = com.radolyn.ayugram.messages.AyuMessagesController.getInstance().getLastMessageCached(currentAccount, dialog.id);
+                            if (ayuPreview != null) {
+                                message = ayuPreview;
                             }
-                            // Username show may be abnormal if User who send `message` is not loaded in (never enter chat since boot, esp after cold starting)
                         }
+                        if (message != null) {
+                            if (NooagramDialogPreviewFilter.isHidden(currentAccount, dialog.id, message)) {
+                                MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
+                                if (replacement == null) {
+                                    replacement = getFilteredPreviewPlaceholder(message, dialog);
+                                }
+                                message = replacement;
+                                groupMessages = null;
+                            } else {
+                                NooagramDialogPreviewFilter.rememberVisible(currentAccount, dialog.id, message);
+                            }
+                        }
+                        // Message filter end
                         lastUnreadState = message != null && message.isUnread();
                         TLRPC.Chat localChat = MessagesController.getInstance(currentAccount).getChat(-dialog.id);
                         boolean isForumCell = localChat != null && localChat.forum && !isTopic;
@@ -6224,8 +6291,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 if (message != null) {
                     message.spoilLoginCode();
                 }
-                if (!NekoConfig.showSpoilersDirectly.Bool())
-                    MediaDataController.addTextStyleRuns(message.messageOwner.entities, mess, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
+                if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
+                    MediaDataController.addTextStyleRuns(message, mess, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                 if (message != null && message.messageOwner != null) {
                     MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, msgBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());
                 }
@@ -6342,7 +6409,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             if (message != null) {
                 message.spoilLoginCode();
             }
-            if (!NekoConfig.showSpoilersDirectly.Bool())
+            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.hasMaskedFilterSpan(mess))
                 MediaDataController.addTextStyleRuns(message, (Spannable) mess, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
             if (message != null && message.messageOwner != null) {
                 MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, mess, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());

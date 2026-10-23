@@ -2971,6 +2971,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                 .add(NotificationCenter.dialogsUnreadPollVotesCounterChanged)
                 .add(NotificationCenter.forceImportContactsStart)
                 .add(NotificationCenter.userEmojiStatusUpdated)
+                .add(NotificationCenter.mainUserInfoChanged)
                 .add(NotificationCenter.currentUserPremiumStatusChanged);
 
             observersGroup.addGlobal(NotificationCenter.didSetPasscode);
@@ -3051,6 +3052,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
 
     private Drawable premiumStar;
+    private Drawable ghostDrawable;
 
     public void updateStatus(TLRPC.User user, boolean animated) {
         if (dialogStoriesCell != null) {
@@ -3061,7 +3063,17 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         }
         Long emojiStatusId = UserObject.getEmojiStatusDocumentId(user);
         statusDrawableGiftId = null;
-        if (emojiStatusId != null) {
+        if (com.radolyn.ayugram.AyuOptions.showGhostModeStatus.Bool()
+                && com.radolyn.ayugram.controllers.AyuGhostController.getInstance(currentAccount).isGhostModeActive()) {
+            if (ghostDrawable == null) {
+                ghostDrawable = getContext().getResources().getDrawable(R.drawable.ayu_ghost).mutate();
+                ghostDrawable = new AnimatedEmojiDrawable.WrapSizeDrawable(ghostDrawable, dp(20), dp(20));
+            }
+            ghostDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_profile_verifiedBackground), PorterDuff.Mode.SRC_IN));
+            statusDrawable.set(ghostDrawable, animated);
+            statusDrawable.setParticles(false, animated);
+            actionBar.setRightDrawableOnClick(null);
+        } else if (emojiStatusId != null) {
             final boolean isCollectible = user.emoji_status instanceof TLRPC.TL_emojiStatusCollectible;
             statusDrawable.set(emojiStatusId, animated);
             statusDrawable.setParticles(isCollectible, animated);
@@ -11005,6 +11017,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             checkSuggestClearDatabase();
         } else if (id == NotificationCenter.userEmojiStatusUpdated) {
             updateStatus((TLRPC.User) args[0], true);
+        } else if (id == NotificationCenter.mainUserInfoChanged) {
+            updateStatus(UserConfig.getInstance(currentAccount).getCurrentUser(), true);
         } else if (id == NotificationCenter.currentUserPremiumStatusChanged) {
             updateStatus(UserConfig.getInstance(account).getCurrentUser(), true);
             updateStoriesPosting();
@@ -11169,6 +11183,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     public static final int DIALOGS_TYPE_FOLDER1 = 7;
     public static final int DIALOGS_TYPE_FOLDER2 = 8;
     public static final int DIALOGS_TYPE_BLOCK = 9;
+    public static final int DIALOGS_TYPE_SHADOW_BAN = 667;
+    public static final int DIALOGS_TYPE_REGEX_FILTER = 666;
     public static final int DIALOGS_TYPE_WIDGET = 10;
     public static final int DIALOGS_TYPE_IMPORT_HISTORY_GROUPS = 11; // groups only
     public static final int DIALOGS_TYPE_IMPORT_HISTORY_USERS = 12; // users only
@@ -11245,6 +11261,27 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             }
         } else if (dialogsType == DIALOGS_TYPE_BLOCK) {
             return messagesController.dialogsForBlock;
+        } else if (dialogsType == DIALOGS_TYPE_SHADOW_BAN) {
+            ArrayList<TLRPC.Dialog> dialogs = new ArrayList<>(messagesController.dialogsUsersOnly.size() + messagesController.dialogsChannelsOnly.size());
+            dialogs.addAll(messagesController.dialogsUsersOnly);
+            dialogs.addAll(messagesController.dialogsChannelsOnly);
+            messagesController.sortDialogsList(dialogs);
+            return dialogs;
+        } else if (dialogsType == DIALOGS_TYPE_REGEX_FILTER) {
+            ArrayList<TLRPC.Dialog> dialogs = new ArrayList<>();
+            dialogs.addAll(messagesController.dialogsGroupsOnly);
+            dialogs.addAll(messagesController.dialogsChannelsOnly);
+            int usersSize = messagesController.dialogsUsersOnly.size();
+            for (int i = 0; i < usersSize; i++) {
+                TLRPC.Dialog d = messagesController.dialogsUsersOnly.get(i);
+                TLRPC.User user = messagesController.getUser(d.id);
+                if (user == null) continue;
+                if (UserObject.isUserSelf(user)) continue;
+                if (!user.bot) continue;
+                dialogs.add(d);
+            }
+            messagesController.sortDialogsList(dialogs);
+            return dialogs;
         } else if (dialogsType == DIALOGS_TYPE_BOT_SHARE || dialogsType == DIALOGS_TYPE_BOT_SELECT_VERIFY || dialogsType == DIALOGS_TYPE_START_ATTACH_BOT) {
             if (botShareDialogs != null) {
                 return botShareDialogs;
@@ -13949,7 +13986,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             presentFragment(new ChatActivity(args));
         });
         io.addIf(NekoConfig.showGhostToggleInDrawer, R.drawable.icon_ghost, getString(R.string.GhostMode), () -> {
-            presentFragment(new NekoGhostModeActivity());
+            presentFragment(new com.radolyn.ayugram.settings.GhostModeActivity());
         });
         if (ApplicationLoader.applicationLoaderInstance != null) {
             ApplicationLoader.applicationLoaderInstance.addItemOptions(io);

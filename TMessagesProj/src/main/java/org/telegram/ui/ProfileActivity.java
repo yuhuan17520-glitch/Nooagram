@@ -2716,7 +2716,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 } else if (id == event_log) {
                     presentFragment(new ChannelAdminLogActivity(currentChat));
                 } else if (id == message_filter){
-                    presentFragment(new RegexFiltersSettingActivity(chatId != 0 ? -chatId : userId));
+                    presentFragment(new tw.nekomimi.nekogram.filters.RegexChatFiltersListActivity(chatId != 0 ? -chatId : userId));
                 } else if (id == aliasChannelName) {
                     setChannelAlias();
                 } else if (id == delete_topic) {

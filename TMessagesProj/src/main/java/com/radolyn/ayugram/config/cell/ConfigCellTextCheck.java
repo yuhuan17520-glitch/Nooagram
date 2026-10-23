@@ -1,0 +1,93 @@
+package com.radolyn.ayugram.config.cell;
+
+import static org.telegram.messenger.LocaleController.getString;
+
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BotWebViewVibrationEffect;
+import org.telegram.ui.Cells.TextCheckCell;
+
+import com.radolyn.ayugram.config.CellGroup;
+import com.radolyn.ayugram.config.ConfigItem;
+
+public class ConfigCellTextCheck extends AbstractConfigCell implements WithBindConfig, WithKey {
+    private final ConfigItem bindConfig;
+    private final CharSequence title;
+    private final String subtitle;
+    private boolean enabled = true;
+    private boolean blockEnable;
+    public TextCheckCell cell;
+
+    public ConfigCellTextCheck(ConfigItem bind) {
+        this(bind, null);
+    }
+
+    public ConfigCellTextCheck(ConfigItem bind, String subtitle) {
+        this(bind, subtitle, null);
+    }
+
+    public ConfigCellTextCheck(ConfigItem bind, String subtitle, CharSequence customTitle) {
+        this.bindConfig = bind;
+        this.title = customTitle == null ? getString(bindConfig.getKey()) : customTitle;
+        this.subtitle = subtitle;
+    }
+
+    public int getType() {
+        return CellGroup.ITEM_TYPE_TEXT_CHECK;
+    }
+
+    public ConfigItem getBindConfig() {
+        return bindConfig;
+    }
+
+    public CharSequence getTitle() {
+        return title;
+    }
+
+    public String getKey() {
+        return bindConfig == null ? null : bindConfig.getKey();
+    }
+
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        if (this.cell != null) {
+            this.cell.setEnabled(this.enabled);
+        }
+    }
+
+    public ConfigCellTextCheck setBlockEnable(boolean blockEnable) {
+        this.blockEnable = blockEnable;
+        return this;
+    }
+
+    public void onBindViewHolder(RecyclerView.ViewHolder holder) {
+        TextCheckCell cell = (TextCheckCell) holder.itemView;
+        this.cell = cell;
+        if (subtitle == null) {
+            cell.setTextAndCheck(title, bindConfig.Bool(), cellGroup.needSetDivider(this));
+        } else {
+            cell.setTextAndValueAndCheck(title.toString(), subtitle, bindConfig.Bool(), true, cellGroup.needSetDivider(this));
+        }
+        cell.setEnabled(enabled, null);
+    }
+
+    public void onClick(TextCheckCell cell) {
+        if (!enabled) return;
+        if (blockEnable && !bindConfig.Bool()) {
+            cell.setChecked(false);
+            BotWebViewVibrationEffect.APP_ERROR.vibrate();
+            AndroidUtilities.shakeViewSpring(cell, -4);
+            return;
+        }
+
+        boolean newV = bindConfig.toggleConfigBool();
+        cell.setChecked(newV);
+
+        cellGroup.runCallback(bindConfig.getKey(), newV);
+    }
+}

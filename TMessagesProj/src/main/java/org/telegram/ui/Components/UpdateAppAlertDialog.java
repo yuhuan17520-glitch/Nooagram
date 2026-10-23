@@ -293,7 +293,11 @@ public class UpdateAppAlertDialog extends BottomSheet {
         BottomSheetCell doneButton = new BottomSheetCell(context, false);
         doneButton.setText(LocaleController.formatString(R.string.AppUpdateDownloadNow), false);
         doneButton.background.setOnClickListener(v -> {
-            FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update", FileLoader.PRIORITY_NORMAL, 1);
+            if (tw.nekomimi.nekogram.helpers.remote.NooagramUpdateHelper.isNooagramUpdate(appUpdate)) {
+                tw.nekomimi.nekogram.helpers.remote.NooagramUpdateHelper.startDownload(accountNum, appUpdate);
+            } else {
+                FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update", FileLoader.PRIORITY_NORMAL, 1);
+            }
             dismiss();
         });
         container.addView(doneButton, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.LEFT | Gravity.BOTTOM, 0, 0, 0, 50));

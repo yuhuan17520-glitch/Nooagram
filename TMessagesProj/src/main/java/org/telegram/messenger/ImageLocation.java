@@ -1,6 +1,7 @@
 package org.telegram.messenger;
 
 import org.telegram.tgnet.TLObject;
+import com.radolyn.ayugram.utils.AyuFileLocation;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.web.WebInstantView;
@@ -131,6 +132,9 @@ public class ImageLocation {
             return imageLocation;
         } else if (photoSize == null || photo == null) {
             return null;
+        }
+        if (photoSize.location instanceof AyuFileLocation ayuFileLocation) {
+            return ImageLocation.getForPath(ayuFileLocation.path);
         }
         int dc_id;
         if (photo.dc_id != 0) {
@@ -349,6 +353,9 @@ public class ImageLocation {
             return imageLocation;
         } else if (photoSize == null || document == null) {
             return null;
+        }
+        if (photoSize.location instanceof AyuFileLocation ayuFileLocation) {
+            return ImageLocation.getForPath(ayuFileLocation.path);
         }
         return getForPhoto(photoSize.location, photoSize.size, null, document, null, TYPE_SMALL, document.dc_id, null, photoSize.type);
     }

@@ -228,6 +228,9 @@ public class ApplicationLoader extends Application {
         }
         SharedPrefsHelper.init(applicationContext);
         UserConfig.getInstance(0).loadConfig();
+        // Legacy slot-scoped hidden pins are quarantined, never assigned to a new login.
+        tw.nekomimi.nekogram.helpers.NooagramPinnedHider.migrateLegacyAccounts();
+        com.radolyn.ayugram.AyuConfig.INSTANCE.init();
 
         try {
             connectivityManager = (ConnectivityManager) ApplicationLoader.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE);

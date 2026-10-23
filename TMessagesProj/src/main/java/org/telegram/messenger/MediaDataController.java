@@ -8,6 +8,10 @@
 
 package org.telegram.messenger;
 
+import com.radolyn.ayugram.proprietary.AyuHistoryHook;
+import com.radolyn.ayugram.utils.AyuMessageKey;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
+
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -349,6 +353,7 @@ public class MediaDataController extends BaseController {
     private boolean[] emojiStatusesFetching = new boolean[4];
 
     public void cleanup() {
+        clearFoundMessageObjects();
         for (int a = 0; a < recentStickers.length; a++) {
             if (recentStickers[a] != null) {
                 recentStickers[a].clear();
@@ -3699,9 +3704,13 @@ public class MediaDataController extends BaseController {
     private int messagesLocalSearchCount;
     private int[] messagesSearchCount = new int[]{0, 0};
     private boolean[] messagesSearchEndReached = new boolean[]{false, false};
+    private final int[] serverSearchOffsets = new int[2];
     public ArrayList<MessageObject> searchResultMessages = new ArrayList<>();
     public ArrayList<MessageObject> searchServerResultMessages = new ArrayList<>();
     public ArrayList<MessageObject> searchLocalResultMessages = new ArrayList<>();
+    // AyuGram: 已删除消息的搜索命中，在 updateSearchResults 里合并
+    public ArrayList<MessageObject> searchDeletedResultMessages = new ArrayList<>();
+    private final AtomicInteger deletedSearchGeneration = new AtomicInteger();
     private SparseArray<MessageObject>[] searchServerResultMessagesMap = new SparseArray[]{new SparseArray<>(), new SparseArray<>()};
     private ArrayList<MessageObject> deletedFromResultMessages = new ArrayList<>();
     private String lastSearchQuery;
@@ -3712,27 +3721,33 @@ public class MediaDataController extends BaseController {
     private boolean loadedPredirectedSearchLocal;
 
     public void removeMessageFromResults(int id) {
+        removeMessageFromResults(id, 0);
+    }
+
+    public void removeMessageFromResults(int id, long dialogId) {
         for (int i = 0; i < searchResultMessages.size(); ++i) {
             MessageObject m = searchResultMessages.get(i);
-            if (id == m.getId()) {
+            if (id == m.getId() && (dialogId == 0 || m.getDialogId() == dialogId)) {
                 deletedFromResultMessages.add(searchResultMessages.remove(i));
                 i--;
             }
         }
         for (int i = 0; i < searchServerResultMessages.size(); ++i) {
             MessageObject m = searchServerResultMessages.get(i);
-            if (id == m.getId()) {
+            if (id == m.getId() && (dialogId == 0 || m.getDialogId() == dialogId)) {
                 searchServerResultMessages.remove(i);
                 i--;
             }
         }
         for (int i = 0; i < searchLocalResultMessages.size(); ++i) {
             MessageObject m = searchLocalResultMessages.get(i);
-            if (id == m.getId()) {
+            if (id == m.getId() && (dialogId == 0 || m.getDialogId() == dialogId)) {
                 searchLocalResultMessages.remove(i);
                 i--;
             }
         }
+        searchDeletedResultMessages.removeIf(message -> message.getId() == id
+                && (dialogId == 0 || message.getDialogId() == dialogId));
     }
 
     public boolean processDeletedMessage(int id, long[] topic_id) {
@@ -3755,13 +3770,15 @@ public class MediaDataController extends BaseController {
     private void updateSearchResults() {
         ArrayList<MessageObject> previousSearchResultMessages = new ArrayList<>(searchResultMessages);
         searchResultMessages.clear();
-        HashSet<Integer> messageIds = new HashSet<>();
+        HashSet<AyuMessageKey> messageIds = new HashSet<>();
         for (int i = 0; i < searchServerResultMessages.size(); ++i) {
             MessageObject m = searchServerResultMessages.get(i);
-            if ((!m.hasValidGroupId() || m.isPrimaryGroupMessage) && !messageIds.contains(m.getId())) {
+            AyuMessageKey key = new AyuMessageKey(m.getDialogId(), m.getId());
+            if ((!m.hasValidGroupId() || m.isPrimaryGroupMessage) && !messageIds.contains(key)) {
                 MessageObject prev = null;
                 for (int j = 0; j < previousSearchResultMessages.size(); ++j) {
-                    if (previousSearchResultMessages.get(j).getId() == m.getId()) {
+                    if (previousSearchResultMessages.get(j).getId() == m.getId()
+                            && previousSearchResultMessages.get(j).getDialogId() == m.getDialogId()) {
                         prev = previousSearchResultMessages.get(j);
                         break;
                     }
@@ -3773,15 +3790,17 @@ public class MediaDataController extends BaseController {
                 }
                 m.isSavedFiltered = true;
                 searchResultMessages.add(m);
-                messageIds.add(m.getId());
+                messageIds.add(key);
             }
         }
         for (int i = 0; i < searchLocalResultMessages.size(); ++i) {
             MessageObject m = searchLocalResultMessages.get(i);
-            if (!messageIds.contains(m.getId())) {
+            AyuMessageKey key = new AyuMessageKey(m.getDialogId(), m.getId());
+            if (!messageIds.contains(key)) {
                 MessageObject prev = null;
                 for (int j = 0; j < previousSearchResultMessages.size(); ++j) {
-                    if (previousSearchResultMessages.get(j).getId() == m.getId()) {
+                    if (previousSearchResultMessages.get(j).getId() == m.getId()
+                            && previousSearchResultMessages.get(j).getDialogId() == m.getDialogId()) {
                         prev = previousSearchResultMessages.get(j);
                         break;
                     }
@@ -3793,9 +3812,10 @@ public class MediaDataController extends BaseController {
                 }
                 m.isSavedFiltered = true;
                 searchResultMessages.add(m);
-                messageIds.add(m.getId());
+                messageIds.add(key);
             }
         }
+        com.radolyn.ayugram.utils.AyuSearchResults.appendArchived(searchResultMessages, searchDeletedResultMessages);
     }
 
     public int getMask() {
@@ -3814,9 +3834,16 @@ public class MediaDataController extends BaseController {
     }
 
     public void clearFoundMessageObjects() {
+        deletedSearchGeneration.incrementAndGet();
+        lastReqId++;
+        if (reqId != 0) getConnectionsManager().cancelRequest(reqId, true);
+        if (mergeReqId != 0) getConnectionsManager().cancelRequest(mergeReqId, true);
+        reqId = mergeReqId = 0;
+        loadingMoreSearchMessages = false;
         searchResultMessages.clear();
         searchServerResultMessages.clear();
         searchLocalResultMessages.clear();
+        searchDeletedResultMessages.clear();
     }
 
     public boolean isMessageFound(int messageId, boolean mergeDialog) {
@@ -3841,10 +3868,13 @@ public class MediaDataController extends BaseController {
     }
 
     public int getSearchCount() {
+        int count;
         if (searchServerResultMessages.isEmpty()) {
-            return Math.max(Math.max(messagesSearchCount[0] + messagesSearchCount[1], messagesLocalSearchCount), searchServerResultMessages.size());
+            count = Math.max(Math.max(messagesSearchCount[0] + messagesSearchCount[1], messagesLocalSearchCount), searchServerResultMessages.size());
+        } else {
+            count = Math.max(messagesSearchCount[0] + messagesSearchCount[1], searchServerResultMessages.size());
         }
-        return Math.max(messagesSearchCount[0] + messagesSearchCount[1], searchServerResultMessages.size());
+        return Math.max(count, searchResultMessages.size());
     }
 
     public void setSearchedPosition(int index) {
@@ -3906,14 +3936,11 @@ public class MediaDataController extends BaseController {
                     }
                     firstQuery = false;
                     query = lastSearchQuery;
-                    MessageObject messageObject = searchResultMessages.get(searchResultMessages.size() - 1);
-                    if (messageObject.getDialogId() == dialogId && !messagesSearchEndReached[0]) {
-                        max_id = messageObject.getId();
+                    if (!messagesSearchEndReached[0]) {
+                        max_id = serverSearchOffsets[0];
                         queryWithDialog = dialogId;
                     } else {
-                        if (messageObject.getDialogId() == mergeDialogId) {
-                            max_id = messageObject.getId();
-                        }
+                        max_id = serverSearchOffsets[1];
                         queryWithDialog = mergeDialogId;
                         messagesSearchEndReached[1] = false;
                     }
@@ -3936,12 +3963,66 @@ public class MediaDataController extends BaseController {
                 return;
             }
         } else if (firstQuery) {
+            serverSearchOffsets[0] = serverSearchOffsets[1] = 0;
             messagesSearchEndReached[0] = messagesSearchEndReached[1] = false;
             messagesSearchCount[0] = messagesSearchCount[1] = 0;
             searchResultMessages.clear();
             searchLocalResultMessages.clear();
+            searchServerResultMessages.clear();
             searchServerResultMessagesMap[0].clear();
             searchServerResultMessagesMap[1].clear();
+            final long deletedSearchIdentity = getUserConfig().getClientUserId();
+            final int deletedSearchLoginTime = getUserConfig().loginTime;
+            int deletedRequest = deletedSearchGeneration.incrementAndGet();
+            searchDeletedResultMessages.clear();
+            final boolean deletedSearchHasTopics = dialogId == deletedSearchIdentity
+                    || getMessagesController().isForum(dialogId) || getMessagesController().isMonoForum(dialogId);
+            if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() && !DialogObject.isEncryptedDialog(dialogId)
+                    && (replyMessageId == 0 || deletedSearchHasTopics)
+                    && reaction == null && (filter == null || filter instanceof TLRPC.TL_inputMessagesFilterEmpty)) {
+                // Saved dialogs and monoforum peers use the same persisted topicId scope.
+                // Unsupported ordinary reply threads must not show the entire chat archive.
+                final long deletedSearchTopicId = deletedSearchHasTopics ? replyMessageId : 0;
+                final String deletedSearchQuery = query;
+                final int deletedSearchGuid = guid;
+                final long deletedSearchDialogId = dialogId;
+                final long deletedSearchMergeDialogId = mergeDialogId;
+                final long deletedSearchSenderId = user != null ? user.id : chat != null ? -chat.id : 0;
+                Utilities.searchQueue.postRunnable(() -> {
+                    if (deletedSearchGeneration.get() != deletedRequest
+                            || deletedSearchIdentity == 0 || getUserConfig().getClientUserId() != deletedSearchIdentity
+                            || getUserConfig().loginTime != deletedSearchLoginTime) return;
+                    ArrayList<MessageObject> deletedResults = new ArrayList<>();
+                    deletedResults.addAll(AyuHistoryHook.searchDeletedMessages(currentAccount, deletedSearchDialogId, deletedSearchTopicId, deletedSearchQuery, 200));
+                    if (deletedSearchMergeDialogId != 0 && deletedSearchTopicId == 0) {
+                        deletedResults.addAll(AyuHistoryHook.searchDeletedMessages(currentAccount, deletedSearchMergeDialogId, 0, deletedSearchQuery, 200));
+                    }
+                    if (deletedSearchSenderId != 0) {
+                        deletedResults.removeIf(message -> MessageObject.getPeerId(message.messageOwner.from_id) != deletedSearchSenderId);
+                    }
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (deletedSearchGeneration.get() != deletedRequest
+                            || deletedSearchIdentity == 0 || getUserConfig().getClientUserId() != deletedSearchIdentity
+                            || getUserConfig().loginTime != deletedSearchLoginTime) return;
+                        MessageObject selected = lastReturnedNum >= 0 && lastReturnedNum < searchResultMessages.size()
+                                ? searchResultMessages.get(lastReturnedNum) : null;
+                        searchDeletedResultMessages.clear();
+                        searchDeletedResultMessages.addAll(deletedResults);
+                        updateSearchResults();
+                        if (selected != null) {
+                            for (int i = 0; i < searchResultMessages.size(); i++) {
+                                MessageObject message = searchResultMessages.get(i);
+                                if (message.getId() == selected.getId() && message.getDialogId() == selected.getDialogId()) {
+                                    lastReturnedNum = i;
+                                    break;
+                                }
+                            }
+                        }
+                        getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsAvailable, deletedSearchGuid, 0, getMask(), deletedSearchDialogId, lastReturnedNum, getSearchCount(), false);
+                    });
+                });
+            }
+            // --- AyuGram hook
             getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsLoading, guid);
         }
         final boolean isHashtag = query != null && (query.trim().startsWith("#") || query.trim().startsWith("$"));
@@ -4085,6 +4166,7 @@ public class MediaDataController extends BaseController {
                 int N = Math.min(res.messages.size(), req.limit - 1);
                 for (int a = 0; a < N; a++) {
                     TLRPC.Message message = res.messages.get(a);
+                    if (message instanceof TLRPC.TL_messageEmpty || message.action instanceof TLRPC.TL_messageActionHistoryClear) continue;
                     MessageObject messageObject = new MessageObject(currentAccount, message, null, null, null, null, null, true, true, 0, false, false, isSaved);
                     if (messageObject.hasValidGroupId()) {
                         messageObject.isPrimaryGroupMessage = true;
@@ -4101,17 +4183,13 @@ public class MediaDataController extends BaseController {
                     }
                     if (response != null) {
                         TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
-                        for (int a = 0; a < res.messages.size(); a++) {
-                            TLRPC.Message message = res.messages.get(a);
-                            if (message instanceof TLRPC.TL_messageEmpty || message.action instanceof TLRPC.TL_messageActionHistoryClear) {
-                                res.messages.remove(a);
-                                a--;
-                            }
-                        }
+                        int pageSize = Math.min(res.messages.size(), req.limit - 1);
+                        if (pageSize > 0) serverSearchOffsets[queryWithDialogFinal == dialogId ? 0 : 1] = res.messages.get(pageSize - 1).id;
                         getMessagesStorage().putUsersAndChats(res.users, res.chats, true, true);
                         getMessagesController().putUsers(res.users, false);
                         getMessagesController().putChats(res.chats, false);
                         Runnable done = () -> {
+                            if (currentReqId != lastReqId) return;
                             if (req.offset_id == 0 && queryWithDialogFinal == dialogId) {
                                 lastReturnedNum = 0;
                                 searchServerResultMessages.clear();
@@ -4121,7 +4199,7 @@ public class MediaDataController extends BaseController {
                                 getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsLoading, guid);
                             }
                             boolean added = false;
-                            int N = Math.min(res.messages.size(), req.limit - 1);
+                            int N = messageObjects.size();
                             for (int a = 0; a < N; a++) {
                                 added = true;
                                 MessageObject messageObject = messageObjects.get(a);
@@ -4131,10 +4209,10 @@ public class MediaDataController extends BaseController {
                             updateSearchResults();
                             messagesSearchEndReached[queryWithDialogFinal == dialogId ? 0 : 1] = res.messages.size() < req.limit;
                             messagesSearchCount[queryWithDialogFinal == dialogId ? 0 : 1] = res instanceof TLRPC.TL_messages_messagesSlice || res instanceof TLRPC.TL_messages_channelMessages ? res.count : res.messages.size();
-                            if (searchServerResultMessages.isEmpty()) {
+                            if (searchResultMessages.isEmpty()) {
                                 getNotificationCenter().postNotificationName(NotificationCenter.chatSearchResultsAvailable, guid, 0, getMask(), (long) 0, 0, 0, jumpToMessage);
                             } else {
-                                if (added) {
+                                if (added || !searchDeletedResultMessages.isEmpty()) {
                                     if (lastReturnedNum >= searchResultMessages.size()) {
                                         lastReturnedNum = searchResultMessages.size() - 1;
                                     }
@@ -4160,6 +4238,14 @@ public class MediaDataController extends BaseController {
     }
 
     public void portSavedSearchResults(int guid, ReactionsLayoutInBubble.VisibleReaction reaction, String query, ArrayList<MessageObject> local, ArrayList<MessageObject> loaded, int num, int count, boolean reached) {
+        deletedSearchGeneration.incrementAndGet();
+        searchDeletedResultMessages.clear();
+        int serverOffset = Integer.MAX_VALUE;
+        for (MessageObject message : loaded) {
+            if (message.getId() > 0) serverOffset = Math.min(serverOffset, message.getId());
+        }
+        serverSearchOffsets[0] = serverOffset == Integer.MAX_VALUE ? 0 : serverOffset;
+        serverSearchOffsets[1] = 0;
         lastReaction = reaction;
         lastSearchQuery = query;
         messagesSearchEndReached[0] = reached;
@@ -7046,6 +7132,13 @@ public class MediaDataController extends BaseController {
 
     public static void addTextStyleRuns(ArrayList<TLRPC.MessageEntity> entities, CharSequence messageText, Spannable text) {
         addTextStyleRuns(entities, messageText, text, -1);
+    }
+
+    public static void addTextStyleRuns(MessageObject msg, CharSequence messageText, Spannable text, int allowedFlags) {
+        ArrayList<TLRPC.MessageEntity> entities = msg == null ? null : msg.getEntities();
+        entities = tw.nekomimi.nekogram.filters.AyuFilter.addSpoilerEntities(msg, entities, messageText);
+        addTextStyleRuns(entities, messageText, text, allowedFlags);
+        tw.nekomimi.nekogram.filters.AyuFilter.syncMaskMarkerSpan(text, msg, null);
     }
 
     public static void addTextStyleRuns(ArrayList<TLRPC.MessageEntity> entities, CharSequence messageText, Spannable text, int allowedFlags) {

@@ -5,7 +5,6 @@ import io.objectbox.BoxStore
 import io.objectbox.BoxStoreBuilder
 import org.telegram.messenger.ApplicationLoader
 import tw.nekomimi.nekogram.transtale.TranslateDb
-import tw.nekomimi.nekogram.utils.FileUtil
 import xyz.nextalone.nagram.network.NetworkLogDb
 import java.io.File
 
@@ -13,12 +12,7 @@ import java.io.File
 @JvmOverloads
 fun mkDatabase(name: String, delete: Boolean = false): BoxStore {
 
-    val oldFile = File("${ApplicationLoader.getDataDirFixed()}/databases/$name.db")
-    FileUtil.initDir(oldFile.parentFile!!)
-    if (oldFile.exists()) {
-        oldFile.deleteRecursively()
-    }
-
+    // Keep XF SQLite caches ($name.db) untouched during app upgrades.
     val dir = File("${ApplicationLoader.getDataDirFixed()}/databases/$name")
     if (delete) {
         dir.deleteRecursively()
@@ -33,11 +27,7 @@ fun mkDatabase(name: String, delete: Boolean = false): BoxStore {
             .build()
     }
 
-    runCatching {
-        return create()
-    }.onFailure {
-        dir.deleteRecursively()
-    }
+    // Do not silently erase translations/settings when opening a store fails.
     return create()
 }
 

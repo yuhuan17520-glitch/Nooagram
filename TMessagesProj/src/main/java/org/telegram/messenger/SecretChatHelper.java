@@ -9,10 +9,15 @@
 package org.telegram.messenger;
 
 import android.app.Activity;
+import com.radolyn.ayugram.AyuConstants;
+import com.radolyn.ayugram.messages.AyuMessagesController;
+import com.radolyn.ayugram.messages.AyuHistoryDeletion;
+import com.radolyn.ayugram.messages.AyuSavePreferences;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.TextUtils;
 import android.util.SparseArray;
+import androidx.collection.LongSparseArray;
 import android.util.SparseIntArray;
 
 import org.telegram.SQLite.SQLiteCursor;
@@ -1142,22 +1147,11 @@ public class SecretChatHelper extends BaseController {
                     return newMessage;
                 } else if (serviceMessage.action instanceof TLRPC.TL_decryptedMessageActionFlushHistory) {
                     long did = DialogObject.makeEncryptedDialogId(chat.id);
-                    AndroidUtilities.runOnUIThread(() -> {
-                        TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(did);
-                        if (dialog != null) {
-                            dialog.unread_count = 0;
-                            getMessagesController().dialogMessage.remove(dialog.id);
-                        }
-                        getMessagesStorage().getStorageQueue().postRunnable(() -> AndroidUtilities.runOnUIThread(() -> {
-                            getNotificationsController().processReadMessages(null, did, 0, Integer.MAX_VALUE, false);
-                            LongSparseIntArray dialogsToUpdate = new LongSparseIntArray(1);
-                            dialogsToUpdate.put(did, 0);
-                            getNotificationsController().processDialogsUpdateRead(dialogsToUpdate);
-                        }));
-                        getMessagesStorage().deleteDialog(did, 1);
-                        getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
-                        getNotificationCenter().postNotificationName(NotificationCenter.removeAllMessagesFromDialog, did, false, null);
-                    });
+                    // 负 ID 分界点区分此次清空前后的消息，后到的新消息不属于清空范围。
+                    int boundary = getUserConfig().getNewMessageId();
+                    getUserConfig().saveConfig(false);
+                    Utilities.stageQueue.postRunnable(() -> AyuMessagesController.getInstance().onHistoryFlushed(
+                            currentAccount, did, boundary + 1, -1, this::performFlushEncryptedHistory));
                     return null;
                 } else if (serviceMessage.action instanceof TLRPC.TL_decryptedMessageActionDeleteMessages) {
                     if (!serviceMessage.action.random_ids.isEmpty()) {
@@ -2070,4 +2064,23 @@ public class SecretChatHelper extends BaseController {
             //don't promt
         }
     }
+
+    // save deleted start
+    private void performFlushEncryptedHistory(AyuHistoryDeletion deletion) {
+        if (!deletion.captured) return;
+        long did = deletion.dialogId;
+        ArrayList<Integer> ids = new ArrayList<>(deletion.messageIds);
+        getMessagesStorage().getStorageQueue().postRunnable(() -> {
+            ArrayList<Long> dialogIds = getMessagesStorage().markMessagesAsDeleted(did, ids, false, true, 0, 0);
+            getMessagesStorage().updateDialogsWithDeletedMessages(did, 0, ids, dialogIds);
+            AndroidUtilities.runOnUIThread(() -> {
+                LongSparseArray<ArrayList<Integer>> removed = new LongSparseArray<>();
+                removed.put(did, ids);
+                getNotificationsController().removeDeletedMessagesFromNotifications(removed, false);
+                getNotificationCenter().postNotificationName(AyuConstants.HISTORY_FLUSHED_NOTIFICATION, did, deletion);
+                getNotificationCenter().postNotificationName(NotificationCenter.dialogsNeedReload);
+            });
+        });
+    }
+    // save deleted end
 }

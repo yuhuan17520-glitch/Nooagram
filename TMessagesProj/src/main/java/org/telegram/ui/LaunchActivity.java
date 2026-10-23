@@ -296,6 +296,22 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     private boolean isResumed;
     public static Runnable onResumeStaticCallback;
 
+    public void applyNooagramHighRefreshRate() {
+        android.view.Window window = getWindow();
+        if (window == null) return;
+        WindowManager.LayoutParams params = window.getAttributes();
+        float targetRate = com.radolyn.ayugram.AyuOptions.nooagramHighRefreshRate.Bool()
+                ? AndroidUtilities.screenMaxRefreshRate : 0.0f;
+        if (Math.abs(params.preferredRefreshRate - targetRate) > 0.2f) {
+            params.preferredRefreshRate = targetRate;
+            try {
+                window.setAttributes(params);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
+    }
+
     public static boolean isActive() {
         return LaunchActivity.instance != null && LaunchActivity.instance.isActive;
     }
@@ -7157,6 +7173,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onResume() {
         super.onResume();
+        applyNooagramHighRefreshRate();
         isResumed = true;
         pipActivityHandler.onResume();
         if (onResumeStaticCallback != null) {

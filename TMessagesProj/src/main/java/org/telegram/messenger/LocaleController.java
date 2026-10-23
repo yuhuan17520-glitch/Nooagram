@@ -40,7 +40,7 @@ import androidx.annotation.StringRes;
 
 import org.telegram.utils.localization.Localization;
 import org.telegram.localization.LocalizationUtils;
-import org.telegram.localization.NamespaceLocalizationUtils;
+import org.telegram.utils.localization.BundledLocalization;
 import org.telegram.messenger.support.ArrayUtils;
 import org.telegram.messenger.time.FastDateFormat;
 import org.telegram.tgnet.Vector;
@@ -4581,15 +4581,7 @@ public class LocaleController {
     private int localizationExternalSize;
 
     private void checkNagramLocalizationInternal(Localization.Builder builder, Locale currentLocale) {
-        for (String asset : new String[] {
-                NamespaceLocalizationUtils.getLocalizationAssetNa(currentLocale),
-                NamespaceLocalizationUtils.getLocalizationAssetNeko(currentLocale),
-                NamespaceLocalizationUtils.getLocalizationAssetNekox(currentLocale)
-        }) {
-            if (asset != null) {
-                builder.addResLocalization(ApplicationLoader.applicationContext, asset);
-            }
-        }
+        BundledLocalization.addTo(builder, ApplicationLoader.applicationContext, currentLocale);
     }
 
     private void checkLocalizationInternal() {

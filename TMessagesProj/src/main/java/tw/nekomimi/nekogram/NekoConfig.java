@@ -288,19 +288,7 @@ public class NekoConfig {
     }
 
     public static void setGhostMode(boolean enabled) {
-        sendReadMessagePackets   = !enabled;
-        sendOnlinePackets        = !enabled;
-        sendUploadProgress       = !enabled;
-        sendReadStoryPackets     = !enabled;
-        sendOfflineAfterOnline   = enabled;
-
-        preferences.edit()
-                .putBoolean("sendReadMessagePackets", sendReadMessagePackets)
-                .putBoolean("sendOnlinePackets", sendOnlinePackets)
-                .putBoolean("sendUploadProgress", sendUploadProgress)
-                .putBoolean("sendReadStoryPackets", sendReadStoryPackets)
-                .putBoolean("sendOfflineAfterOnline", sendOfflineAfterOnline)
-                .apply();
+        com.radolyn.ayugram.controllers.AyuGhostController.getInstance(org.telegram.messenger.UserConfig.selectedAccount).setGhostMode(enabled);
     }
 
     public static void putBoolean(String key, boolean value) {
@@ -310,11 +298,7 @@ public class NekoConfig {
         setGhostMode(!isGhostModeActive());
     }
     public static boolean isGhostModeActive() {
-        return !sendReadMessagePackets
-                && !sendOnlinePackets
-                && !sendUploadProgress
-                && !sendReadStoryPackets
-                && sendOfflineAfterOnline;
+        return com.radolyn.ayugram.controllers.AyuGhostController.getInstance(org.telegram.messenger.UserConfig.selectedAccount).isGhostModeActive();
     }
 
     public static void checkMigrate(boolean force) {

@@ -259,6 +259,10 @@ public class TextCheckCell2 extends FrameLayout {
         return checkBox;
     }
 
+    public View getCheckBoxClickArea() {
+        return checkBoxClickArea;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (needDivider) {

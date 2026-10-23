@@ -34,8 +34,35 @@ idea {
     }
 }
 
-def verName = APP_VERSION_NAME
-def verCode = 1255
+def nooagram = new groovy.json.JsonSlurper().parse(rootProject.file("nooagram-version.json"))
+def verCode = (System.getenv("NOOAGRAM_VERSION_CODE") ?: nooagram.version_code_floor.toString()).toInteger()
+if (verCode < nooagram.version_code_floor || verCode <= nooagram.previous_release_version_code || verCode > 2100000000) {
+    throw new GradleException("Nooagram versionCode must exceed the published upgrade floor")
+}
+def verName = System.getenv("NOOAGRAM_VERSION_NAME") ?: "${nooagram.version}-migration-${APP_VERSION_NAME}.n${nooagram.upstream_build}+${verCode}"
+
+// Compile checks are allowed; do not accidentally package/publish this unfinished migration.
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.project == project && (it.name == "assembleDebug" || it.name == "packageDebug") }
+            && System.getenv("COMPILE_NATIVE") == null) {
+        throw new GradleException("Migration test APK requires an explicit source native build for this signing certificate")
+    }
+    if (!nooagram.migration_ready && graph.allTasks.any {
+        it.project == project && (it.name.startsWith("assembleRelease") ||
+                it.name == "packageRelease" || it.name == "packageReleaseBundle" || it.name.startsWith("bundleRelease") ||
+                it.name.startsWith("publish"))
+    }) {
+        throw new GradleException("Nagram migration is not release-ready; complete migration validation first")
+    }
+    // Production-signed candidates are private CI artifacts, never public releases.
+    if (graph.allTasks.any { it.project == project &&
+            (it.name == "assembleCandidate" || it.name == "packageCandidate") } &&
+            (System.getenv("COMPILE_NATIVE") != "1" ||
+             System.getenv("NOOAGRAM_SIGNED_CANDIDATE") != "1" ||
+             !System.getenv("NOOAGRAM_KEYSTORE_PATH"))) {
+        throw new GradleException("Signed candidate requires explicit opt-in, source native build and isolated CI signing")
+    }
+}
 
 
 def officialVer = APP_VERSION_NAME
@@ -70,6 +97,21 @@ def pwd = null
 def sentry_token = System.getenv("SENTRY_AUTH_TOKEN")
 def nagram_build_args = System.getenv("NAGRAM_BUILD_ARGS")
 def disableCMakeRelWithDebInfo = System.getenv("COMPILE_NATIVE") == null
+if (System.getenv("NOOAGRAM_USE_PINNED_NATIVE") == "1") {
+    throw new GradleException("Upstream native binaries are bound to the upstream signing key and cannot run in this fork. Build native sources instead.")
+}
+def nativeSignerSha1 = System.getenv("NOOAGRAM_NATIVE_SIGNER_SHA1") ?: ""
+// Only read the public certificate of the isolated Android debug keystore.
+// Never open the production keystore while configuring or testing this build.
+def debugNativeSignerSha1 = ""
+def debugStore = new File(System.getProperty("user.home"), ".android/debug.keystore")
+if (System.getenv("COMPILE_NATIVE") != null && debugStore.isFile()) {
+    def debugKeys = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
+    debugStore.withInputStream { debugKeys.load(it, "android".toCharArray()) }
+    def debugCertificate = debugKeys.getCertificate("androiddebugkey")
+    if (debugCertificate == null) throw new GradleException("Android debug signing certificate missing")
+    debugNativeSignerSha1 = java.security.MessageDigest.getInstance("SHA-1").digest(debugCertificate.encoded).encodeHex().toString().toUpperCase()
+}
 
 Properties properties
 def base64 = System.getenv("LOCAL_PROPERTIES")
@@ -110,9 +152,14 @@ android {
     buildToolsVersion '36.0.0'
     ndkVersion rootProject.ext.ndkVersion // 27.2.12479018
 
-    defaultConfig.applicationId = "xyz.nextalone.nagram"
+    defaultConfig.applicationId = "fork.yuhuan.nooagram"
+    defaultConfig.javaCompileOptions.annotationProcessorOptions.arguments += [
+            "room.schemaLocation": "$projectDir/schemas"
+    ]
 
     sourceSets {
+
+        test.resources.srcDir "schemas"
 
         main {
             assets.srcDirs = ["src/main/assets"]
@@ -150,8 +197,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
 
         coreLibraryDesugaringEnabled true
     }
@@ -177,12 +224,13 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 23
+        minSdkVersion 27
         //noinspection ExpiredTargetSdkVersion,OldTargetApi
         targetSdkVersion 36
 
         versionName verName
         versionCode verCode
+        buildConfigField "boolean", "MIGRATION_TEST_BUILD", "false"
 
         def appId = "11535358"
         def appHash = "33d372962fadb01df47e6ceed4e33cd6"
@@ -205,6 +253,7 @@ android {
             cmake {
                 version '3.22.1'
                 arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments "-DNOOAGRAM_EXPECTED_SIGNER_SHA1=${nativeSignerSha1}", "-DCMAKE_OBJECT_PATH_MAX=200"
                 targets 'tmessages.49'
             }
         }
@@ -217,7 +266,7 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+        jvmTarget = JavaVersion.VERSION_21.toString()
     }
 
     testOptions {
@@ -231,7 +280,7 @@ android {
 
     signingConfigs {
         release {
-            storeFile project.file("release.keystore")
+            storeFile project.file(System.getenv("NOOAGRAM_KEYSTORE_PATH") ?: "release.keystore")
             storePassword keystorePwd
             keyAlias alias
             keyPassword pwd
@@ -247,7 +296,13 @@ android {
             debuggable true
             jniDebuggable true
             multiDexEnabled true
-            signingConfig signingConfigs.release
+            // Never use the production signing key or data directory for migration testing.
+            applicationIdSuffix ".migrationtest"
+            versionNameSuffix "-test"
+            resValue "string", "migration_test_app_name", "Nooagram Migration Test"
+            buildConfigField "boolean", "MIGRATION_TEST_BUILD", "true"
+            signingConfig signingConfigs.debug
+            externalNativeBuild.cmake.arguments "-DNOOAGRAM_EXPECTED_SIGNER_SHA1=${debugNativeSignerSha1}"
         }
 
         release {
@@ -258,6 +313,15 @@ android {
             multiDexEnabled true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             matchingFallbacks = ["release", "debug"]
+            signingConfig signingConfigs.release
+        }
+
+        candidate {
+            initWith release
+            matchingFallbacks = ["release"]
+            // Same application id, signing, shrinking and code as release.
+            // No automatic publication; this variant enables signed upgrade QA
+            // while migration_ready remains false.
             signingConfig signingConfigs.release
         }
     }
@@ -284,7 +348,9 @@ android {
     }
 
     tasks.configureEach { task ->
-        if (((task.name.endsWith("Ndk") || task.name.startsWith("generateJsonModel") || task.name.startsWith("externalNativeBuild"))) && !task.name.contains("Debug")) {
+        if (task.name == "processDebugGoogleServices") task.enabled = false
+        if (System.getenv("COMPILE_NATIVE") == null &&
+                (task.name.endsWith("Ndk") || task.name.startsWith("generateJsonModel") || task.name.startsWith("externalNativeBuild")) && !task.name.contains("Debug")) {
             task.enabled = false
         }
         if (task.name.contains("uploadCrashlyticsMappingFile")) {
@@ -309,7 +375,7 @@ android {
 
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
-            String gramName = "Nagram"
+            String gramName = "Nooagram"
             String first = String.format("%s-v%s(%s)", gramName, versionName, versionCode)
             String name = outputFileName.replace("TMessagesProj", first)
             name = name.replace("-release", "")
@@ -324,6 +390,8 @@ def fcmVersion = "23.4.1"
 def crashlyticsVersion = "18.6.2"
 
 dependencies {
+    implementation "androidx.room:room-runtime:2.8.4"
+    kapt "androidx.room:room-compiler:2.8.4"
     implementation 'androidx.fragment:fragment:1.8.9'
     implementation "androidx.core:core-ktx:1.16.0"
     implementation "androidx.palette:palette-ktx:1.0.0"

@@ -98,9 +98,22 @@
 -dontwarn javax.naming.directory.InitialDirContext
 -dontwarn org.xbill.DNS.spi.DnsjavaInetAddressResolverProvider
 
--keepclassmembers class tw.nekomimi.nekogram.helpers.AyuFilter$FilterModel {
- !transient <fields>;
-}
+# Ayu filter JSON is persisted/exported; keep its wire field names across R8.
+# LockedDao uses Proxy.newProxyInstance and Method.invoke on these interfaces.
+# R8 otherwise merges a single-implementation DAO into its generated class,
+# which compiles successfully but makes Proxy.newProxyInstance fail at runtime.
+-keep interface com.radolyn.ayugram.database.dao.** { *; }
+-keep class com.radolyn.ayugram.database.dao.**_Impl { *; }
+-keepattributes InnerClasses,EnclosingMethod,*Annotation*
+-keepclassmembers class * { @com.google.gson.annotations.Expose <fields>; }
+-keep class tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity$TransferData { *; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity$BackupFilter { <fields>; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity$BackupExclusion { <fields>; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$FilterModel { <fields>; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$ChatFilterEntry { <fields>; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$ExcludedFilterEntry { <fields>; }
+-keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$CustomFilteredUser { <fields>; }
+-keepclassmembers class com.radolyn.ayugram.database.FilterPrefsMigrator$* { <fields>; }
 -keepattributes Signature
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken

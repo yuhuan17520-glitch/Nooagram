@@ -86,6 +86,10 @@ public class TextCheckBoxCell extends FrameLayout {
         return checkBox.isChecked();
     }
 
+    public CheckBoxSquare getCheckBox() {
+        return checkBox;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (needDivider) {

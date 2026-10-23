@@ -1,6 +1,7 @@
 package org.telegram.ui.Components.spoilers;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 
 import android.animation.Animator;
@@ -640,14 +641,18 @@ public class SpoilerEffect extends Drawable {
      * @param spoilers     Spoilers list to populate
      */
     public static void addSpoilers(@Nullable View v, Layout textLayout, @Nullable Stack<SpoilerEffect> spoilersPool, List<SpoilerEffect> spoilers) {
-        if (NekoConfig.showSpoilersDirectly.Bool()) return;
+        if (NekoConfig.showSpoilersDirectly.Bool() && !AyuFilter.hasMaskedFilterSpan(textLayout == null ? null : textLayout.getText())) {
+            return;
+        }
         if (textLayout.getText() instanceof Spanned) {
             addSpoilers(v, textLayout, (Spanned) textLayout.getText(), spoilersPool, spoilers);
         }
     }
 
     public static void addSpoilers(@Nullable View v, Layout textLayout, int left, int right, @Nullable Stack<SpoilerEffect> spoilersPool, List<SpoilerEffect> spoilers) {
-        if (NekoConfig.showSpoilersDirectly.Bool()) return;
+        if (NekoConfig.showSpoilersDirectly.Bool() && !AyuFilter.hasMaskedFilterSpan(textLayout == null ? null : textLayout.getText())) {
+            return;
+        }
         if (textLayout.getText() instanceof Spanned) {
             addSpoilers(v, textLayout, left, right, (Spanned) textLayout.getText(), spoilersPool, spoilers, null);
         }

@@ -9,6 +9,12 @@
 package org.telegram.messenger;
 
 import static org.telegram.messenger.MessagesController.LOAD_AROUND_DATE;
+import tw.nekomimi.nekogram.filters.AyuFilter;
+import com.radolyn.ayugram.AyuConstants;
+import com.radolyn.ayugram.messages.AyuMessagesController;
+import com.radolyn.ayugram.messages.AyuSavePreferences;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
+import com.radolyn.ayugram.utils.AyuState;
 import static org.telegram.messenger.MessagesController.LOAD_AROUND_MESSAGE;
 import static org.telegram.messenger.MessagesController.LOAD_BACKWARD;
 import static org.telegram.messenger.MessagesController.LOAD_FORWARD;
@@ -1414,7 +1420,9 @@ public class MessagesStorage extends BaseController {
         });
     }
 
-    public void clearLocalDatabase() {
+    public void clearLocalDatabase() { clearLocalDatabase(false, null); }
+
+    public void clearLocalDatabase(boolean restart, Runnable onComplete) {
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
             SQLitePreparedStatement state5 = null;
@@ -1556,6 +1564,8 @@ public class MessagesStorage extends BaseController {
                     cursor.dispose();
                 }
                 reset();
+                if (onComplete != null) AndroidUtilities.runOnUIThread(onComplete);
+                else if (restart) AndroidUtilities.runOnUIThread(tw.nekomimi.nekogram.helpers.AppRestartHelper::triggerRebirth);
             }
         });
     }
@@ -4529,6 +4539,10 @@ public class MessagesStorage extends BaseController {
                     return;
                 }
 
+                // --- AyuGram hook: save before bulk history / dialog clear
+                saveDeletedMessagesBeforeDialogClear(did, 0, 0);
+                // --- AyuGram hook
+
                 database.executeFast("UPDATE dialogs SET unread_count = 0, unread_count_i = 0 WHERE did = " + did).stepThis().dispose();
                 database.executeFast("DELETE FROM messages_v2 WHERE uid = " + did).stepThis().dispose();
                 database.executeFast("DELETE FROM messages_topics WHERE uid = " + did).stepThis().dispose();
@@ -4755,6 +4769,11 @@ public class MessagesStorage extends BaseController {
     }
 
     public void emptyMessagesMedia(long dialogId, ArrayList<Integer> mids) {
+        // view-once media must stay in the chat and on disk when deleted-message saving is on
+        // for this dialog; must follow the same per-dialog rules as saving (exclusions, bots)
+        if (AyuSavePreferences.saveDeletedMessageFor(currentAccount, dialogId, 0)) {
+            return;
+        }
         storageQueue.postRunnable(() -> {
             SQLiteCursor cursor = null;
             SQLitePreparedStatement state = null;
@@ -4776,6 +4795,14 @@ public class MessagesStorage extends BaseController {
                             if (!addFilesToDelete(message, filesToDelete, idsToDelete, namesToDelete, true)) {
                                 continue;
                             } else {
+                                // --- AyuGram hook
+                                if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveEditsHistory().Bool()) {
+                                    var prefs = new AyuSavePreferences(message, currentAccount);
+                                    prefs.setDialogId(dialogId);
+                                    AyuMessagesController.getInstance().onMessageEditedForce(prefs);
+                                }
+                                // --- AyuGram hook
+
                                 if (message.media.document != null) {
                                     message.media.document = new TLRPC.TL_documentEmpty();
                                 } else if (message.media.photo != null) {
@@ -14300,6 +14327,7 @@ public class MessagesStorage extends BaseController {
                 for (int b = 0; b < outbox.size(); b++) {
                     long key = outbox.keyAt(b);
                     int messageId = outbox.get(key);
+                    recordAyuOutboxRead(key, messageId);
                     database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET read_state = read_state | 1 WHERE uid = %d AND mid > 0 AND mid <= %d AND read_state IN(0,2) AND out = 1", key, messageId)).stepThis().dispose();
                 }
             }
@@ -14307,6 +14335,7 @@ public class MessagesStorage extends BaseController {
                 for (int a = 0; a < encryptedMessages.size(); a++) {
                     long dialogId = DialogObject.makeEncryptedDialogId(encryptedMessages.keyAt(a));
                     int max_date = encryptedMessages.valueAt(a);
+                    recordAyuEncryptedOutboxRead(dialogId, max_date);
                     state = database.executeFast("UPDATE messages_v2 SET read_state = read_state | 1 WHERE uid = ? AND date <= ? AND read_state IN(0,2) AND out = 1");
                     state.requery();
                     state.bindLong(1, dialogId);
@@ -14325,11 +14354,66 @@ public class MessagesStorage extends BaseController {
         }
     }
 
+    private void recordAyuOutboxRead(long dialogId, int maxId) {
+        if (!com.radolyn.ayugram.controllers.AyuSpyController.isEnabled()) {
+            return;
+        }
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid FROM messages_v2 WHERE uid = %d AND mid > 0 AND mid <= %d AND read_state IN(0,2) AND out = 1", dialogId, maxId));
+            ArrayList<Integer> mids = null;
+            while (cursor.next()) {
+                if (mids == null) {
+                    mids = new ArrayList<>();
+                }
+                mids.add(cursor.intValue(0));
+            }
+            if (mids != null) {
+                com.radolyn.ayugram.controllers.AyuSpyController.onOutboxRead(currentAccount, dialogId, mids);
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
+    private void recordAyuEncryptedOutboxRead(long dialogId, int maxDate) {
+        if (!com.radolyn.ayugram.controllers.AyuSpyController.isEnabled()) {
+            return;
+        }
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid FROM messages_v2 WHERE uid = %d AND date <= %d AND read_state IN(0,2) AND out = 1", dialogId, maxDate));
+            ArrayList<Integer> mids = null;
+            while (cursor.next()) {
+                if (mids == null) {
+                    mids = new ArrayList<>();
+                }
+                mids.add(cursor.intValue(0));
+            }
+            if (mids != null) {
+                com.radolyn.ayugram.controllers.AyuSpyController.onOutboxRead(currentAccount, dialogId, mids);
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
     private void markMessagesContentAsReadInternal(long dialogId, ArrayList<Integer> mids, int date) {
         SQLiteCursor cursor = null;
         try {
             String midsStr = TextUtils.join(",", mids);
             database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET read_state = read_state | 2 WHERE mid IN (%s) AND uid = %d", midsStr, dialogId)).stepThis().dispose();
+            if (com.radolyn.ayugram.controllers.AyuSpyController.isEnabled()) {
+                com.radolyn.ayugram.controllers.AyuSpyController.onContentsRead(currentAccount, dialogId, mids);
+            }
             if (date != 0) {
                 cursor = database.queryFinalized(String.format(Locale.US, "SELECT mid, ttl FROM messages_v2 WHERE mid IN (%s) AND uid = %d AND ttl > 0", midsStr, dialogId));
                 ArrayList<Integer> arrayList = null;
@@ -14483,9 +14567,32 @@ public class MessagesStorage extends BaseController {
                 cursor.dispose();
                 cursor = null;
                 if (!dialogs.isEmpty()) {
+                    // save deleted messages from encrypted chats
+                    if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+                        var ayuMessagesController = AyuMessagesController.getInstance();
+                        for (int a = 0, N = dialogs.size(); a < N; a++) {
+                            long dialogId = dialogs.keyAt(a);
+                            ArrayList<Integer> mids = dialogs.valueAt(a);
+                            for (int msgId : mids) {
+                                TLRPC.Message msg = getMessageInternalSync(dialogId, msgId);
+                                if (msg != null) {
+                                    msg.dialog_id = dialogId;
+                                    var prefs = new AyuSavePreferences(msg, currentAccount);
+                                    prefs.setDialogId(dialogId);
+                                    ayuMessagesController.onMessageDeleted(prefs);
+                                }
+                            }
+                        }
+                    }
                     for (int a = 0, N = dialogs.size(); a < N; a++) {
                         long dialogId = dialogs.keyAt(a);
                         ArrayList<Integer> mids = dialogs.valueAt(a);
+                        // notify about deleted messages
+                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+                            final long dialogIdFinal = dialogId;
+                            final ArrayList<Integer> midsFinal = new ArrayList<>(mids);
+                            AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(AyuConstants.MESSAGES_DELETED_NOTIFICATION, dialogIdFinal, midsFinal));
+                        }
                         AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.messagesDeleted, mids, 0L, false));
                         updateDialogsWithReadMessagesInternal(mids, null, null, null, null);
                         markMessagesAsDeletedInternal(dialogId, mids, true, 0, 0);
@@ -15334,7 +15441,8 @@ public class MessagesStorage extends BaseController {
         executeInStorageQueue(() -> updateDialogsWithDeletedMessagesInternal(dialogId, channelId, messages, additionalDialogsToUpdate));
     }
 
-    public ArrayList<Long> markMessagesAsDeleted(long dialogId, ArrayList<Integer> messages, boolean useQueue, boolean deleteFiles, int mode, int topicId) {
+    public ArrayList<Long> markMessagesAsDeleted(long dialogId, ArrayList<Integer> messages, boolean useQueue, boolean deleteFilesOrig, int mode, int topicId) {
+        final boolean deleteFiles = deleteFilesOrig && !AyuMessageUtils.shouldSaveMedia(currentAccount, dialogId);
         if (messages.isEmpty()) {
             return null;
         }
@@ -15853,6 +15961,13 @@ public class MessagesStorage extends BaseController {
         if (message == null || message instanceof TLRPC.TL_messageEmpty) {
             return;
         }
+        // don't overwrite local media with the burned (empty) version coming from the server
+        TLRPC.MessageMedia media = message.media;
+        if (AyuSavePreferences.shouldKeepMediaFor(currentAccount, MessageObject.getDialogId(message), message)
+                && media != null && media.ttl_seconds != 0
+                && (media.photo instanceof TLRPC.TL_photoEmpty || media.document instanceof TLRPC.TL_documentEmpty)) {
+            return;
+        }
         storageQueue.postRunnable(() -> {
             SQLitePreparedStatement state = null;
             SQLitePreparedStatement state2 = null;
@@ -16324,6 +16439,16 @@ public class MessagesStorage extends BaseController {
                                     }
                                     if (oldMessage.out && !message.out) {
                                         message.out = oldMessage.out;
+                                    }
+                                    if (message.from_id != null && AyuMessagesController.shouldSaveEdit(oldMessage, message, sameMedia)) {
+                                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveEditsHistory().Bool()) {
+                                            AyuSavePreferences prefs = new AyuSavePreferences(oldMessage, currentAccount);
+                                            prefs.setDialogId(dialogId);
+                                            AyuMessagesController.getInstance().onMessageEdited(prefs, message);
+                                        }
+                                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
+                                            AyuFilter.onMessageEdited(message.id, dialogId);
+                                        }
                                     }
                                     if (!sameMedia) {
                                         addFilesToDelete(oldMessage, filesToDelete, idsToDelete, namesToDelete, false);
@@ -18626,6 +18751,61 @@ public class MessagesStorage extends BaseController {
         return messageIds;
     }
 
+    private void saveDeletedMessagesBeforeDialogClear(long dialogId, long keepMid1, long keepMid2) {
+        if (!com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            return;
+        }
+        // 密聊整段清理由 SecretChatHelper 的 onHistoryFlushed 链路负责归档，
+        // 这里重复读一遍只会产生两套并发的保存任务。
+        if (DialogObject.isEncryptedDialog(dialogId)) {
+            return;
+        }
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized("SELECT mid, data FROM messages_v2 WHERE uid = " + dialogId);
+            ArrayList<TLRPC.Message> toSave = new ArrayList<>();
+            while (cursor.next()) {
+                int mid = cursor.intValue(0);
+                if (keepMid1 != 0 && mid == keepMid1) {
+                    continue;
+                }
+                if (keepMid2 != 0 && mid == keepMid2) {
+                    continue;
+                }
+                if (AyuState.isDeletePermitted(dialogId, mid)) {
+                    continue;
+                }
+                NativeByteBuffer data = cursor.byteBufferValue(1);
+                if (data == null) {
+                    continue;
+                }
+                try {
+                    TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                    if (message != null) {
+                        message.readAttachPath(data, getUserConfig().clientUserId);
+                        message.dialog_id = dialogId;
+                        toSave.add(message);
+                    }
+                } finally {
+                    data.reuse();
+                }
+            }
+            cursor.dispose();
+            cursor = null;
+            if (!toSave.isEmpty()) {
+                // 归档耗时的读写放到 AyuMessagesController 的线程池，
+                // 存储队列里绝不能同步等待别的存储队列任务。
+                AyuMessagesController.getInstance().saveCollectedMessages(currentAccount, dialogId, toSave);
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+    }
+
     public void updateUnreadReactionsCount(long dialogId, long topicId, int count) {
         updateUnreadReactionsCount(dialogId, topicId, count, false);
     }
@@ -19111,4 +19291,146 @@ public class MessagesStorage extends BaseController {
                     '}';
         }
     }
+    // save deleted start
+    public Pair<Integer, Integer> getMinAndMaxForDialog(long dialogId) {
+        SQLiteCursor cursor = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT MIN(mid), MAX(mid) FROM messages_v2 WHERE uid = %d", dialogId));
+            if (cursor.next()) {
+                return new Pair<>(cursor.intValue(0), cursor.intValue(1));
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+        return new Pair<>(0, 0);
+    }
+
+    public ArrayList<Long> getDialogIdsToUpdate(long dialogId, ArrayList<Integer> messages) {
+        SQLiteCursor cursor = null;
+        try {
+            String ids = TextUtils.join(",", messages);
+            var dialogsToUpdate = new HashSet<Long>();
+            if (dialogId != 0) {
+                cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, mid FROM messages_v2 WHERE mid IN(%s) AND uid = %d", ids, dialogId));
+            } else {
+                cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, mid FROM messages_v2 WHERE mid IN(%s) AND is_channel = 0", ids));
+            }
+            while (cursor.next()) {
+                long did = cursor.longValue(0);
+                dialogsToUpdate.add(did);
+            }
+            cursor.dispose();
+            return new ArrayList<>(dialogsToUpdate);
+        } catch (Exception e) {
+            FileLog.e(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 不经存储队列、当前线程直读一条消息，供删除归档等"可能在存储队列上被调用"的链路使用。
+     *
+     * <p>与 {@link #getMessage(long, long)} 的区别：后者 post 到存储队列并等待，
+     * 在存储队列线程上调用会自锁死。
+     */
+    public TLRPC.Message getMessageLegit(long dialogId, long msgId) {
+        SQLiteCursor cursor = null;
+        TLRPC.Message message = null;
+        try {
+            String sql = dialogId != 0
+                    ? "SELECT data, send_state, mid, date, replydata, ttl, uid FROM messages_v2 WHERE uid = " + dialogId + " AND mid = " + msgId + " LIMIT 1"
+                    : "SELECT data, send_state, mid, date, replydata, ttl, uid FROM messages_v2 WHERE is_channel = 0 AND mid = " + msgId + " LIMIT 1";
+            cursor = database.queryFinalized(sql);
+            while (cursor.next()) {
+                NativeByteBuffer data = cursor.byteBufferValue(0);
+                if (data == null) {
+                    continue;
+                }
+                try {
+                    TLRPC.Message msg = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                    if (msg == null) {
+                        continue;
+                    }
+                    msg.send_state = cursor.intValue(1);
+                    msg.id = cursor.intValue(2);
+                    if (msg.id > 0 && msg.send_state != 0 && msg.send_state != 2) {
+                        msg.send_state = 0;
+                    }
+                    long actualDialogId = cursor.longValue(6);
+                    if (actualDialogId == getUserConfig().clientUserId) {
+                        msg.out = true;
+                        msg.unread = false;
+                    } else {
+                        msg.unread = true;
+                    }
+                    msg.readAttachPath(data, getUserConfig().clientUserId);
+                    msg.date = cursor.intValue(3);
+                    msg.dialog_id = actualDialogId;
+                    if (msg.ttl == 0) {
+                        msg.ttl = cursor.intValue(5);
+                    }
+                    if (msg.reply_to != null && (msg.reply_to.reply_to_msg_id != 0 || msg.reply_to.reply_to_random_id != 0) && !cursor.isNull(4)) {
+                        NativeByteBuffer replyData = cursor.byteBufferValue(4);
+                        if (replyData != null) {
+                            try {
+                                msg.replyMessage = TLRPC.Message.TLdeserialize(replyData, replyData.readInt32(false), false);
+                                if (msg.replyMessage != null) {
+                                    msg.replyMessage.readAttachPath(replyData, getUserConfig().clientUserId);
+                                }
+                            } finally {
+                                replyData.reuse();
+                            }
+                        }
+                    }
+                    message = msg;
+                } finally {
+                    data.reuse();
+                }
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+        }
+        return message;
+    }
+
+    private TLRPC.Message getMessageInternalSync(long dialogId, int msgId) {
+        SQLiteCursor cursor = null;
+        NativeByteBuffer data = null;
+        TLRPC.Message message = null;
+        try {
+            cursor = database.queryFinalized("SELECT data FROM messages_v2 WHERE uid = " + dialogId + " AND mid = " + msgId + " LIMIT 1");
+            if (cursor.next()) {
+                data = cursor.byteBufferValue(0);
+                if (data != null) {
+                    message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                    if (message != null) {
+                        message.readAttachPath(data, getUserConfig().clientUserId);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            checkSQLException(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+            if (data != null) {
+                data.reuse();
+            }
+        }
+        return message;
+    }
+    // save deleted end
 }

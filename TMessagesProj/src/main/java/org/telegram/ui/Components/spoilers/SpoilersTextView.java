@@ -219,7 +219,8 @@ public class SpoilersTextView extends TextView implements TextSelectionHelper.Si
         revealGeneration++;
         revealPending = false;
         revealInProgress = false;
-        isSpoilersRevealed = NekoConfig.showSpoilersDirectly.Bool();
+        isSpoilersRevealed = NekoConfig.showSpoilersDirectly.Bool()
+                && !tw.nekomimi.nekogram.filters.AyuFilter.hasMaskedFilterSpan(text);
         super.setText(text, type);
     }
 

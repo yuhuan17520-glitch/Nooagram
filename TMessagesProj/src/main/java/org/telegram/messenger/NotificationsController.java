@@ -9,6 +9,8 @@
 package org.telegram.messenger;
 
 import android.annotation.SuppressLint;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.ActivityManager;
@@ -127,6 +129,47 @@ public class NotificationsController extends BaseController implements Notificat
     private final HashSet<String> pendingVoiceLoads = new HashSet<>();
     public final ArrayList<MessageObject> popupMessages = new ArrayList<>();
     public ArrayList<MessageObject> popupReplyMessages = new ArrayList<>();
+
+    /**
+     * 在待通知 / 弹出通知的消息里找一条尚未写入主消息表的记录。
+     *
+     * <p>删除归档链路会用到：消息可能只在通知里出现过，界面还在，但 {@code messages_v2} 还没有。
+     */
+    public MessageObject findPushedOrPopupMessage(long dialogId, int messageId) {
+        ArrayList<MessageObject> popup = popupMessages;
+        MessageObject found = findInMessageList(popup, dialogId, messageId);
+        if (found != null) {
+            return found;
+        }
+        return findInMessageList(pushMessages, dialogId, messageId);
+    }
+
+    public ArrayList<MessageObject> getDeletionSnapshot(long dialogId, ArrayList<Integer> messageIds) {
+        HashSet<Integer> wanted = new HashSet<>(messageIds);
+        ArrayList<MessageObject> candidates = new ArrayList<>(pushMessages);
+        candidates.addAll(new ArrayList<>(popupMessages));
+        ArrayList<MessageObject> result = new ArrayList<>();
+        for (MessageObject message : candidates) {
+            if (message != null && wanted.contains(message.getId())
+                    && com.radolyn.ayugram.utils.AyuMessageUtils.matchesDeletionMessage(currentAccount, dialogId, message.getId(), message)) {
+                wanted.remove(message.getId());
+                result.add(message);
+            }
+        }
+        return result;
+    }
+
+    private MessageObject findInMessageList(ArrayList<MessageObject> list, long dialogId, int messageId) {
+        if (list == null) {
+            return null;
+        }
+        for (MessageObject messageObject : new ArrayList<>(list)) {
+            if (com.radolyn.ayugram.utils.AyuMessageUtils.matchesDeletionMessage(currentAccount, dialogId, messageId, messageObject)) {
+                return messageObject;
+            }
+        }
+        return null;
+    }
     private final HashSet<Long> openedInBubbleDialogs = new HashSet<>();
     private final ArrayList<StoryNotification> storyPushMessages = new ArrayList<>();
     private final LongSparseArray<StoryNotification> storyPushMessagesDict = new LongSparseArray<>();
@@ -647,6 +690,7 @@ public class NotificationsController extends BaseController implements Notificat
                             continue;
                         }
                         long dialogId = messageObject.getDialogId();
+                        if (!isReactions && com.radolyn.ayugram.messages.AyuSavePreferences.saveDeletedMessageFor(currentAccount, dialogId, messageObject)) continue;
                         Integer currentCount = pushDialogs.get(dialogId);
                         if (currentCount == null) {
                             currentCount = 0;
@@ -732,7 +776,12 @@ public class NotificationsController extends BaseController implements Notificat
 
                 for (int c = 0; c < pushMessages.size(); c++) {
                     MessageObject messageObject = pushMessages.get(c);
-                    if (messageObject.getDialogId() == dialogId && messageObject.getId() <= id) {
+                    if (messageObject.getDialogId() == dialogId && messageObject.getId() > 0 && messageObject.getId() <= id) {
+                        if (com.radolyn.ayugram.messages.AyuSavePreferences.saveDeletedMessageFor(currentAccount, dialogId, messageObject)) {
+                            com.radolyn.ayugram.messages.AyuMessagesController.getInstance().onMessageDeleted(
+                                    new com.radolyn.ayugram.messages.AyuSavePreferences(messageObject.messageOwner, currentAccount));
+                            continue;
+                        }
                         SparseArray<MessageObject> sparseArray = pushMessagesDict.get(dialogId);
                         if (sparseArray != null) {
                             sparseArray.remove(messageObject.getId());
@@ -1190,10 +1239,13 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     continue;
                 }
-                if (NekoConfig.ignoreBlocked.Bool() && getMessagesController().blockePeers.indexOfKey(messageObject.getSenderId()) >= 0) {
+                if (AyuFilter.shouldHideIgnoredBlockedMessages() && AyuFilter.isIgnoredBlockedMessage(messageObject)) {
                     continue;
                 }
-
+                // Ghost Mode: Schedule Messages — suppress notifications for our own scheduled-delivery messages.
+                if (AyuMessageUtils.shouldIgnoreNotification(messageObject)) {
+                    continue;
+                }
                 if (messageObject.isStoryPush) {
                     long date = messageObject.messageOwner == null ? System.currentTimeMillis() : messageObject.messageOwner.date * 1000L;
                     long dialogId = messageObject.getDialogId();
@@ -2581,21 +2633,33 @@ public class NotificationsController extends BaseController implements Notificat
         if (messageObject == null || messageObject.messageOwner == null) {
             return null;
         }
-        String text = messageObject.messageOwner.message;
-        if (text == null || messageObject.messageOwner.entities == null) {
+        return replaceSpoilers(messageObject.messageOwner.message, messageObject);
+    }
+
+    private String replaceSpoilers(String text, MessageObject messageObject) {
+        if (text == null) {
             return null;
         }
         StringBuilder stringBuilder = new StringBuilder(text);
-        if (NekoConfig.showSpoilersDirectly.Bool())
-            return stringBuilder.toString();
-        if (messageObject != null && messageObject.didSpoilLoginCode()) {
+        if (NekoConfig.showSpoilersDirectly.Bool() && !AyuFilter.shouldMaskMessage(messageObject, null)) {
             return stringBuilder.toString();
         }
-        for (int i = 0; i < messageObject.messageOwner.entities.size(); i++) {
-            if (messageObject.messageOwner.entities.get(i) instanceof TLRPC.TL_messageEntitySpoiler) {
-                TLRPC.TL_messageEntitySpoiler spoiler = (TLRPC.TL_messageEntitySpoiler) messageObject.messageOwner.entities.get(i);
-                for (int j = 0; j < spoiler.length; j++) {
-                    stringBuilder.setCharAt(spoiler.offset + j, spoilerChars[j % spoilerChars.length]);
+        if (messageObject.didSpoilLoginCode()) {
+            return stringBuilder.toString();
+        }
+        ArrayList<TLRPC.MessageEntity> entities = AyuFilter.addSpoilerEntities(messageObject, messageObject.messageOwner.entities, text);
+        if (entities == null) {
+            return stringBuilder.toString();
+        }
+        for (int i = 0; i < entities.size(); i++) {
+            if (entities.get(i) instanceof TLRPC.TL_messageEntitySpoiler) {
+                TLRPC.TL_messageEntitySpoiler spoiler = (TLRPC.TL_messageEntitySpoiler) entities.get(i);
+                if (spoiler.offset < 0 || spoiler.offset >= stringBuilder.length()) {
+                    continue;
+                }
+                int end = Math.min(stringBuilder.length(), spoiler.offset + spoiler.length);
+                for (int j = spoiler.offset; j < end; j++) {
+                    stringBuilder.setCharAt(j, spoilerChars[(j - spoiler.offset) % spoilerChars.length]);
                 }
             }
         }
@@ -5392,7 +5456,7 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.d("showExtraNotifications: ["+dialogId+"] continue; topic id is not equal: topicId=" + topicId + " messageTopicId=" + messageTopicId + "; selfId=" + getUserConfig().getClientUserId());
                         continue;
                     }
-                    if (NekoConfig.ignoreBlocked.Bool() && getMessagesController().blockePeers.indexOfKey(messageObject.getSenderId()) >= 0) {
+                    if (AyuFilter.shouldHideIgnoredBlockedMessages() && AyuFilter.isIgnoredBlockedMessage(messageObject)) {
                         continue;
                     }
                     String message = getShortStringForMessage(messageObject, senderName, preview);

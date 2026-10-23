@@ -9,6 +9,7 @@
 package org.telegram.messenger;
 
 import android.content.BroadcastReceiver;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -38,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import cn.hutool.core.util.StrUtil;
 import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.helpers.AyuFilter;
+
 
 public class DownloadController extends BaseController implements NotificationCenter.NotificationCenterDelegate {
 
@@ -613,14 +614,8 @@ public class DownloadController extends BaseController implements NotificationCe
 
     public boolean canDownloadMedia(MessageObject messageObject) {
         if (messageObject.getDocument() != null) {
-            String documentName = messageObject.getDocument().file_name;
-            if (StrUtil.isNotBlank(documentName)) {
-                if ((NekoConfig.disableAutoDownloadingWin32Executable.Bool() &&
-                        documentName.toLowerCase().matches(".*\\.(cmd|bat|com|exe|lnk|msi|ps1|reg|vb|vbe|vbs|vbscript)")
-                ) || (NekoConfig.disableAutoDownloadingArchive.Bool() &&
-                        documentName.toLowerCase().matches(".*\\.(apk|zip|7z|tar|gz|zst|iso|xz|lha|lzh)")
-                )
-                ) return false;
+            if (AyuFilter.isFiltered(messageObject, null)) {
+                return false;
             }
         }
         if (messageObject.type == MessageObject.TYPE_STORY) {
@@ -680,6 +675,11 @@ public class DownloadController extends BaseController implements NotificationCe
         }
         if (messageObject.isHiddenSensitive())
             return 0;
+        if (messageObject.getDocument() != null) {
+            if (AyuFilter.isFiltered(messageObject, null)) {
+                return 0;
+            }
+        }
         return canDownloadMediaInternal(messageObject);
     }
 
@@ -879,14 +879,9 @@ public class DownloadController extends BaseController implements NotificationCe
             return canPreloadStories() ? 2 : 0;
         }
 
-        // --- AyuGram hook
-
-        var isFiltered = AyuFilter.isFiltered(new MessageObject(currentAccount, message, false, false), null);
-        if (isFiltered) {
+        if (AyuFilter.isFiltered(new MessageObject(currentAccount, message, false, false), null)) {
             return 0;
         }
-
-        // --- AyuGram hook
 
         int type;
         boolean isVideo;
@@ -1595,7 +1590,7 @@ public class DownloadController extends BaseController implements NotificationCe
             }
             if (removed) {
                 getNotificationCenter().postNotificationName(NotificationCenter.onDownloadingFilesChanged);
-                if (reason == 0) {
+                if (reason == 0 && !parentObject.isAyuDeleted()) {
                     NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.showBulletin, Bulletin.TYPE_ERROR, LocaleController.formatString("MessageNotFound", R.string.MessageNotFound));
                 } else if (reason == -1) {
                     LaunchActivity.checkFreeDiscSpaceStatic(2);

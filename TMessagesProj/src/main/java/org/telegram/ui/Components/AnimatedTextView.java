@@ -62,6 +62,7 @@ public class AnimatedTextView extends View {
         private float currentBaseline, currentBelowBaseline;
         private Part[] currentParts;
         private CharSequence currentText;
+        private int currentLayoutWidth = -1;
 
         private float oldWidth, oldHeight;
         private float oldBaseline, oldBelowBaseline;
@@ -462,6 +463,7 @@ public class AnimatedTextView extends View {
 
                 oldText = currentText;
                 currentText = text;
+                currentLayoutWidth = width;
 
                 ArrayList<Part> currentParts = new ArrayList<>();
                 ArrayList<Part> oldParts = new ArrayList<>();
@@ -570,10 +572,13 @@ public class AnimatedTextView extends View {
                 toSetTextMoveDown = false;
                 rawT = t = 0;
 
-                if (!text.equals(currentText)) {
+                // The text may be unchanged while its available width changes
+                // during measurement (or when a settings cell is recycled).
+                if (!text.equals(currentText) || currentLayoutWidth != width) {
                     clearCurrentParts();
                     currentParts = new Part[1];
                     currentParts[0] = new Part(makeLayout(currentText = text, width), 0, -1);
+                    currentLayoutWidth = width;
                     currentWidth = currentParts[0].width;
                     resetCurrentHeight();
                     includeCurrentPartHeight(currentParts[0]);
@@ -1288,7 +1293,7 @@ public class AnimatedTextView extends View {
         }
         lastMaxWidth = width;
         if (adaptWidth && MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.AT_MOST) {
-            width = getPaddingLeft() + (int) Math.ceil(drawable.getWidth()) + getPaddingRight();
+            width = Math.min(width, getPaddingLeft() + (int) Math.ceil(drawable.getWidth()) + getPaddingRight());
         }
         setMeasuredDimension(width, height);
     }

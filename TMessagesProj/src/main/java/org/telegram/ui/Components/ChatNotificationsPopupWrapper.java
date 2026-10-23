@@ -71,6 +71,16 @@ public class ChatNotificationsPopupWrapper {
                 return draw;
             }
         };
+        if (createBackground) {
+            // The nine-patch includes a transparent top shadow inset. This is
+            // visible as a detached strip above the notification popup on the
+            // profile screen, so use the same themed rounded surface without
+            // the extra shadow for this popup.
+            windowLayout.setBackgroundDrawable(Theme.createRoundRectDrawable(
+                    AndroidUtilities.dp(8),
+                    Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground, resourcesProvider)
+            ));
+        }
         windowLayout.setFitItems(true);
 
         if (swipeBackLayout != null) {
@@ -78,6 +88,10 @@ public class ChatNotificationsPopupWrapper {
             backItem.setOnClickListener(view -> {
                 swipeBackLayout.closeForeground();
             });
+            ActionBarPopupWindow.GapView backSeparator = new ActionBarPopupWindow.GapView(context,
+                    resourcesProvider, Theme.key_actionBarDefaultSubmenuSeparator);
+            backSeparator.setTag(R.id.fit_width_tag, 1);
+            windowLayout.addView(backSeparator, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
         }
 
         soundToggle = ActionBarMenuItem.addItem(windowLayout, R.drawable.msg_tone_on, LocaleController.getString(R.string.SoundOn), false, resourcesProvider);

@@ -8,6 +8,11 @@
 
 package org.telegram.messenger;
 
+import com.radolyn.ayugram.AyuForward;
+import com.radolyn.ayugram.controllers.AyuGhostController;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
+import com.radolyn.ayugram.utils.AyuState;
+
 import android.annotation.SuppressLint;
 import android.content.ClipDescription;
 import android.content.Context;
@@ -1703,6 +1708,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else if (scheduled) {
                 mode = ChatActivity.MODE_SCHEDULED;
             }
+            for (int id : messageIds) AyuState.permitDeleteMessage(dialogId, id);
             getMessagesController().deleteMessages(messageIds, null, null, dialogId, topicId, false, mode);
         }
     }
@@ -2217,6 +2223,102 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
     }
 
+    private boolean hasFullAyuForwardMessages(ArrayList<MessageObject> messages) {
+        return AyuForward.isFullAyuForwardsNeeded(messages);
+    }
+
+    private boolean hasAyuForwardMessages(ArrayList<MessageObject> messages) {
+        return AyuForward.isAyuForwardNeeded(messages);
+    }
+
+    private ArrayList<ArrayList<MessageObject>> splitForwardChunks(ArrayList<MessageObject> messages, ArrayList<Boolean> ayuForwardModes) {
+        ArrayList<ArrayList<MessageObject>> chunks = new ArrayList<>();
+        if (messages == null || messages.isEmpty()) {
+            return chunks;
+        }
+        ArrayList<MessageObject> currentChunk = null;
+        boolean currentChunkAyuForward = false;
+        for (int i = 0; i < messages.size(); i++) {
+            MessageObject messageObject = messages.get(i);
+            boolean useAyuForward = AyuForward.isAyuForwardNeeded(messageObject);
+            if (currentChunk == null || currentChunkAyuForward != useAyuForward) {
+                currentChunk = new ArrayList<>();
+                chunks.add(currentChunk);
+                ayuForwardModes.add(useAyuForward);
+                currentChunkAyuForward = useAyuForward;
+            }
+            currentChunk.add(messageObject);
+        }
+        return chunks;
+    }
+
+    private void notifyForwardChunkFailure(Utilities.Callback2<Integer, String> onAsyncFailure, int sendError, String failureReason) {
+        if (!TextUtils.isEmpty(failureReason)) {
+            FileLog.w("AyuForward: " + failureReason);
+        }
+        if (onAsyncFailure == null) {
+            return;
+        }
+        AndroidUtilities.runOnUIThread(() -> onAsyncFailure.run(sendError, failureReason));
+    }
+
+    private int sendMessageSmartChunks(ArrayList<ArrayList<MessageObject>> chunks, ArrayList<Boolean> ayuForwardModes, int index, boolean asyncContinuation, final long peer, boolean forwardFromMyName, boolean hideCaption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MessageObject replyToTopMsg, int video_timestamp, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, Utilities.Callback2<Integer, String> onAsyncFailure) {
+        if (index >= chunks.size()) {
+            return 0;
+        }
+        ArrayList<MessageObject> chunk = chunks.get(index);
+        if (ayuForwardModes.get(index)) {
+            AyuForward handler = new AyuForward(currentAccount, replyToTopMsg, 0, null, 0, monoForumPeerId, suggestionParams);
+            handler.forwardMessages(chunk, peer, false, hideCaption, notify, scheduleDate, payStars, index, chunks.size(), shouldContinue -> {
+                if (!shouldContinue) {
+                    notifyForwardChunkFailure(onAsyncFailure, 0, handler.consumeLastFailureReason());
+                    return;
+                }
+                sendMessageSmartChunks(chunks, ayuForwardModes, index + 1, true, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams, onAsyncFailure);
+            });
+            return 0;
+        }
+        int result = sendMessageInternal(chunk, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams);
+        if (result != 0) {
+            if (asyncContinuation) {
+                notifyForwardChunkFailure(onAsyncFailure, result, null);
+            }
+            return result;
+        }
+        return sendMessageSmartChunks(chunks, ayuForwardModes, index + 1, asyncContinuation, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams, onAsyncFailure);
+    }
+
+    private int sendMessageSmart(ArrayList<MessageObject> messages, final long peer, boolean forwardFromMyName, boolean hideCaption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MessageObject replyToTopMsg, int video_timestamp, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, Utilities.Callback2<Integer, String> onAsyncFailure) {
+        if (messages == null || messages.isEmpty()) {
+            return 0;
+        }
+        long currentPayStars = getMessagesController().getSendPaidMessagesStars(peer);
+        if (currentPayStars <= 0) {
+            currentPayStars = DialogObject.getMessagesStarsPrice(getMessagesController().isUserContactBlocked(peer));
+        }
+        if (currentPayStars != payStars) {
+            AlertsCreator.ensurePaidMessageConfirmation(currentAccount, peer, Math.max(1, messages.size()), newPayStars -> {
+                sendMessageSmart(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, newPayStars, monoForumPeerId, suggestionParams, onAsyncFailure);
+            });
+            return 0;
+        }
+        if (hasFullAyuForwardMessages(messages)) {
+            AyuForward handler = new AyuForward(currentAccount, replyToTopMsg, 0, null, 0, monoForumPeerId, suggestionParams);
+            handler.forwardMessages(messages, peer, false, hideCaption, notify, scheduleDate, payStars, shouldContinue -> {
+                if (!shouldContinue) {
+                    notifyForwardChunkFailure(onAsyncFailure, 0, handler.consumeLastFailureReason());
+                }
+            });
+            return 0;
+        }
+        if (!hasAyuForwardMessages(messages)) {
+            return sendMessageInternal(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams);
+        }
+        ArrayList<Boolean> ayuForwardModes = new ArrayList<>();
+        ArrayList<ArrayList<MessageObject>> chunks = splitForwardChunks(messages, ayuForwardModes);
+        return sendMessageSmartChunks(chunks, ayuForwardModes, 0, false, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams, onAsyncFailure);
+    }
+
     public int sendMessage(ArrayList<MessageObject> messages, final long peer, boolean forwardFromMyName, boolean hideCaption, boolean notify, int scheduleDate, long payStars) {
         return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, null, -1, payStars);
     }
@@ -2239,6 +2341,21 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         long monoForumPeerId,
         MessageSuggestionParams suggestionParams
     ) {
+        return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams, null);
+    }
+
+    public int sendMessage(ArrayList<MessageObject> messages, final long peer, boolean forwardFromMyName, boolean hideCaption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MessageObject replyToTopMsg, int video_timestamp, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams, Utilities.Callback2<Integer, String> onAsyncFailure) {
+        // Ghost Mode: Schedule Messages — automatically convert non-scheduled forwards to scheduled (~12s) so we don't appear online.
+        notify = notify && !AyuGhostController.getInstance(currentAccount).isSendWithoutSound();
+        int effectiveScheduleDate = scheduleDate;
+        if (AyuGhostController.getInstance(currentAccount).isUseScheduledMessages() && !DialogObject.isEncryptedDialog(peer) && effectiveScheduleDate == 0) {
+            effectiveScheduleDate = getConnectionsManager().getCurrentTime() + 12;
+            AyuState.setAutomaticallyScheduled(true, 1);
+        }
+        return sendMessageSmart(messages, peer, forwardFromMyName, hideCaption, notify, effectiveScheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams, onAsyncFailure);
+    }
+
+    private int sendMessageInternal(ArrayList<MessageObject> messages, final long peer, boolean forwardFromMyName, boolean hideCaption, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MessageObject replyToTopMsg, int video_timestamp, long payStars, long monoForumPeerId, MessageSuggestionParams suggestionParams) {
         if (messages == null || messages.isEmpty()) {
             return 0;
         }
@@ -4465,7 +4582,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         ArrayList<TLRPC.MessageEntity> entities = sendMessageParams.entities;
         TLRPC.ReplyMarkup replyMarkup = sendMessageParams.replyMarkup;
         HashMap<String, String> params = sendMessageParams.params;
-        boolean notify = sendMessageParams.notify;
+        boolean notify = sendMessageParams.notify && !AyuGhostController.getInstance(currentAccount).isSendWithoutSound();
         int scheduleDate = sendMessageParams.scheduleDate;
         int scheduleRepeatPeriod = sendMessageParams.scheduleRepeatPeriod;
         int ttl = sendMessageParams.ttl;
@@ -4539,9 +4656,44 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             return;
         }
 
-        if (replyQuote != null && replyQuote.message != null && replyToMsg != null) {
-            replyToMsg = replyQuote.message;
+        if (AyuGhostController.getInstance(currentAccount).isUseScheduledMessages()
+                && !DialogObject.isEncryptedDialog(peer) && scheduleDate == 0
+                && quick_reply_shortcut == null && quick_reply_shortcut_id == 0
+                && !isWelcomeMessageTemplate && ephemeralReceiverBotId == 0) {
+            scheduleDate = getConnectionsManager().getCurrentTime() + AyuMessageUtils.getScheduleTime(photo, document);
+            sendMessageParams.scheduleDate = scheduleDate;
+            AyuState.setAutomaticallyScheduled(true, 1);
         }
+
+        MessageObject pseudoReplySource = replyQuote != null && replyQuote.message != null && replyToMsg != null
+                ? replyQuote.message
+                : replyToMsg;
+        if (pseudoReplySource != null
+                && pseudoReplySource.messageOwner != null
+                && AyuMessageUtils.isUnrepliable(pseudoReplySource)
+                && (Math.abs(pseudoReplySource.getDialogId()) != Math.abs(peer) || pseudoReplySource.messageOwner.ayuDeleted)) {
+            if (entities == null) {
+                entities = new ArrayList<>();
+            }
+            AyuMessageUtils.PseudoReplyResult pseudoReply = AyuMessageUtils.prependPseudoReply(
+                    message,
+                    caption,
+                    photo,
+                    peer,
+                    replyQuote,
+                    pseudoReplySource,
+                    entities
+            );
+            message = pseudoReply.text;
+            caption = pseudoReply.caption;
+            if (pseudoReplySource.isAyuDeleted()
+                    || (Math.abs(pseudoReplySource.getDialogId()) != Math.abs(peer)
+                    && (AyuMessageUtils.isUnforwardable(pseudoReplySource)
+                    || AyuMessageUtils.isChatNoForwards(currentAccount, pseudoReplySource.getDialogId())))) {
+                pseudoReplySource = null;
+            }
+        }
+        replyToMsg = pseudoReplySource;
 
         String originalPath = null;
         if (params != null && params.containsKey("originalPath")) {
@@ -7664,6 +7816,41 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             }
         }
         return 0;
+    }
+
+    public ArrayList<Integer> getSendingMessageIds(long did) {
+        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
+            // These SparseArrays are UI-owned; background forward workers need a snapshot.
+            java.util.concurrent.FutureTask<ArrayList<Integer>> snapshot =
+                    new java.util.concurrent.FutureTask<>(() -> getSendingMessageIds(did));
+            AndroidUtilities.runOnUIThread(snapshot);
+            try {
+                return snapshot.get(5, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while reading send queue", interrupted);
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException error) {
+                throw new IllegalStateException("Unable to read send queue on UI thread", error);
+            } finally {
+                snapshot.cancel(false);
+                AndroidUtilities.cancelRunOnUIThread(snapshot);
+            }
+        }
+        ArrayList<Integer> ids = new ArrayList<>();
+        HashSet<Integer> uniqueIds = new HashSet<>();
+        for (int a = 0; a < sendingMessages.size(); a++) {
+            TLRPC.Message message = sendingMessages.valueAt(a);
+            if (message.dialog_id == did && uniqueIds.add(message.id)) {
+                ids.add(message.id);
+            }
+        }
+        for (int a = 0; a < uploadMessages.size(); a++) {
+            TLRPC.Message message = uploadMessages.valueAt(a);
+            if (message.dialog_id == did && uniqueIds.add(message.id)) {
+                ids.add(message.id);
+            }
+        }
+        return ids;
     }
 
     protected void putToUploadingMessages(MessageObject obj) {

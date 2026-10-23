@@ -57865,6 +57865,9 @@ public class TLRPC {
 
     //Message start
     public static class Message extends TLObject {
+        // Local Ayu metadata; not part of the MTProto serialization.
+        public boolean ayuDeleted;
+        public int ayuDeleteDate;
         public int id;
         public Peer from_id;
         public int from_boosts_applied;

@@ -9,6 +9,7 @@
 package org.telegram.ui.Cells;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import tw.nekomimi.nekogram.filters.AyuFilter;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -406,7 +407,11 @@ public class SharedLinkCell extends FrameLayout {
                         }
                         SpannableString sb = SpannableString.valueOf(lobj);
                         int start = entity.offset, end = entity.offset + entity.length;
-                        for (TLRPC.MessageEntity e : message.messageOwner.entities) {
+                        ArrayList<TLRPC.MessageEntity> entities = AyuFilter.addSpoilerEntities(message, message.messageOwner.entities, message.messageText);
+                        if (entities == null) {
+                            entities = message.messageOwner.entities;
+                        }
+                        for (TLRPC.MessageEntity e : entities) {
                             int ss = e.offset, se = e.offset + e.length;
                             if (NekoConfig.showSpoilersDirectly.Bool() && e instanceof TLRPC.TL_messageEntitySpoiler && start <= se && end >= ss) {
                                 TextStyleSpan.TextStyleRun run = new TextStyleSpan.TextStyleRun();

@@ -1,6 +1,7 @@
 package org.telegram.ui.Stories;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import com.radolyn.ayugram.controllers.AyuGhostController;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable.drawStroke;
@@ -3671,7 +3672,7 @@ public class PeerStoriesView extends SizeNotifierFrameLayout implements Notifica
             @Override
             public void onStickerSelected(TLRPC.TL_document document, String query, Object parent) {
                 AlertsCreator.ensurePaidMessageConfirmation(currentAccount, dialogId, 1, payStars -> {
-                    SendMessagesHelper.getInstance(currentAccount).sendSticker(document, query, dialogId, null, null, currentStory.storyItem, null, null, true, 0, 0, false, parent, null, payStars, chatActivityEnterView.getSendMonoForumPeerId(), chatActivityEnterView.getSendMessageSuggestionParams());
+                    SendMessagesHelper.getInstance(currentAccount).sendSticker(document, query, dialogId, null, null, currentStory.storyItem, null, null, !AyuGhostController.getInstance(currentAccount).isSendWithoutSound(), 0, 0, false, parent, null, payStars, chatActivityEnterView.getSendMonoForumPeerId(), chatActivityEnterView.getSendMessageSuggestionParams());
                     chatActivityEnterView.addStickerToRecent(document);
                     chatActivityEnterView.setFieldText("");
                     afterMessageSend(payStars <= 0);

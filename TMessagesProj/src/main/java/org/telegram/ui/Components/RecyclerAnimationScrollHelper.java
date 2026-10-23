@@ -55,6 +55,14 @@ public class RecyclerAnimationScrollHelper {
         scrollToPosition(position, offset, bottom, smooth, false);
     }
 
+    public void scrollToPositionNow(int position, int offset, boolean bottom) {
+        recyclerView.stopScroll();
+        if (recyclerView.fastScrollAnimationRunning || animator != null) cancel();
+        RecyclerView.ItemAnimator itemAnimator = recyclerView.getItemAnimator();
+        if (itemAnimator != null && itemAnimator.isRunning()) itemAnimator.endAnimations();
+        layoutManager.scrollToPositionWithOffset(position, offset, bottom);
+    }
+
     public void scrollToPosition(int position, int offset, final boolean bottom, boolean smooth, boolean waitForAnimations) {
         if (recyclerView.fastScrollAnimationRunning) {
             return;

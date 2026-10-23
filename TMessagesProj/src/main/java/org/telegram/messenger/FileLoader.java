@@ -9,6 +9,7 @@
 package org.telegram.messenger;
 
 import android.text.TextUtils;
+import com.radolyn.ayugram.utils.AyuFileLocation;
 import android.util.SparseArray;
 
 import org.telegram.tgnet.ConnectionsManager;
@@ -1432,11 +1433,26 @@ public class FileLoader extends BaseController {
                 dir = getDirectory(MEDIA_DIR_CACHE);
             }
         }
+
+        // --- AyuGram hook
+        if (attach instanceof TLRPC.PhotoSize photoSize) {
+            if (photoSize.location instanceof AyuFileLocation) {
+                return new File(((AyuFileLocation) photoSize.location).path);
+            }
+        } else if (attach instanceof TLRPC.TL_videoSize videoSize) {
+            if (videoSize.location instanceof AyuFileLocation) {
+                return new File(((AyuFileLocation) videoSize.location).path);
+            }
+        } else if (attach instanceof AyuFileLocation ayuFileLocation) {
+            return new File(ayuFileLocation.path);
+        }
+        // --- AyuGram hook
+
         if (dir == null) {
             return new File("");
         }
         if (documentId != 0) {
-            String path = getInstance(UserConfig.selectedAccount).getFileDatabase().getPath(documentId, dcId, type, useFileDatabaseQueue);
+            String path = getFileDatabase().getPath(documentId, dcId, type, useFileDatabaseQueue);
             if (path != null) {
                 return new File(path);
             }

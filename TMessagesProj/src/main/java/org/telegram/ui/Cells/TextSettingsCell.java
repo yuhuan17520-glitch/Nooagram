@@ -142,7 +142,10 @@ public class TextSettingsCell extends FrameLayout {
             if (betterLayout) width -= valueBackupImageView.getMeasuredWidth() + AndroidUtilities.dp(8);
         }
         if (valueTextView.getVisibility() == VISIBLE) {
-            valueTextView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+            // Long values must leave room for the title in both layout modes.
+            int valueMaxWidth = betterLayout ? Math.max(1, width / 2) : width;
+            valueTextView.setMaxWidth(valueMaxWidth);
+            valueTextView.measure(MeasureSpec.makeMeasureSpec(valueMaxWidth, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
             if (betterLayout) {
                 width -= valueTextView.getMeasuredWidth() + AndroidUtilities.dp(8);
             } else {
@@ -193,6 +196,7 @@ public class TextSettingsCell extends FrameLayout {
 
     public void setText(CharSequence text, boolean divider) {
         textView.setText(text);
+        valueTextView.setText(null, false);
         valueTextView.setVisibility(INVISIBLE);
         valueImageView.setVisibility(INVISIBLE);
         needDivider = divider;
@@ -210,6 +214,7 @@ public class TextSettingsCell extends FrameLayout {
             valueTextView.setText(value, animated);
             valueTextView.setVisibility(VISIBLE);
         } else {
+            valueTextView.setText(null, false);
             valueTextView.setVisibility(INVISIBLE);
         }
         needDivider = divider;

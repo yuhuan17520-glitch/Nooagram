@@ -7,8 +7,10 @@
  */
 
 package org.telegram.ui;
+import com.radolyn.ayugram.helpers.AyuMessageHelper;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 
 import android.animation.Animator;
@@ -1514,14 +1516,25 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
             } else {
                 playerRetryPlayCount = 1;
                 actionBar.setTitle(LocaleController.getString(R.string.DisappearingVideo));
-                File f = new File(messageObject.messageOwner.attachPath);
-                if (f.exists()) {
+                File f = !TextUtils.isEmpty(messageObject.messageOwner.attachPath) ? new File(messageObject.messageOwner.attachPath) : null;
+                if (f != null && f.exists()) {
                     preparePlayer(f);
                 } else {
                     File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner);
-                    File encryptedFile = new File(file.getAbsolutePath() + ".enc");
-                    if (encryptedFile.exists()) {
-                        file = encryptedFile;
+                    File encryptedFile = file != null ? new File(file.getAbsolutePath() + ".enc") : null;
+                    if (encryptedFile != null && encryptedFile.exists()) {
+                        // save deleted: try to decrypt and save to attachments path for persistence
+                        File decryptedFile = AyuMessageUtils.decryptAndSaveMedia(file.getName(), encryptedFile, messageObject);
+                        if (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 0) {
+                            file = decryptedFile;
+                        } else {
+                            file = encryptedFile;
+                        }
+                    } else if (file == null || !file.exists() || file.length() <= 0) {
+                        String filePath = AyuMessageHelper.getPathToMessage(messageObject);
+                        if (!TextUtils.isEmpty(filePath)) {
+                            file = new File(filePath);
+                        }
                     }
                     preparePlayer(file);
                 }
@@ -1533,6 +1546,23 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
             actionBar.setTitle(LocaleController.getString(R.string.DisappearingPhoto));
             TLRPC.PhotoSize sizeFull = FileLoader.getClosestPhotoSizeWithSize(messageObject.photoThumbs, AndroidUtilities.getPhotoSize());
             centerImage.setImage(ImageLocation.getForObject(sizeFull, messageObject.photoThumbsObject), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, -1, null, messageObject, 2);
+            // save deleted: try to decrypt and save photo to attachments path for persistence
+            File photoFile = FileLoader.getInstance(currentAccount).getPathToAttach(sizeFull, true);
+            File encryptedPhotoFile = new File(photoFile.getAbsolutePath() + ".enc");
+            if (encryptedPhotoFile.exists()) {
+                File decryptedFile = AyuMessageUtils.decryptAndSaveMedia(photoFile.getName(), encryptedPhotoFile, messageObject);
+                if (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 0) {
+                    centerImage.setImage(decryptedFile.getAbsolutePath(), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, "jpg", 0);
+                }
+            } else {
+                String filePath = AyuMessageHelper.getPathToMessage(messageObject);
+                if (!TextUtils.isEmpty(filePath)) {
+                    photoFile = new File(filePath);
+                    if (photoFile.exists() && photoFile.length() > 0) {
+                        centerImage.setImage(photoFile.getAbsolutePath(), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, "jpg", 0);
+                    }
+                }
+            }
 
             if (sizeFull != null) {
                 videoWidth = sizeFull.w;

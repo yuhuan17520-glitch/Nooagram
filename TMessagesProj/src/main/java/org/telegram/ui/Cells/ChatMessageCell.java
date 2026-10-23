@@ -9,6 +9,8 @@
 package org.telegram.ui.Cells;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import tw.nekomimi.nekogram.filters.AyuFilter;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.find;
 import static org.telegram.messenger.AndroidUtilities.lerp;
@@ -432,6 +434,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (!bl.spoilers.isEmpty()) {
                     return true;
                 }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasMaskedSpoilers(ArrayList<MessageObject.TextLayoutBlock> textLayoutBlocks) {
+        if (textLayoutBlocks == null) {
+            return false;
+        }
+        for (int i = 0; i < textLayoutBlocks.size(); i++) {
+            MessageObject.TextLayoutBlock block = textLayoutBlocks.get(i);
+            if (block != null && block.textLayout != null && AyuFilter.hasMaskedFilterSpan(block.textLayout.getText())) {
+                return true;
             }
         }
         return false;
@@ -1852,6 +1867,16 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     public final TransitionParams transitionParams = new TransitionParams();
     private boolean edited;
+    private boolean ayuDeleted;
+    protected boolean shouldShowAyuDeletedMark(MessageObject message) { return true; }
+    protected boolean shouldTranslucentDeleted() { return com.radolyn.ayugram.AyuConfig.INSTANCE.getTranslucentDeletedMessages().Bool(); }
+    public void invalidateTime() {
+        if (currentMessageObject != null) {
+            currentMessageObject.forceUpdate = true;
+            setMessageObject(currentMessageObject, currentMessagesGroup, pinnedBottom, pinnedTop, firstInChat, lastInChatList);
+        }
+        invalidate();
+    }
     private boolean imageDrawn;
     private boolean photoImageOutOfBounds;
 
@@ -6835,6 +6860,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public MultiLayoutTypingAnimator botDraftTypingAnimator;
 
     private void setMessageContent(MessageObject messageObject, MessageObject.GroupedMessages groupedMessages, boolean bottomNear, boolean topNear, boolean firstInChat, boolean lastInChatList) {
+        AyuFilter.syncMaskedSpoilerRevealState(messageObject, groupedMessages);
+        if (messageObject != null && messageObject.replyMessageObject != null) {
+            AyuFilter.syncMaskedSpoilerRevealState(messageObject.replyMessageObject, null);
+        }
         if (messageObject.checkLayout() || currentPosition != null && lastHeight != AndroidUtilities.displaySize.y) {
             currentMessageObject = null;
         }
@@ -6943,7 +6972,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             lastTranslated = messageObject.translated;
             transChanged = true;
         }
-        if (messageChanged || dataChanged || groupChanged || pollChanged || widthChanged && messageObject.isPoll() || isPhotoDataChanged(messageObject) || pinnedBottom != bottomNear || pinnedTop != topNear || transChanged) {
+        final boolean ayuDeletedChanged = ayuDeleted != messageObject.isAyuDeleted();
+        ayuDeleted = messageObject.isAyuDeleted();
+        if (messageChanged || dataChanged || groupChanged || pollChanged || widthChanged && messageObject.isPoll() || isPhotoDataChanged(messageObject) || pinnedBottom != bottomNear || pinnedTop != topNear || transChanged || ayuDeletedChanged) {
             postRunnableHolder.clear();
 
             if (stickerSetIcons != null) {
@@ -16910,10 +16941,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public void drawMessageText(float textX, float textY, Canvas canvas, ArrayList<MessageObject.TextLayoutBlock> textLayoutBlocks, float rtlOffset, boolean origin, float alpha, boolean drawAllBlocks, boolean drawOnlyText, boolean caption, boolean explanation) {
-        if (textLayoutBlocks == null || textLayoutBlocks.isEmpty() || alpha == 0) {
+        if (textLayoutBlocks == null || textLayoutBlocks.isEmpty() || alpha == 0 || currentMessageObject == null) {
             return;
         }
-
         int firstVisibleBlockNum;
         int lastVisibleBlockNum;
         if (origin && !drawAllBlocks) {
@@ -18577,18 +18607,29 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 signString = null;
             }
         }
-        String timeString;
+        CharSequence timeString;
+        int ttlIconWidth = 0;
         TLRPC.User author = null;
         if (currentMessageObject.isFromUser()) {
             author = MessagesController.getInstance(currentAccount).getUser(fromId);
         }
         boolean hasReplies = messageObject.hasReplies();
+
+        var ayuDeletedVal = messageObject.isAyuDeleted();
+        var translated = messageObject.isTranslated();
+        if (currentMessagesGroup != null) {
+            MessageObject captionMessage = currentMessagesGroup.findCaptionMessageObject();
+            translated = captionMessage != null && captionMessage.isTranslated();
+        }
         if (messageObject.scheduled || messageObject.messageOwner.edit_hide) {
             edited = false;
+            ayuDeleted = ayuDeletedVal && !(currentChat instanceof TLRPC.TL_chat && author != null && author.bot); // ensure we're not in PM with bot, as it can screw experience
         } else if (currentPosition == null || currentMessagesGroup == null || currentMessagesGroup.messages.isEmpty()) {
             edited = (messageObject.messageOwner.flags & TLRPC.MESSAGE_FLAG_EDITED) != 0 || messageObject.isEditing();
+            ayuDeleted = ayuDeletedVal;
         } else {
             edited = false;
+            ayuDeleted = ayuDeletedVal;
             hasReplies = currentMessagesGroup.messages.get(0).hasReplies();
             if (!currentMessagesGroup.messages.get(0).messageOwner.edit_hide) {
                 for (int a = 0, size = currentMessagesGroup.messages.size(); a < size; a++) {
@@ -18691,7 +18732,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentTimeString = TextUtils.concat(formatString(R.string.MessageScheduledRepeatSeconds, period), ", ", currentTimeString);
             }
         }
-        timeTextWidth = timeWidth = (int) Math.ceil(Theme.chat_timePaint.measureText(currentTimeString, 0, currentTimeString == null ? 0 : currentTimeString.length()));
+        if (ayuDeleted && shouldShowAyuDeletedMark(messageObject) && !TextUtils.isEmpty(currentTimeString)) {
+            currentTimeString = TimeStringHelper.prependDeletedMark(currentTimeString);
+        }
+        if (!TextUtils.isEmpty(currentTimeString) && !messageObject.isSponsored()) {
+            AyuMessageUtils.Triple ttlInfo = AyuMessageUtils.formatTTL(messageObject, true);
+            if (ttlInfo != null) {
+                currentTimeString = new SpannableStringBuilder(ttlInfo.text)
+                        .append(ttlInfo.useSeparator ? " | " : " ").append(currentTimeString);
+            }
+        }
+        timeTextWidth = timeWidth = currentTimeString == null ? 0
+                : (int) Math.ceil(Layout.getDesiredWidth(currentTimeString, Theme.chat_timePaint));
         if (currentMessageObject.scheduled && currentMessageObject.messageOwner.date == 0x7FFFFFFE || currentMessageObject.notime) {
             timeWidth -= dp(8);
         }
@@ -18930,6 +18982,26 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentChat = fromChat;
             } else if (currentMessageObject.messageOwner.post) {
                 currentChat = messagesController.getChat(currentMessageObject.messageOwner.peer_id.channel_id);
+            }
+            if (currentUser == null && currentMessageObject.isAyuDeleted() && DialogObject.isUserDialog(fromId)) {
+                final MessageObject boundMessage = currentMessageObject;
+                final long userId = fromId;
+                final long boundIdentity = UserConfig.getInstance(currentAccount).getClientUserId();
+                final int boundLoginTime = UserConfig.getInstance(currentAccount).loginTime;
+                final org.telegram.messenger.MessagesStorage messagesStorage = org.telegram.messenger.MessagesStorage.getInstance(currentAccount);
+                messagesStorage.getStorageQueue().postRunnable(() -> {
+                    final TLRPC.User user = messagesStorage.getUser(userId);
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (user == null || currentMessageObject != boundMessage
+                                || boundIdentity == 0 || UserConfig.getInstance(boundMessage.currentAccount).getClientUserId() != boundIdentity
+                                || UserConfig.getInstance(boundMessage.currentAccount).loginTime != boundLoginTime) return;
+                        messagesController.putUser(user, true);
+                        currentMessageObject = null;
+                        setMessageObject(boundMessage, currentMessagesGroup, pinnedBottom, pinnedTop, firstInChat, lastInChatList);
+                        requestLayout();
+                        invalidate();
+                    });
+                });
             }
         }
     }
@@ -19721,6 +19793,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             stringFinalText = TextUtils.ellipsize(stringFinalText, textPaint, maxWidth, TextUtils.TruncateAt.END);
                         }
                     }
+                    if (messageObject.replyMessageObject != null && AyuFilter.isFiltered(messageObject.replyMessageObject, null)) {
+                        if (replyImageReceiver != null) {
+                            replyImageReceiver.setImageBitmap((Drawable) null);
+                        }
+                        needReplyImage = false;
+                        stringFinalText = "\uD83D\uDC7B";
+                    }
                 } else {
                     replyImageReceiver.setImageBitmap((Drawable) null);
                     needReplyImage = false;
@@ -20349,7 +20428,22 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     protected void onDraw(Canvas canvas) {
         drawInternal(canvas);
     }
+    @SuppressLint("WrongCall")
     public void drawInternal(Canvas canvas) {
+        if (currentMessageObject == null) return;
+        // One scoped layer, not mutable global Theme paint. Every early return
+        // (including hidden sponsored/joined-channel cells) must restore it.
+        final int deletedLayer = shouldTranslucentDeleted() && ayuDeleted
+                ? canvas.saveLayerAlpha(null, (int) (255 * 0.75f), Canvas.ALL_SAVE_FLAG) : -1;
+        try {
+            drawInternalContent(canvas);
+        } finally {
+            if (deletedLayer != -1) canvas.restoreToCount(deletedLayer);
+        }
+    }
+
+    @SuppressLint("WrongCall")
+    private void drawInternalContent(Canvas canvas) {
         if (currentMessageObject == null) {
             return;
         }
@@ -20994,7 +21088,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     if (isDrawSelectionBackground() && quoteHighlight == null && (currentPosition == null || currentMessageObject.isMusic() || currentMessageObject.isDocument() || getBackground() != null)) {
                         if (currentPosition != null) {
                             canvas.save();
-//                            canvas.clipRect(0, 0, getMeasuredWidth(), getMeasuredHeight());
+                            canvas.clipRect(0, 0, getMeasuredWidth(), getMeasuredHeight());
                         }
                         currentSelectedBackgroundAlpha = 1f;
                         currentBackgroundSelectedDrawable.setAlpha((int) (255 * alphaInternal));
@@ -21005,6 +21099,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     } else {
                         currentSelectedBackgroundAlpha = 0;
                         currentBackgroundDrawable.setAlpha((int) (255 * alphaInternal));
+                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getTranslucentDeletedMessages().Bool() && ayuDeleted && currentMessageObject.isOutOwner()) {
+                            currentBackgroundDrawable.setAlpha((int) (255 * alphaInternal * 0.75f));
+                        }
                         currentBackgroundDrawable.drawCached(canvas, backgroundCacheParams);
                     }
                 }
@@ -22181,7 +22278,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentBackgroundShadowDrawable.draw(canvas);
                 currentBackgroundShadowDrawable.setAlpha(255);
             }
-            currentBackgroundDrawable.setAlpha((int) (getAlpha() * 255));
+            currentBackgroundDrawable.setAlpha((int) (getAlpha() * (shouldTranslucentDeleted() && ayuDeleted ? 255 * 0.75f : 255)));
             currentBackgroundDrawable.setBounds(left, top, right, bottom);
             currentBackgroundDrawable.drawCached(canvas, backgroundCacheParams);
             currentBackgroundDrawable.setAlpha(255);
@@ -24095,6 +24192,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             return;
         }
         if (currentMessageObject != null && currentMessageObject.type == MessageObject.TYPE_JOINED_CHANNEL) {
+            return;
+        }
+        if (NekoConfig.hideTimeForSticker.Bool() && currentMessageObject != null && currentMessageObject.isAnyKindOfSticker() && !isDrawSelectionBackground() && !currentMessageObject.isAyuDeleted()) {
             return;
         }
         for (int i = 0; i < 2; i++) {
@@ -28698,7 +28798,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             lastDrawingSideMenuEnabled = isSideMenuEnabled;
             lastDrawingTextBlocks = currentMessageObject != null ? currentMessageObject.textLayoutBlocks : null;
             lastDrawingTextWidth = currentMessageObject != null ? currentMessageObject.textWidth : 0;
-            lastDrawingEdited = edited;
+            lastDrawingEdited = edited || ayuDeleted;
             lastDrawingRichLayout = currentMessageObject != null ? currentMessageObject.richLayout : null;
 
             lastDrawingCaptionX = captionX;
@@ -28914,9 +29014,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     changed = true;
                 }
             }
-            if (edited && !lastDrawingEdited && timeLayout != null) {
+            if ((((edited || ayuDeleted) && !lastDrawingEdited) || (currentMessageObject.translated && !lastTranslated)) && timeLayout != null) {
                 String customStr = NaConfig.INSTANCE.getCustomEditedMessage().String();
-                String editedStr = customStr.equals("") ? getString("EditedMessage", R.string.EditedMessage) : customStr;
+                String customStrFin = customStr.equals("") ? getString(R.string.EditedMessage) : customStr;
+                String deletedStrFin = TimeStringHelper.getDeletedStringLabel();
+                String editedStr;
+                if (edited && !ayuDeleted){
+                    editedStr = customStrFin;
+                } else if (!edited) {
+                    editedStr = deletedStrFin;
+                } else {
+                    // it's both edited and deleted
+                    editedStr = customStrFin + " " + deletedStrFin;
+                }
                 CharSequence text = timeLayout.getText();
                 int i = text.toString().indexOf(editedStr);
                 if (i >= 0) {
@@ -28940,7 +29050,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     changed = true;
                 }
                 accessibilityText = null;
-            } else if (!edited && lastDrawingEdited && timeLayout != null) {
+            } else if (((!(edited || ayuDeleted) && lastDrawingEdited) || (!currentMessageObject.translated && lastTranslated)) && timeLayout != null) {
                 animateTimeLayout = lastTimeLayout;
                 animateEditedWidthDiff = timeWidth - lastTimeWidth;
                 animateEditedEnter = true;

@@ -3,7 +3,10 @@
 #include "read_cert.h"
 #include "SHA1.h"
 
-static const char *SIGN = "3A0F57FE06485D0B90D0ACD990E3A30328E3988D";
+#ifndef NOOAGRAM_EXPECTED_SIGNER_SHA1
+#error "Build the native library with the SHA1 of this APK signing certificate"
+#endif
+static const char *SIGN = NOOAGRAM_EXPECTED_SIGNER_SHA1;
 
 extern "C" {
 int verifySign(JNIEnv *env) {

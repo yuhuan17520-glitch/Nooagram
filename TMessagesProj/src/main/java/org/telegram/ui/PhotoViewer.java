@@ -9,6 +9,8 @@
 package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import com.radolyn.ayugram.AyuForward;
+import com.radolyn.ayugram.controllers.AyuGhostController;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import static org.telegram.messenger.AndroidUtilities.lerp;
 import static org.telegram.messenger.LocaleController.getString;
@@ -5059,12 +5061,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         }
                         if (isLivePhoto) {
                             if (f != null && f.exists() && videoFileForLivePhoto != null && videoFileForLivePhoto.exists()) {
-                                MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, false, true, 0xf9222222, 0xffffffff).show());
+                                MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, false, true, 0xf9222222, 0xffffffff).show(), currentMessageObject);
                             } else {
                                 showDownloadAlert();
                             }
                         } else if (f != null && f.exists()) {
-                            MediaController.saveFile(f.toString(), parentActivity, isVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isVideo, 0xf9222222, 0xffffffff).show());
+                            MediaController.saveFile(f.toString(), parentActivity, isVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isVideo, 0xf9222222, 0xffffffff).show(), true, currentMessageObject);
                         } else {
                             showDownloadAlert();
                         }
@@ -5117,12 +5119,12 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
 
                                     if (isThisLivePhoto) {
                                         if (f != null && f.exists() && videoFileForLivePhoto != null && videoFileForLivePhoto.exists()) {
-                                            MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, false, true, 0xf9222222, 0xffffffff).show());
+                                            MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, false, true, 0xf9222222, 0xffffffff).show(), currentMessageObject);
                                         } else {
                                             showDownloadAlert();
                                         }
                                     } else if (f != null && f.exists()) {
-                                        MediaController.saveFile(f.toString(), parentActivity, isThisVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isThisVideo, 0xf9222222, 0xffffffff).show());
+                                        MediaController.saveFile(f.toString(), parentActivity, isThisVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isThisVideo, 0xf9222222, 0xffffffff).show(), true, currentMessageObject);
                                     } else {
                                         showDownloadAlert();
                                     }
@@ -5166,13 +5168,13 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                         if (isThisLivePhoto && f != null && f.exists()) {
                                             count[0]++;
                                             if (videoFileForLivePhoto != null && videoFileForLivePhoto.exists()) {
-                                                MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> AndroidUtilities.runOnUIThread(bulletin));
+                                                MediaController.saveFile(f.toString(), videoFileForLivePhoto.toString(), parentActivity, uri -> AndroidUtilities.runOnUIThread(bulletin), msg);
                                             } else {
-                                                MediaController.saveFile(f.toString(), parentActivity, 0, null, null, uri -> AndroidUtilities.runOnUIThread(bulletin));
+                                                MediaController.saveFile(f.toString(), parentActivity, 0, null, null, uri -> AndroidUtilities.runOnUIThread(bulletin), true, msg);
                                             }
                                         } else if (!isThisLivePhoto && f != null && f.exists()) {
                                             count[0]++;
-                                            MediaController.saveFile(f.toString(), parentActivity, isThisVideo ? 1 : 0, null, null, uri -> AndroidUtilities.runOnUIThread(bulletin));
+                                            MediaController.saveFile(f.toString(), parentActivity, isThisVideo ? 1 : 0, null, null, uri -> AndroidUtilities.runOnUIThread(bulletin), true, msg);
                                         }
                                     }
                                 })
@@ -5391,32 +5393,28 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                 for (int a = 0; a < dids.size(); a++) {
                                     long did = dids.get(a).dialogId;
                                     if (message != null) {
-                                        SendMessagesHelper.getInstance(currentAccount).sendMessage(SendMessagesHelper.SendMessageParams.of(message.toString(), did, null, null, null, true, null, null, null, true, 0, 0, null, false));
+                                        SendMessagesHelper.getInstance(currentAccount).sendMessage(SendMessagesHelper.SendMessageParams.of(message.toString(), did, null, null, null, true, null, null, null, !AyuGhostController.getInstance(currentAccount).isSendWithoutSound(), 0, 0, null, false));
                                     }
-                                    if (id == gallery_menu_send_noquote) {
-                                    //MessageHelper.getInstance(currentAccount).processForwardFromMyName(fmessages, did, true, 0);
-                                    SendMessagesHelper.getInstance(currentAccount).sendMessage(fmessages, did, true, false, true, 0, 0);
-                                } else {
-                                    SendMessagesHelper.getInstance(currentAccount).sendMessage(fmessages, did, false, false, true, 0, 0);
+                                    forwardMessagesFromViewer(fmessages, did, id == gallery_menu_send_noquote, !AyuGhostController.getInstance(currentAccount).isSendWithoutSound(), 0);
                                 }
-                            }
-                            fragment1.finishFragment();
-                            if (parentChatActivityFinal != null) {
-                                UndoView undoView = parentChatActivityFinal.getUndoView();
-                                    if (undoView != null) {if (dids.size() == 1) {
-                                    undoView.showWithAction(dids.get(0).dialogId, UndoView.ACTION_FWD_MESSAGES, fmessages.size());
-                                } else {
-                                    undoView.showWithAction(0, UndoView.ACTION_FWD_MESSAGES, fmessages.size(), dids.size(), null, null);
+                                fragment1.finishFragment();
+                                if (parentChatActivityFinal != null) {
+                                    UndoView undoView = parentChatActivityFinal.getUndoView();
+                                    if (undoView != null) {
+                                        if (dids.size() == 1) {
+                                            undoView.showWithAction(dids.get(0).dialogId, UndoView.ACTION_FWD_MESSAGES, fmessages.size());
+                                        } else {
+                                            undoView.showWithAction(0, UndoView.ACTION_FWD_MESSAGES, fmessages.size(), dids.size(), null, null);
                                         }
+                                    }
                                 }
-                            }
-                        } else {
-                            MessagesStorage.TopicKey topicKey = dids.get(0);
+                            } else {
+                                MessagesStorage.TopicKey topicKey = dids.get(0);
                                 long did = topicKey.dialogId;
-                            Bundle args1 = new Bundle();
-                            if (id == gallery_menu_send_noquote) {
-                                args1.putBoolean("forward_noquote", true);
-                            }
+                                Bundle args1 = new Bundle();
+                                if (id == gallery_menu_send_noquote) {
+                                    args1.putBoolean("forward_noquote", true);
+                                }
                                 args1.putBoolean("scrollToTopOnResume", true);
                                 if (DialogObject.isEncryptedDialog(did)) {
                                     args1.putInt("enc_id", DialogObject.getEncryptedChatId(did));
@@ -6059,7 +6057,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 f = FileLoader.getInstance(currentAccount).getPathToAttach(document, null, true, true);
             }
             if (f != null && f.exists()) {
-                MediaController.saveFile(f.toString(), parentActivity, 1, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, true, 0xf9222222, 0xffffffff).show());
+                MediaController.saveFile(f.toString(), parentActivity, 1, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, true, 0xf9222222, 0xffffffff).show(), true, messageObject);
             } else {
                 ArrayList<MessageObject> messageObjects = new ArrayList<>();
                 messageObject.qualityToSave = document;
@@ -7586,7 +7584,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (parentChatActivity != null && parentChatActivity.isInScheduleMode() && !parentChatActivity.isEditingMessageMedia()) {
                 showScheduleDatePickerDialog();
             } else {
-                sendPressed(true, 0, 0);
+                sendPressed(!AyuGhostController.getInstance(currentAccount).isSendWithoutSound(), 0, 0);
             }
         });
         pickerViewSendButton.setOnLongClickListener(view -> {
@@ -8636,6 +8634,37 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     closePhoto(false, false);
                 }
             }
+        }
+    }
+
+    private boolean canUseViewerForward(MessageObject messageObject, boolean noforwards) {
+        if (messageObject == null || noforwards) {
+            return false;
+        }
+        if (messageObject.canForwardMessage()) {
+            return true;
+        }
+        return parentChatActivity != null && AyuForward.canForwardAyuDeletedMessage(messageObject);
+    }
+
+    private boolean hasAyuDeletedMessages(ArrayList<MessageObject> messages) {
+        if (messages == null) {
+            return false;
+        }
+        for (int i = 0; i < messages.size(); i++) {
+            MessageObject messageObject = messages.get(i);
+            if (messageObject != null && messageObject.isAyuDeleted()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void forwardMessagesFromViewer(ArrayList<MessageObject> messages, long did, boolean noQuote, boolean notify, int scheduleDate) {
+        if (parentChatActivity != null && hasAyuDeletedMessages(messages)) {
+            parentChatActivity.forwardMessagesExternally(messages, did, noQuote, false, notify, scheduleDate);
+        } else {
+            SendMessagesHelper.getInstance(currentAccount).sendMessage(messages, did, noQuote, false, notify, scheduleDate, 0);
         }
     }
 

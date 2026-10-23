@@ -1,0 +1,51 @@
+name: Nooagram migration checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: migration-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  java-and-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Initialize Java dependencies
+        run: |
+          git submodule update --init TMessagesProj/lib/jlatexmath TMessagesProj_Modules/media
+          chmod +x gradlew
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+      - name: Validate upstream/version pin
+        shell: pwsh
+        run: ./Tools/check-nagram-migration.ps1
+      - name: Compile Java/Kotlin and run migration unit tests
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --console=plain
+      - name: Validate upstream proposal script without network or pushes
+        run: node Tools/nagram-sync-regression/test.cjs
+      - name: Validate release shrinking and reflection contracts without packaging
+        run: |
+          ./gradlew :TMessagesProj:minifyReleaseWithR8 --console=plain
+          node Tools/check-ayu-release-dex.cjs
+      - name: Integration regression probes
+        shell: pwsh
+        run: |
+          ./TMessagesProj/src/test/run-preview-regressions.ps1
+          ./Tools/ayu-privacy-history-regression/run.ps1
+          ./Tools/media-regression/run.ps1
+          ./Tools/pinned-settings-regression/run.ps1
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-tests
+          path: TMessagesProj/build/reports/tests/

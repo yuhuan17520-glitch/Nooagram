@@ -339,5 +339,11 @@ target_link_libraries(${NATIVE_LIB}
         breakpad)
 
 
-include(AndroidNdkModules)
-android_ndk_import_module_cpufeatures()
+# NDK module import retains the full absolute SDK path in the object path,
+# exceeding Windows MAX_PATH in long worktree directories. Copy this single
+# unmodified NDK source into the build directory before compiling it.
+set(CPUFEATURES_DIR "${ANDROID_NDK}/sources/android/cpufeatures")
+configure_file("${CPUFEATURES_DIR}/cpu-features.c" "${CMAKE_CURRENT_BINARY_DIR}/cpu-features.c" COPYONLY)
+add_library(cpufeatures STATIC "${CMAKE_CURRENT_BINARY_DIR}/cpu-features.c")
+target_include_directories(cpufeatures PUBLIC "${CPUFEATURES_DIR}")
+target_link_libraries(cpufeatures PUBLIC dl)
