@@ -4281,6 +4281,48 @@ public class NotificationsController extends BaseController implements Notificat
         return channelId;
     }
 
+    static MessageObject getLatestPushMessage(ArrayList<MessageObject> messages) {
+        MessageObject latest = null;
+        for (int i = 0; messages != null && i < messages.size(); i++) {
+            MessageObject message = messages.get(i);
+            if (message != null && message.messageOwner != null
+                    && (latest == null || message.messageOwner.date > latest.messageOwner.date)) {
+                latest = message;
+            }
+        }
+        return latest;
+    }
+
+    static ArrayList<MessageObject> getVisiblePushMessages(SharedPreferences preferences, ArrayList<MessageObject> messages) {
+        // Summary rendering must use each message's dialog; dialog 0 is reserved for global dismissal.
+        ArrayList<MessageObject> visibleMessages = new ArrayList<>();
+        for (int i = 0; messages != null && i < messages.size(); i++) {
+            MessageObject message = messages.get(i);
+            if (message != null && message.messageOwner != null
+                    && !isMessageDismissed(preferences, message.getDialogId(), message)) {
+                visibleMessages.add(message);
+            }
+        }
+        return visibleMessages;
+    }
+
+    static int getPushDialogCount(ArrayList<MessageObject> messages) {
+        HashSet<Long> dialogIds = new HashSet<>();
+        for (int i = 0; messages != null && i < messages.size(); i++) {
+            MessageObject message = messages.get(i);
+            if (message != null && message.messageOwner != null) {
+                dialogIds.add(message.getDialogId());
+            }
+        }
+        return dialogIds.size();
+    }
+
+    static boolean isMessageDismissed(SharedPreferences preferences, long dialogId, MessageObject messageObject) {
+        return messageObject != null && messageObject.messageOwner != null
+                && NotificationDismissState.isDismissed(
+                        preferences, dialogId, messageObject.messageOwner.date, messageObject.isStoryPush);
+    }
+
     private void showOrUpdateNotification(boolean notifyAboutLast) {
         if (!getUserConfig().isClientActivated() || pushMessages.isEmpty() && storyPushMessages.isEmpty() || !SharedConfig.showNotificationsForAllAccounts && currentAccount != UserConfig.selectedAccount) {
             dismissNotification();
@@ -4289,15 +4331,13 @@ public class NotificationsController extends BaseController implements Notificat
         try {
             getConnectionsManager().resumeNetworkMaybe();
 
-            Object lastNotification = null;
-            long maxDate = 0;
-            for (int i = 0; i < pushMessages.size(); ++i) {
-                MessageObject message = pushMessages.get(i);
-                if (maxDate < message.messageOwner.date) {
-                    lastNotification = message;
-                    maxDate = message.messageOwner.date;
-                }
-            }
+            SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
+            ArrayList<MessageObject> visiblePushMessages = getVisiblePushMessages(preferences, pushMessages);
+            int visiblePushMessageCount = visiblePushMessages.size();
+            int visiblePushDialogCount = getPushDialogCount(visiblePushMessages);
+            MessageObject latestPushMessage = getLatestPushMessage(visiblePushMessages);
+            Object lastNotification = latestPushMessage;
+            long maxDate = latestPushMessage == null ? 0 : latestPushMessage.messageOwner.date;
             for (int i = 0; i < storyPushMessages.size(); ++i) {
                 StoryNotification n = storyPushMessages.get(i);
                 if (maxDate < n.date / 1000L) {
@@ -4306,6 +4346,7 @@ public class NotificationsController extends BaseController implements Notificat
                 }
             }
             if (lastNotification == null) {
+                dismissNotification();
                 return;
             }
 
@@ -4357,11 +4398,9 @@ public class NotificationsController extends BaseController implements Notificat
                 lastMessageObject = new MessageObject(currentAccount, msg, msg.message, name, name, false, false, false, false);
                 lastMessageObject.isStoryPush = true;
             } else {
-                lastMessageObject = pushMessages.get(0);
+                lastMessageObject = (MessageObject) lastNotification;
             }
-            SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
-            int dismissDate = preferences.getInt("dismissDate", 0);
-            if (!lastMessageObject.isStoryPush && (lastMessageObject.messageOwner.date <= dismissDate && NaConfig.INSTANCE.getPushServiceType().Int() != 3)) {
+            if (isMessageDismissed(preferences, lastMessageObject.getDialogId(), lastMessageObject)) {
                 dismissNotification();
                 return;
             }
@@ -4430,7 +4469,7 @@ public class NotificationsController extends BaseController implements Notificat
             }
             boolean passcode = AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter;
             final boolean allowSummary = !"samsung".equalsIgnoreCase(Build.MANUFACTURER);
-            if (DialogObject.isEncryptedDialog(dialog_id) || allowSummary && pushDialogs.size() > 1 || passcode) {
+            if (DialogObject.isEncryptedDialog(dialog_id) || allowSummary && visiblePushDialogCount > 1 || passcode) {
                 if (passcode) {
                     if (chatId != 0) {
                         name = LocaleController.getString(R.string.NotificationHiddenChatName);
@@ -4451,7 +4490,7 @@ public class NotificationsController extends BaseController implements Notificat
             String detailText;
             if (allowSummary) {
                 if (UserConfig.getActivatedAccountsCount() > 1) {
-                    if (pushDialogs.size() == 1) {
+                    if (visiblePushDialogCount == 1) {
                         detailText = UserObject.getFirstName(getUserConfig().getCurrentUser());
                     } else {
                         detailText = UserObject.getFirstName(getUserConfig().getCurrentUser()) + "・";
@@ -4459,11 +4498,11 @@ public class NotificationsController extends BaseController implements Notificat
                 } else {
                     detailText = "";
                 }
-                if (pushDialogs.size() != 1 || Build.VERSION.SDK_INT < 23) {
-                    if (pushDialogs.size() == 1) {
-                        detailText += LocaleController.formatPluralString("NewMessages", total_unread_count);
+                if (visiblePushDialogCount != 1 || Build.VERSION.SDK_INT < 23) {
+                    if (visiblePushDialogCount == 1) {
+                        detailText += LocaleController.formatPluralString("NewMessages", visiblePushMessageCount);
                     } else {
-                        detailText += LocaleController.formatString(R.string.NotificationMessagesPeopleDisplayOrder, LocaleController.formatPluralString("NewMessages", total_unread_count), LocaleController.formatPluralString("FromChats", pushDialogs.size()));
+                        detailText += LocaleController.formatString(R.string.NotificationMessagesPeopleDisplayOrder, LocaleController.formatPluralString("NewMessages", visiblePushMessageCount), LocaleController.formatPluralString("FromChats", visiblePushDialogCount));
                     }
                 }
             } else {
@@ -4475,7 +4514,7 @@ public class NotificationsController extends BaseController implements Notificat
             int silent = 2;
             String lastMessage = null;
             boolean hasNewMessages = false;
-            if (pushMessages.size() <= 1 || !allowSummary) {
+            if (visiblePushMessageCount <= 1 || !allowSummary) {
                 boolean[] text = new boolean[1];
                 String message = lastMessage = getStringForMessage(lastMessageObject, false, text, null);
                 silent = isSilentMessage(lastMessageObject) ? 1 : 0;
@@ -4502,19 +4541,19 @@ public class NotificationsController extends BaseController implements Notificat
                 mBuilder.setContentText(detailText);
                 NotificationCompat.InboxStyle inboxStyle = new NotificationCompat.InboxStyle();
                 inboxStyle.setBigContentTitle(name);
-                int count = Math.min(10, pushMessages.size());
+                int count = Math.min(10, visiblePushMessages.size());
                 boolean[] text = new boolean[1];
                 for (int i = 0; i < count; i++) {
-                    MessageObject messageObject = pushMessages.get(i);
+                    MessageObject messageObject = visiblePushMessages.get(i);
                     String message = getStringForMessage(messageObject, false, text, null);
-                    if (message == null || !messageObject.isStoryPush && (messageObject.messageOwner.date <= dismissDate && NaConfig.INSTANCE.getPushServiceType().Int() != 3)) {
+                    if (message == null) {
                         continue;
                     }
                     if (silent == 2) {
                         lastMessage = message;
                         silent = isSilentMessage(messageObject) ? 1 : 0;
                     }
-                    if (pushDialogs.size() == 1) {
+                    if (visiblePushDialogCount == 1) {
                         if (replace) {
                             if (chat != null) {
                                 message = message.replace(" @ " + name, "");
@@ -4735,7 +4774,7 @@ public class NotificationsController extends BaseController implements Notificat
                 }
                 intent.putExtra("storyDialogIds", peerIds);
             } else if (!DialogObject.isEncryptedDialog(dialog_id)) {
-                if (pushDialogs.size() == 1) {
+                if (visiblePushDialogCount == 1) {
                     if (chatId != 0) {
                         intent.putExtra("chatId", chatId);
                     } else if (userId != 0) {
@@ -4745,7 +4784,7 @@ public class NotificationsController extends BaseController implements Notificat
                 if (AndroidUtilities.needShowPasscode() || SharedConfig.isWaitingForPasscodeEnter) {
                     photoPath = null;
                 } else {
-                    if (pushDialogs.size() == 1 && Build.VERSION.SDK_INT < 28) {
+                    if (visiblePushDialogCount == 1 && Build.VERSION.SDK_INT < 28) {
                         if (chat != null) {
                             if (chat.photo != null && chat.photo.photo_small != null && chat.photo.photo_small.volume_id != 0 && chat.photo.photo_small.local_id != 0) {
                                 photoPath = chat.photo.photo_small;
@@ -4758,7 +4797,7 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                 }
             } else {
-                if (pushDialogs.size() == 1 && dialog_id != globalSecretChatId) {
+                if (visiblePushDialogCount == 1 && dialog_id != globalSecretChatId) {
                     intent.putExtra("encId", DialogObject.getEncryptedChatId(dialog_id));
                 }
             }
@@ -4768,7 +4807,7 @@ public class NotificationsController extends BaseController implements Notificat
             mBuilder.setContentTitle(name)
                     .setSmallIcon(getNotificationIconResId())
                     .setAutoCancel(true)
-                    .setNumber(total_unread_count)
+                    .setNumber(visiblePushMessageCount)
                     .setContentIntent(contentIntent)
                     .setGroup(notificationGroup)
                     .setGroupSummary(true)
@@ -4786,6 +4825,7 @@ public class NotificationsController extends BaseController implements Notificat
 
             try {
                 Intent dismissIntent = new Intent(ApplicationLoader.applicationContext, NotificationDismissReceiver.class);
+                dismissIntent.setData(NotificationDismissState.getIntentData(currentAccount, 0));
                 dismissIntent.putExtra("messageDate", lastMessageObject.messageOwner.date);
                 dismissIntent.putExtra("currentAccount", currentAccount);
                 if (lastMessageObject.isStoryPush) {
@@ -5031,9 +5071,8 @@ public class NotificationsController extends BaseController implements Notificat
             MessageObject messageObject = pushMessages.get(a);
             long dialog_id = messageObject.getDialogId();
             long topicId = MessageObject.getTopicId(currentAccount, messageObject.messageOwner, getMessagesController().isForum(messageObject));
-            int dismissDate = preferences.getInt("dismissDate" + dialog_id, 0);
-            if (!messageObject.isStoryPush && (messageObject.messageOwner.date <= dismissDate && NaConfig.INSTANCE.getPushServiceType().Int() != 3)) {
-                FileLog.d("showExtraNotifications: dialog " + dialog_id + " is skipped, message date (" + messageObject.messageOwner.date + " <= " + dismissDate + ")");
+            if (isMessageDismissed(preferences, dialog_id, messageObject)) {
+                FileLog.d("showExtraNotifications: dialog " + dialog_id + " is skipped, dismissDate=" + NotificationDismissState.getDismissDate(preferences, dialog_id));
                 continue;
             }
 
@@ -5809,6 +5848,7 @@ public class NotificationsController extends BaseController implements Notificat
 
             try {
                 Intent dismissIntent = new Intent(ApplicationLoader.applicationContext, NotificationDismissReceiver.class);
+                dismissIntent.setData(NotificationDismissState.getIntentData(currentAccount, dialogId));
                 dismissIntent.putExtra("messageDate", maxDate);
                 dismissIntent.putExtra("dialogId", dialogId);
                 dismissIntent.putExtra("currentAccount", currentAccount);

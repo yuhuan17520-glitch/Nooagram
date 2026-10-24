@@ -14,6 +14,8 @@ import org.telegram.tgnet.TLRPC;
 import java.io.File;
 import java.text.Normalizer;
 
+import tw.nekomimi.nekogram.NekoConfig;
+
 /** Export folders are resolved from the message's account, never selectedAccount. */
 public final class AyuMediaFolders {
     private AyuMediaFolders() {}
@@ -22,7 +24,7 @@ public final class AyuMediaFolders {
         String folder = AyuOptions.getCustomSavePath();
         if (!TextUtils.isEmpty(folder)) {
             folder = sanitizeFolderName(folder, 0);
-            if ("0".equals(folder)) folder = "Nooagram";
+            if ("0".equals(folder)) folder = NekoConfig.DEFAULT_CUSTOM_SAVE_PATH;
         }
         if (message != null && AyuConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
             String chat = getChatFolderName(message);

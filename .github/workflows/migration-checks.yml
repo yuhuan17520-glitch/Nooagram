@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: ./Tools/test-nooagram-release.ps1
       - name: Compile Java/Kotlin and run migration unit tests
-        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'tw.nekomimi.nekogram.helpers.CloudSettingsHelperTest' --tests 'tw.nekomimi.nekogram.settings.*' --tests 'org.telegram.messenger.car.CarVoiceAttachmentTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --console=plain
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'tw.nekomimi.nekogram.helpers.CloudSettingsHelperTest' --tests 'tw.nekomimi.nekogram.helpers.CloudStorageHelperTest' --tests 'tw.nekomimi.nekogram.settings.*' --tests 'org.telegram.messenger.NotificationDismissStateTest' --tests 'org.telegram.messenger.NotificationsControllerDismissTest' --tests 'org.telegram.messenger.car.CarVoiceAttachmentTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --console=plain
       - name: Validate upstream proposal script without network or pushes
         run: node Tools/nagram-sync-regression/test.cjs
       - name: Validate release shrinking and reflection contracts without packaging

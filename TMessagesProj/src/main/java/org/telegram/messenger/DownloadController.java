@@ -1530,15 +1530,22 @@ public class DownloadController extends BaseController implements NotificationCe
     }
 
     public void onDownloadComplete(MessageObject parentObject) {
+        onDownloadComplete(parentObject, null);
+    }
+
+    public void onDownloadComplete(MessageObject parentObject, File finalFile) {
         if (parentObject == null || parentObject.getDocument() == null) {
             return;
         }
         TLRPC.Document document = parentObject.getDocument();
         AndroidUtilities.runOnUIThread(() -> {
             boolean removed = false;
+            MessageObject completedObject = parentObject;
             for (int i = 0; i < downloadingFiles.size(); i++) {
-                if (downloadingFiles.get(i).getDocument() != null && downloadingFiles.get(i).getDocument().id == document.id) {
-                    downloadingFiles.remove(i);
+                MessageObject downloadingObject = downloadingFiles.get(i);
+                if (downloadingObject != null && downloadingObject.getDocument() != null
+                        && downloadingObject.getDocument().id == document.id) {
+                    completedObject = downloadingFiles.remove(i);
                     removed = true;
                     break;
                 }
@@ -1553,13 +1560,14 @@ public class DownloadController extends BaseController implements NotificationCe
                     }
                 }
                 if (!contains) {
-                    recentDownloadingFiles.add(0, parentObject);
-                    putToUnviewedDownloads(parentObject);
+                    recentDownloadingFiles.add(0, completedObject);
+                    putToUnviewedDownloads(completedObject);
                 }
                 getNotificationCenter().postNotificationName(NotificationCenter.onDownloadingFilesChanged);
+                MessageObject finalCompletedObject = completedObject;
                 getMessagesStorage().getStorageQueue().postRunnable(() -> {
                     try {
-                        String req = String.format(Locale.ENGLISH, "UPDATE downloading_documents SET state = 1, date = %d WHERE hash = %d AND id = %d", System.currentTimeMillis(), parentObject.getDocument().dc_id,  parentObject.getDocument().id);
+                        String req = String.format(Locale.ENGLISH, "UPDATE downloading_documents SET state = 1, date = %d WHERE hash = %d AND id = %d", System.currentTimeMillis(), finalCompletedObject.getDocument().dc_id, finalCompletedObject.getDocument().id);
                         getMessagesStorage().getDatabase().executeFast(req).stepThis().dispose();
                         getMessagesStorage().getDatabase().executeFast("DELETE FROM downloading_documents WHERE state = 1 AND rowid NOT IN (SELECT rowid FROM downloading_documents WHERE state = 1 ORDER BY date DESC LIMIT 100)").stepThis().dispose();
                     } catch (Exception e) {
@@ -1568,8 +1576,6 @@ public class DownloadController extends BaseController implements NotificationCe
                 });
             }
         });
-
-
     }
 
     public void onDownloadFail(MessageObject parentObject, int reason) {
@@ -1752,7 +1758,10 @@ public class DownloadController extends BaseController implements NotificationCe
 
                     try {
                         File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageObjects.get(i).messageOwner);
-                        file.delete();
+                        if (!FileLoader.getInstance(currentAccount).getFileDatabase()
+                                .isCanonicalDownload(file.getAbsolutePath())) {
+                            file.delete();
+                        }
                     } catch (Exception e) {
                         FileLog.e(e);
                     }

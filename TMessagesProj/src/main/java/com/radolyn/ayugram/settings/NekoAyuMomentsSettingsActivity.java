@@ -32,6 +32,7 @@ import org.telegram.ui.Components.UndoView;
 
 import java.util.ArrayList;
 
+import com.radolyn.ayugram.AyuCustomSavePath;
 import com.radolyn.ayugram.config.CellGroup;
 import com.radolyn.ayugram.config.ConfigItem;
 import com.radolyn.ayugram.AyuOptions;
@@ -75,8 +76,8 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell enableCustomSavePathRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuOptions.enableCustomSavePath));
     private final AbstractConfigCell customSavePathRow = cellGroup.appendCell(new ConfigCellTextInput(null,
             AyuOptions.customSavePath, getString(R.string.customSavePathHint), null,
-            input -> input.matches("[A-Za-z0-9._ -]{1,255}") && !input.equals(".") && !input.equals("..")
-                    ? input : (String) AyuOptions.customSavePath.defaultValue));
+            input -> AyuCustomSavePath.validateInput(input,
+                    (String) AyuOptions.customSavePath.defaultValue)));
     private final AbstractConfigCell saveToChatSubfolderRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuConfig.INSTANCE.getSaveToChatSubfolder()));
     private final AbstractConfigCell showGhostModeStatusRow = cellGroup.appendCell(new ConfigCellCustom("GhostModeStatusIndicator", CellGroup.ITEM_TYPE_TEXT_CHECK, true));
     private final AbstractConfigCell highRefreshRateRow = cellGroup.appendCell(new ConfigCellTextCheck(

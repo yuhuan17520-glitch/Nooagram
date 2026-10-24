@@ -48,15 +48,15 @@ public class CustomSavePathUpgradeTest {
     }
 
     @Test
-    public void oldDefaultWithoutUserOverrideKeepsHistoricalFolders() {
+    public void staleDefaultIsReregisteredAsLowercaseWithoutCreatingOverride() {
         assertTrue(defaults.edit().putString("customSavePath", "Nagram").commit());
-        assertStableFolders("Nagram", false);
+        assertStableFolders("nooagram", false);
     }
 
     @Test
-    public void candidateDefaultWithoutUserOverrideReturnsToHistoricalFolders() {
+    public void lowercaseDefaultWithoutUserOverrideDoesNotCreateOverride() {
         assertTrue(defaults.edit().putString("customSavePath", "Nooagram").commit());
-        assertStableFolders("Nagram", false);
+        assertStableFolders("nooagram", false);
     }
 
     @Test
@@ -76,12 +76,12 @@ public class CustomSavePathUpgradeTest {
     @Test
     public void explicitHistoricalDirectoryRemainsEffectiveAfterCompaction() {
         assertTrue(user.edit().putString("customSavePath", "Nagram").commit());
-        assertStableFolders("Nagram", false);
+        assertStableFolders("Nagram", true);
     }
 
     @Test
-    public void freshInstallUsesHistoricalDefaultWithoutCreatingAnOverride() {
-        assertStableFolders("Nagram", false);
+    public void freshInstallUsesLowercaseDefaultWithoutCreatingAnOverride() {
+        assertStableFolders("nooagram", false);
     }
 
     @Test
@@ -90,8 +90,8 @@ public class CustomSavePathUpgradeTest {
         NekoConfig.loadConfig(true);
         assertEquals("", AyuOptions.customSavePath.String());
         assertEquals("", user.getString("customSavePath", null));
-        assertEquals("Nagram", AyuOptions.getCustomSavePath());
-        assertEquals("Nagram", AyuMediaFolders.getFolderName(null));
+        assertEquals("nooagram", AyuOptions.getCustomSavePath());
+        assertEquals("nooagram", AyuMediaFolders.getFolderName(null));
     }
 
     @Test
@@ -103,6 +103,40 @@ public class CustomSavePathUpgradeTest {
         assertEquals(new File(privateFiles, "Saved Attachments"),
                 AyuAttachmentPaths.defaultParent(false, AyuOptions.getCustomSavePath(),
                         new File("Download"), privateFiles, privateFiles));
+    }
+
+    @Test
+    public void switchOnAndOffPersistsThroughBothSettingsDelegatesWithoutChangingPath() {
+        assertTrue(user.edit().putString("customSavePath", "My Archive").commit());
+        assertEquals(NekoConfig.enableCustomSavePath.getKey(), AyuOptions.enableCustomSavePath.getKey());
+
+        NekoConfig.enableCustomSavePath.setConfigBool(false);
+        NekoConfig.loadConfig(true);
+        assertFalse(NekoConfig.enableCustomSavePath.Bool());
+        assertFalse(AyuOptions.enableCustomSavePath.Bool());
+        assertEquals("", AyuOptions.getCustomSavePath());
+        assertEquals("My Archive", NekoConfig.customSavePath.String());
+        assertEquals("My Archive", AyuOptions.customSavePath.String());
+
+        AyuOptions.enableCustomSavePath.setConfigBool(true);
+        NekoConfig.loadConfig(true);
+        assertTrue(NekoConfig.enableCustomSavePath.Bool());
+        assertTrue(AyuOptions.enableCustomSavePath.Bool());
+        assertTrue(user.getBoolean("enableCustomSavePath", false));
+        assertEquals("My Archive", AyuOptions.getCustomSavePath());
+        assertEquals("My Archive", NekoConfig.customSavePath.String());
+        assertEquals("My Archive", AyuOptions.customSavePath.String());
+    }
+
+    @Test
+    public void freshInstallKeepsCustomSavePathSwitchDisabled() {
+        assertTrue(user.edit().remove("enableCustomSavePath").commit());
+        NekoConfig.loadConfig(true);
+
+        assertFalse(NekoConfig.enableCustomSavePath.Bool());
+        assertFalse(AyuOptions.enableCustomSavePath.Bool());
+        assertEquals("", AyuOptions.getCustomSavePath());
+        assertFalse(user.contains("enableCustomSavePath"));
     }
 
     private void assertStableFolders(String expected, boolean hasOverride) {
@@ -120,7 +154,7 @@ public class CustomSavePathUpgradeTest {
             assertEquals(new File(new File(downloads, expected), "Saved Attachments"),
                     AyuAttachmentPaths.defaultParent(true, AyuOptions.getCustomSavePath(),
                             downloads, privateFiles, privateFiles));
-            assertEquals("Nagram", defaults.getString("customSavePath", null));
+            assertEquals("nooagram", defaults.getString("customSavePath", null));
             if (hasOverride) {
                 assertEquals(expected, user.getString("customSavePath", null));
             } else {

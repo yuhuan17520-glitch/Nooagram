@@ -30,7 +30,7 @@ public final class AyuOptions {
     }
     public static ConfigItem disableAds = addConfig("DisableAds", configTypeBool, false);
     public static ConfigItem disableVibration = upstream(NekoConfig.disableVibration);
-    public static ConfigItem enableCustomSavePath = addConfig("enableCustomSavePath", configTypeBool, false);
+    public static ConfigItem enableCustomSavePath = upstream(NekoConfig.enableCustomSavePath);
     public static ConfigItem customSavePath = upstream(NekoConfig.customSavePath);
     public static ConfigItem ignoreBlocked = upstream(NekoConfig.ignoreBlocked);
     public static ConfigItem localPremium = upstream(NekoConfig.localPremium);

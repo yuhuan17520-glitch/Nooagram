@@ -10,6 +10,7 @@ package org.telegram.messenger;
 
 import android.text.TextUtils;
 import com.radolyn.ayugram.utils.AyuFileLocation;
+import com.radolyn.ayugram.utils.NooagramCanonicalDownload;
 import android.util.SparseArray;
 
 import org.telegram.tgnet.ConnectionsManager;
@@ -258,6 +259,9 @@ public class FileLoader extends BaseController {
     public FileLoader(int instance) {
         super(instance);
         filePathDatabase = new FilePathDatabase(instance);
+        FileLoadOperation.canonicalDownloadQueue.postRunnable(() ->
+                NooagramCanonicalDownload.recoverPending(
+                        ApplicationLoader.applicationContext, filePathDatabase, instance));
         for (int i = 0; i < smallFilesQueue.length; i++)  {
             smallFilesQueue[i] = new FileLoaderPriorityQueue(instance, "smallFilesQueue dc" + (i + 1), FileLoaderPriorityQueue.TYPE_SMALL, fileLoaderQueue);
             largeFilesQueue[i] = new FileLoaderPriorityQueue(instance, "largeFilesQueue dc" + (i + 1), FileLoaderPriorityQueue.TYPE_LARGE, fileLoaderQueue);
@@ -855,9 +859,15 @@ public class FileLoader extends BaseController {
             loadOperationPathsUI.put(fileName, new LoadOperationUIObject());
         }
 
-        if (document != null && parentObject instanceof MessageObject && ((MessageObject) parentObject).putInDownloadsStore && !((MessageObject) parentObject).isAnyKindOfSticker()) {
-            getDownloadController().startDownloadFile(document, (MessageObject) parentObject);
+        MessageObject downloadParent = null;
+        if (document != null && parentObject instanceof MessageObject
+                && ((MessageObject) parentObject).putInDownloadsStore
+                && !((MessageObject) parentObject).isAnyKindOfSticker()) {
+            downloadParent = (MessageObject) parentObject;
+            getDownloadController().startDownloadFile(document, downloadParent);
         }
+        final MessageObject canonicalParent =
+                downloadParent != null && canSaveAsFile(downloadParent) ? downloadParent : null;
 
         final String finalFileName = fileName;
         FileLoadOperation operation = loadOperationPaths.get(finalFileName);
@@ -865,6 +875,9 @@ public class FileLoader extends BaseController {
         priority = getPriorityValue(priority);
 
         if (operation != null) {
+            if (canonicalParent != null) {
+                operation.requestCanonicalDownload(canonicalParent);
+            }
             if (cacheType != 10 && operation.isPreloadVideoOperation()) {
                 operation.setIsPreloadVideoOperation(false);
             }
@@ -933,6 +946,9 @@ public class FileLoader extends BaseController {
                 type = MEDIA_DIR_DOCUMENT;
             }
         }
+        if (canonicalParent != null) {
+            operation.requestCanonicalDownload(canonicalParent);
+        }
 
         FileLoaderPriorityQueue loaderQueue;
         int index = Utilities.clamp(operation.getDatacenterId() - 1, 4, 0);
@@ -990,7 +1006,12 @@ public class FileLoader extends BaseController {
 
                     if (saveCustomPath) {
                         operation.pathSaveData = new FilePathDatabase.PathData(documentId, dcId, type);
+                        operation.pathSaveData.canonicalDestination = operation.hasCanonicalDownload();
                     }
+                }
+                if (operation.pathSaveData == null && operation.hasCanonicalDownload()) {
+                    operation.pathSaveData = new FilePathDatabase.PathData(documentId, dcId, type);
+                    operation.pathSaveData.canonicalDestination = true;
                 }
             } else {
                 storeDir = getDirectory(type);
@@ -1028,8 +1049,8 @@ public class FileLoader extends BaseController {
                 }
                 if (parentObject instanceof MessageObject) {
                     MessageObject messageObject = (MessageObject) parentObject;
-                    if (document != null && messageObject.putInDownloadsStore) {
-                        getDownloadController().onDownloadComplete(messageObject);
+                    if (document != null) {
+                        getDownloadController().onDownloadComplete(messageObject, finalFile);
                     }
                 }
 
@@ -1067,7 +1088,21 @@ public class FileLoader extends BaseController {
 
             @Override
             public void saveFilePath(FilePathDatabase.PathData pathSaveData, File cacheFileFinal) {
+                if (pathSaveData.canonicalDestination) {
+                    return;
+                }
                 getFileDatabase().putPath(pathSaveData.id, pathSaveData.dc, pathSaveData.type, 0, cacheFileFinal != null ? cacheFileFinal.toString() : null);
+            }
+
+            @Override
+            public boolean isCanonicalFilePath(FilePathDatabase.PathData pathSaveData, File cacheFileFinal) {
+                return cacheFileFinal != null && getFileDatabase().isCanonicalDownload(
+                        pathSaveData.id, pathSaveData.dc, pathSaveData.type, cacheFileFinal.toString());
+            }
+
+            @Override
+            public FilePathDatabase getFileDatabase() {
+                return FileLoader.this.getFileDatabase();
             }
 
             @Override
@@ -1077,7 +1112,8 @@ public class FileLoader extends BaseController {
 
             @Override
             public boolean isLocallyCreatedFile(String path) {
-                return getFileDatabase().isLocallyCreated(path);
+                return getFileDatabase().isLocallyCreated(path)
+                        || getFileDatabase().isCanonicalDownload(path);
             }
         };
         operation.setDelegate(fileLoadOperationDelegate);
@@ -1759,6 +1795,9 @@ public class FileLoader extends BaseController {
         fileLoaderQueue.postRunnable(() -> {
             for (int a = 0; a < files.size(); a++) {
                 File file = files.get(a);
+                if (getFileDatabase().isCanonicalDownload(file.getAbsolutePath())) {
+                    continue;
+                }
                 File encrypted = new File(file.getAbsolutePath() + ".enc");
                 if (encrypted.exists()) {
                     try {

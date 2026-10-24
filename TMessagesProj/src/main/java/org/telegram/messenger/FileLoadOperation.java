@@ -10,6 +10,8 @@ package org.telegram.messenger;
 
 import android.os.SystemClock;
 
+import com.radolyn.ayugram.utils.NooagramCanonicalDownload;
+
 import org.telegram.messenger.utils.ImmutableByteArrayOutputStream;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.NativeByteBuffer;
@@ -47,6 +49,7 @@ public class FileLoadOperation {
     long streamOffset;
 
     public static volatile DispatchQueue filesQueue = new DispatchQueue("writeFileQueue");
+    public static volatile DispatchQueue canonicalDownloadQueue = new DispatchQueue("canonicalDownloadQueue");
     public static ImmutableByteArrayOutputStream filesQueueByteBuffer;
     private boolean forceSmallChunk;
     private boolean useDownloadByteBudget;
@@ -288,6 +291,10 @@ public class FileLoadOperation {
 
     private int currentType;
     public FilePathDatabase.PathData pathSaveData;
+    private volatile NooagramCanonicalDownload.Claim canonicalClaim;
+    private volatile boolean canonicalTransferScheduled;
+    private volatile boolean canonicalTransferCancelled;
+    private volatile boolean canonicalPathReady;
     private long startTime;
     private FileLoaderPriorityQueue priorityQueue;
 
@@ -297,6 +304,8 @@ public class FileLoadOperation {
         void didFailedLoadingFile(FileLoadOperation operation, int state);
         void didChangedLoadProgress(FileLoadOperation operation, long uploadedSize, long totalSize);
         void saveFilePath(FilePathDatabase.PathData pathSaveData, File cacheFileFinal);
+        boolean isCanonicalFilePath(FilePathDatabase.PathData pathSaveData, File cacheFileFinal);
+        FilePathDatabase getFileDatabase();
         boolean hasAnotherRefOnFile(String path);
         boolean isLocallyCreatedFile(String path);
     }
@@ -525,6 +534,156 @@ public class FileLoadOperation {
         this.fileName = name;
         this.storeFileName = finalName;
         this.priorityQueue = priorityQueue;
+    }
+
+    public boolean requestCanonicalDownload(MessageObject messageObject) {
+        if (canonicalClaim != null) {
+            return true;
+        }
+        NooagramCanonicalDownload.Claim claim = NooagramCanonicalDownload.createClaim(messageObject);
+        if (claim == null) {
+            return false;
+        }
+        synchronized (this) {
+            if (canonicalClaim == null) {
+                canonicalClaim = claim;
+                if (pathSaveData != null) {
+                    pathSaveData.canonicalDestination = true;
+                }
+            }
+        }
+        if (state == stateFinished && cacheFileFinalReady && cacheFileFinal != null
+                && cacheFileFinal.exists()) {
+            scheduleCanonicalCompletion();
+        }
+        return true;
+    }
+
+    public boolean hasCanonicalDownload() {
+        return canonicalClaim != null;
+    }
+
+    private void scheduleCanonicalCompletion() {
+        if (canonicalClaim == null || pathSaveData == null || delegate == null
+                || cacheFileFinal == null || canonicalPathReady) {
+            return;
+        }
+        scheduleCanonicalTransfer(cacheFileFinal, () -> postFinishLoadingFile(false));
+    }
+
+    private void completeOrScheduleCanonicalTransfer(File sourceFile, boolean increment) {
+        if (canonicalClaim == null || pathSaveData == null || sourceFile == null) {
+            postFinishLoadingFile(increment);
+            return;
+        }
+        if (canonicalTransferCancelled) {
+            Utilities.stageQueue.postRunnable(() ->
+                    delegate.didFailedLoadingFile(FileLoadOperation.this, 1));
+            return;
+        }
+        try {
+            NooagramCanonicalDownload.retryPendingForDocument(
+                    ApplicationLoader.applicationContext, delegate.getFileDatabase(),
+                    currentAccount, pathSaveData);
+        } catch (Exception e) {
+            FileLog.e(e);
+            Utilities.stageQueue.postRunnable(() ->
+                    delegate.didFailedLoadingFile(FileLoadOperation.this, 0));
+            return;
+        }
+        FilePathDatabase database = delegate.getFileDatabase();
+        String existingPath = database.getPath(
+                pathSaveData.id, pathSaveData.dc, pathSaveData.type, true);
+        if (existingPath != null && database.isCanonicalDownload(
+                pathSaveData.id, pathSaveData.dc, pathSaveData.type, existingPath)) {
+            File existing = new File(existingPath);
+            if (existing.isFile()) {
+                cacheFileFinal = existing;
+                cacheFileFinalReady = true;
+                canonicalPathReady = true;
+                pathSaveData.canonicalDestination = true;
+                postFinishLoadingFile(increment);
+                return;
+            }
+        }
+        pathSaveData.canonicalDestination = true;
+        if (delegate.isCanonicalFilePath(pathSaveData, sourceFile)) {
+            canonicalPathReady = true;
+            postFinishLoadingFile(increment);
+            return;
+        }
+        scheduleCanonicalTransfer(sourceFile, () -> postFinishLoadingFile(increment));
+    }
+
+    private void scheduleCanonicalTransfer(File sourceFile, Runnable completion) {
+        synchronized (this) {
+            if (canonicalPathReady) {
+                completion.run();
+                return;
+            }
+            if (canonicalTransferScheduled) {
+                return;
+            }
+            canonicalTransferScheduled = true;
+        }
+        canonicalDownloadQueue.postRunnable(() -> {
+            NooagramCanonicalDownload.Publication publication = null;
+            try {
+                publication = NooagramCanonicalDownload.publish(
+                        ApplicationLoader.applicationContext, sourceFile, canonicalClaim,
+                        () -> canonicalTransferCancelled, currentAccount, pathSaveData,
+                        delegate.getFileDatabase());
+                File canonicalFile = NooagramCanonicalDownload.commitAndRemoveSource(
+                        sourceFile, publication, currentAccount, pathSaveData,
+                        delegate.getFileDatabase(), () -> canonicalTransferCancelled);
+                cacheFileFinal = canonicalFile;
+                cacheFileFinalReady = true;
+                canonicalPathReady = true;
+                pathSaveData.canonicalDestination = true;
+                completion.run();
+            } catch (Exception e) {
+                FileLog.e(e);
+                pathSaveData.canonicalDestination = false;
+                cacheFileFinal = sourceFile;
+                cacheFileFinalReady = sourceFile.exists();
+                Utilities.stageQueue.postRunnable(() -> delegate.didFailedLoadingFile(
+                        FileLoadOperation.this, canonicalTransferCancelled ? 1 : 0));
+            } finally {
+                canonicalTransferScheduled = false;
+            }
+        });
+    }
+
+    private void postFinishLoadingFile(boolean increment) {
+        Utilities.stageQueue.postRunnable(() -> {
+            if (BuildVars.LOGS_ENABLED) {
+                FileLog.d("finished downloading file to " + cacheFileFinal + " time = "
+                        + (System.currentTimeMillis() - startTime) + " dc = " + datacenterId
+                        + " size = " + AndroidUtilities.formatFileSize(totalBytesCount));
+            }
+            if (increment) {
+                if (currentType == ConnectionsManager.FileTypeAudio) {
+                    StatsController.getInstance(currentAccount).incrementReceivedItemsCount(
+                            ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_AUDIOS, 1);
+                } else if (currentType == ConnectionsManager.FileTypeVideo) {
+                    StatsController.getInstance(currentAccount).incrementReceivedItemsCount(
+                            ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_VIDEOS, 1);
+                } else if (currentType == ConnectionsManager.FileTypePhoto) {
+                    StatsController.getInstance(currentAccount).incrementReceivedItemsCount(
+                            ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_PHOTOS, 1);
+                } else if (currentType == ConnectionsManager.FileTypeFile) {
+                    if (ext != null && (ext.toLowerCase().endsWith("mp3")
+                            || ext.toLowerCase().endsWith("m4a"))) {
+                        StatsController.getInstance(currentAccount).incrementReceivedItemsCount(
+                                ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_MUSIC, 1);
+                    } else {
+                        StatsController.getInstance(currentAccount).incrementReceivedItemsCount(
+                                ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_FILES, 1);
+                    }
+                }
+            }
+            delegate.didFinishLoadingFile(FileLoadOperation.this, cacheFileFinal);
+        });
     }
 
     public FileLoaderPriorityQueue getQueue() {
@@ -1305,7 +1464,7 @@ public class FileLoadOperation {
             started = true;
             try {
                 onFinishLoadingFile(false, FINISH_CODE_FILE_ALREADY_EXIST, false);
-                if (pathSaveData != null) {
+                if (pathSaveData != null && !pathSaveData.canonicalDestination) {
                     delegate.saveFilePath(pathSaveData, cacheFileFinal);
                 }
             } catch (Exception e) {
@@ -1380,6 +1539,7 @@ public class FileLoadOperation {
     }
 
     private void cancelOnStage(boolean deleteFiles) {
+        boolean finished = state == stateFinished;
         if (state != stateFinished && state != stateFailed) {
             state = stateCancelling;
             cancelRequests(() -> {
@@ -1388,8 +1548,17 @@ public class FileLoadOperation {
                 }
             });
         }
+        if (canonicalClaim != null) {
+            canonicalTransferCancelled = true;
+            if (finished) {
+                return;
+            }
+        }
         if (deleteFiles) {
-            if (cacheFileFinal != null) {
+            boolean canonicalFile = canonicalPathReady
+                    || pathSaveData != null && delegate != null
+                    && delegate.isCanonicalFilePath(pathSaveData, cacheFileFinal);
+            if (cacheFileFinal != null && !canonicalFile) {
                 try {
                     if (!cacheFileFinal.delete()) {
                         cacheFileFinal.deleteOnExit();
@@ -1665,7 +1834,7 @@ public class FileLoadOperation {
                             try {
                                 renameResult = AndroidUtilities.copyFile(cacheFileTempLocal, cacheFileFinal);
                                 if (renameResult) {
-                                    cacheFileFinal.delete();
+                                    cacheFileTempLocal.delete();
                                 }
                             } catch (Throwable e) {
                                 FileLog.e(e);
@@ -1691,7 +1860,8 @@ public class FileLoadOperation {
                             cacheFileFinalReady = false;
                         } else {
                             cacheFileFinalReady = true;
-                            if (pathSaveData != null && cacheFileFinal.exists()) {
+                            if (pathSaveData != null && !pathSaveData.canonicalDestination
+                                    && cacheFileFinal.exists()) {
                                 delegate.saveFilePath(pathSaveData, cacheFileFinal);
                             }
                         }
@@ -1702,27 +1872,7 @@ public class FileLoadOperation {
                         return;
                     }
                 }
-                Utilities.stageQueue.postRunnable(() -> {
-                    if (BuildVars.LOGS_ENABLED) {
-                        FileLog.d("finished downloading file to " + cacheFileFinal + " time = " + (System.currentTimeMillis() - startTime) + " dc = " + datacenterId + " size = " + AndroidUtilities.formatFileSize(totalBytesCount));
-                    }
-                    if (increment) {
-                        if (currentType == ConnectionsManager.FileTypeAudio) {
-                            StatsController.getInstance(currentAccount).incrementReceivedItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_AUDIOS, 1);
-                        } else if (currentType == ConnectionsManager.FileTypeVideo) {
-                            StatsController.getInstance(currentAccount).incrementReceivedItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_VIDEOS, 1);
-                        } else if (currentType == ConnectionsManager.FileTypePhoto) {
-                            StatsController.getInstance(currentAccount).incrementReceivedItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_PHOTOS, 1);
-                        } else if (currentType == ConnectionsManager.FileTypeFile) {
-                            if (ext != null && (ext.toLowerCase().endsWith("mp3") || ext.toLowerCase().endsWith("m4a"))) {
-                                StatsController.getInstance(currentAccount).incrementReceivedItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_MUSIC, 1);
-                            } else {
-                                StatsController.getInstance(currentAccount).incrementReceivedItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_FILES, 1);
-                            }
-                        }
-                    }
-                    delegate.didFinishLoadingFile(FileLoadOperation.this, cacheFileFinal);
-                });
+                completeOrScheduleCanonicalTransfer(cacheFileFinal, increment);
             });
             cacheIvTemp = null;
             cacheFileParts = null;

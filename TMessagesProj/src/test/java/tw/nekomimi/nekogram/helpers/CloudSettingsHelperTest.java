@@ -1,6 +1,7 @@
 package tw.nekomimi.nekogram.helpers;
 
 import android.content.SharedPreferences;
+import android.os.Looper;
 import android.util.SparseArray;
 
 import org.junit.Before;
@@ -8,6 +9,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 
 import org.telegram.messenger.ApplicationLoader;
@@ -15,11 +17,14 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(RobolectricTestRunner.class)
@@ -29,6 +34,7 @@ public class CloudSettingsHelperTest {
     @Before
     public void clearSyncedTimestamp() {
         ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
+        UserConfig.selectedAccount = 0;
         preferences().edit().clear().commit();
     }
 
@@ -131,6 +137,275 @@ public class CloudSettingsHelperTest {
         assertFalse(storage.hasPending());
     }
 
+    @Test
+    public void unicodeAndEscapedChunksFitActualRequestAndReassembleLosslessly() {
+        String unit = "\u4e2d\u6587\ud83d\ude00\ud840\udc00\\\"\n\t\u0001";
+        String setting = unit.repeat(2000);
+
+        ArrayList<String> chunks = CloudSettingsHelper.splitSettings(setting);
+
+        assertTrue(chunks.size() > 1);
+        StringBuilder restored = new StringBuilder(setting.length());
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunk = chunks.get(i);
+            assertFalse(chunk.isEmpty());
+            assertFalse(hasUnpairedSurrogate(chunk));
+            String requestData = CloudStorageHelper.buildSetItemPayload("neko_settings_" + i, chunk);
+            assertTrue(CloudStorageHelper.utf8Length(requestData) <= CloudStorageHelper.MAX_REQUEST_DATA_BYTES);
+            restored.append(chunk);
+        }
+        assertEquals(setting, restored.toString());
+    }
+
+    @Test
+    public void uploadedUnicodeChunksPreserveCountAndIndices() {
+        CloudSettingsHelper helper = new CloudSettingsHelper();
+        FakeCloudStorageHelper storage = new FakeCloudStorageHelper(0);
+        CallbackResult result = new CallbackResult();
+        String setting = ("{\"text\":\"\u4e2d\u6587 \ud83d\ude00 \\\\ \\\" \\n\"}").repeat(600);
+
+        helper.syncToCloud(storage, 0, setting, result);
+        int uploadedRequests = 0;
+        while (storage.hasPending()) {
+            storage.succeed(storage.singlePendingKey());
+            uploadedRequests++;
+            if (uploadedRequests > 10000) {
+                throw new AssertionError("Cloud upload did not terminate");
+            }
+        }
+
+        assertTrue(result.success);
+        int count = Integer.parseInt(storage.value("neko_settings"));
+        assertTrue(count > 1);
+        StringBuilder restored = new StringBuilder(setting.length());
+        for (int i = 0; i < count; i++) {
+            restored.append(storage.value("neko_settings_" + i));
+        }
+        assertEquals(setting, restored.toString());
+    }
+
+    @Test
+    public void autoSyncCoalescesNotificationsAndNeverRunsConcurrently() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        FakeAutoSyncHelper helper = new FakeAutoSyncHelper();
+
+        helper.doAutoSync();
+        helper.doAutoSync();
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1199, TimeUnit.MILLISECONDS);
+        assertEquals(0, helper.starts);
+
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.starts);
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.starts);
+
+        helper.complete(true, null);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.starts);
+    }
+
+    @Test
+    public void disablingAutoSyncDropsPendingWork() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        FakeAutoSyncHelper helper = new FakeAutoSyncHelper();
+
+        helper.doAutoSync();
+        helper.updateAutoSync(false);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+
+        assertEquals(0, helper.starts);
+        assertFalse(preferences().getBoolean("auto_sync", true));
+    }
+
+    @Test
+    public void unavailableAccountOrNetworkDoesNotSendRequest() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        FakeAutoSyncHelper helper = new FakeAutoSyncHelper();
+        helper.available = false;
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+
+        assertEquals(0, helper.starts);
+    }
+
+    @Test
+    public void automaticFailureRetriesAreLimited() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        FakeAutoSyncHelper helper = new FakeAutoSyncHelper();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.starts);
+        helper.complete(false, "temporary failure");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(5000, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.starts);
+        helper.complete(false, "temporary failure");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(30000, TimeUnit.MILLISECONDS);
+        assertEquals(3, helper.starts);
+        helper.complete(false, "temporary failure");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(120000, TimeUnit.MILLISECONDS);
+        assertEquals(3, helper.starts);
+    }
+
+    @Test
+    public void manualSyncWaitsForAutomaticUpload() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.starts);
+
+        helper.requestManualSync(manualResult);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.starts);
+
+        helper.complete(true, null);
+        assertEquals(2, helper.starts);
+        assertEquals(0, manualResult.calls);
+
+        helper.complete(true, null);
+        assertEquals(1, manualResult.calls);
+        assertTrue(manualResult.success);
+    }
+
+    @Test
+    public void queuedManualSyncUsesAccountCapturedAtEnqueue() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        UserConfig.selectedAccount = 1;
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        helper.requestManualSync(manualResult);
+
+        UserConfig.selectedAccount = 0;
+        helper.complete(true, null);
+
+        assertEquals(1, helper.manualStarts);
+        assertEquals(1, helper.lastManualAccount);
+        helper.complete(true, null);
+        assertTrue(manualResult.success);
+    }
+
+    @Test
+    public void failedManualSyncPreservesAutomaticRetry() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        helper.requestManualSync(manualResult);
+        helper.complete(false, "automatic failure");
+
+        assertEquals(1, helper.manualStarts);
+        helper.complete(false, "manual failure");
+        assertFalse(manualResult.success);
+
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(4999, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.autoStarts);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.autoStarts);
+    }
+
+    @Test
+    public void retryDueDuringManualSyncRunsAfterManualFailure() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        helper.requestManualSync(manualResult);
+        helper.complete(false, "automatic failure");
+        assertEquals(1, helper.manualStarts);
+
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(5000, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.autoStarts);
+        helper.complete(false, "manual failure");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.autoStarts);
+    }
+
+    @Test
+    public void finalScheduledRetrySurvivesFailedManualSync() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        helper.complete(false, "initial automatic failure");
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(5000, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.autoStarts);
+
+        helper.requestManualSync(manualResult);
+        helper.complete(false, "final automatic retry failure");
+        assertEquals(1, helper.manualStarts);
+        helper.complete(false, "manual failure");
+
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(29999, TimeUnit.MILLISECONDS);
+        assertEquals(2, helper.autoStarts);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.MILLISECONDS);
+        assertEquals(3, helper.autoStarts);
+    }
+
+    @Test
+    public void successfulManualSyncCancelsSatisfiedAutomaticRetry() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        helper.requestManualSync(manualResult);
+        helper.complete(false, "automatic failure");
+        assertEquals(1, helper.manualStarts);
+
+        helper.complete(true, null);
+        assertTrue(manualResult.success);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(120000, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.autoStarts);
+    }
+
+    @Test
+    public void changesDuringManualSyncRemainPending() {
+        preferences().edit().putBoolean("auto_sync", true).commit();
+        SerialSyncHelper helper = new SerialSyncHelper();
+        CallbackResult manualResult = new CallbackResult();
+
+        helper.requestManualSync(manualResult);
+        assertEquals(1, helper.manualStarts);
+        helper.doAutoSync();
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(0, helper.autoStarts);
+
+        helper.complete(true, null);
+        assertTrue(manualResult.success);
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS);
+        assertEquals(1, helper.autoStarts);
+    }
+
+    private static boolean hasUnpairedSurrogate(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                if (i + 1 >= value.length() || !Character.isLowSurrogate(value.charAt(++i))) {
+                    return true;
+                }
+            } else if (Character.isLowSurrogate(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @SuppressWarnings("unchecked")
     private static SparseArray<Long> cloudSyncedDate(CloudSettingsHelper helper) throws Exception {
         Field field = CloudSettingsHelper.class.getDeclaredField("cloudSyncedDate");
@@ -163,6 +438,7 @@ public class CloudSettingsHelperTest {
 
     private static final class FakeCloudStorageHelper extends CloudStorageHelper {
         private final LinkedHashMap<String, Utilities.Callback2<String, String>> pending = new LinkedHashMap<>();
+        private final LinkedHashMap<String, String> values = new LinkedHashMap<>();
         private String throwOnKey;
 
         private FakeCloudStorageHelper(int account) {
@@ -174,6 +450,7 @@ public class CloudSettingsHelperTest {
             if (key.equals(throwOnKey)) {
                 throw new IllegalStateException("simulated synchronous failure");
             }
+            values.put(key, value);
             pending.put(key, callback);
         }
 
@@ -201,6 +478,10 @@ public class CloudSettingsHelperTest {
             return !pending.isEmpty();
         }
 
+        private String value(String key) {
+            return values.get(key);
+        }
+
         private String singlePendingKey() {
             if (pending.size() != 1) {
                 throw new AssertionError("Expected one pending request, got " + pending.keySet());
@@ -209,6 +490,73 @@ public class CloudSettingsHelperTest {
                 return entry.getKey();
             }
             throw new AssertionError();
+        }
+    }
+
+    private static final class FakeAutoSyncHelper extends CloudSettingsHelper {
+        private int starts;
+        private boolean available = true;
+        private Utilities.Callback2<Boolean, String> pending;
+
+        @Override
+        boolean canAutoSyncNow() {
+            return available;
+        }
+
+        @Override
+        void performAutoSync(Utilities.Callback2<Boolean, String> callback) {
+            starts++;
+            pending = callback;
+        }
+
+        @Override
+        void notifyAutoSyncFailure(String error) {
+        }
+
+        private void complete(boolean success, String error) {
+            assertNotNull(pending);
+            Utilities.Callback2<Boolean, String> callback = pending;
+            pending = null;
+            callback.run(success, error);
+        }
+    }
+
+    private static final class SerialSyncHelper extends CloudSettingsHelper {
+        private int starts;
+        private int autoStarts;
+        private int manualStarts;
+        private int lastManualAccount = -1;
+        private Utilities.Callback2<Boolean, String> pending;
+
+        @Override
+        boolean canAutoSyncNow() {
+            return true;
+        }
+
+        @Override
+        void performAutoSync(Utilities.Callback2<Boolean, String> callback) {
+            starts++;
+            autoStarts++;
+            pending = callback;
+        }
+
+        @Override
+        void syncToCloud(int account, Utilities.Callback2<Boolean, String> callback) {
+            starts++;
+            manualStarts++;
+            lastManualAccount = account;
+            pending = callback;
+        }
+
+        @Override
+        void notifyAutoSyncFailure(String error) {
+        }
+
+        private void complete(boolean success, String error) {
+            assertNotNull(pending);
+            Utilities.Callback2<Boolean, String> callback = pending;
+            pending = null;
+            callback.run(success, error);
         }
     }
 }

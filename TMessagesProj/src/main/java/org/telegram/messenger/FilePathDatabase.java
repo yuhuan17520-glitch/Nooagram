@@ -19,6 +19,17 @@ import java.util.concurrent.CountDownLatch;
 public class FilePathDatabase {
 
     public final static int FLAG_LOCALLY_CREATED = 1; //file is locally created, skip file size check in FileLoader
+    public final static int FLAG_CANONICAL_DOWNLOAD = 2; //user-owned public download, never cache-delete it
+
+    public enum CanonicalPathStatus {
+        CANONICAL,
+        REMOVED,
+        ABSENT,
+        PRESENT,
+        UNCHANGED,
+        CHANGED,
+        ERROR
+    }
 
     private DispatchQueue dispatchQueue;
     private final int currentAccount;
@@ -269,47 +280,408 @@ public class FilePathDatabase {
     }
 
     public void putPath(long id, int dc, int type, int flags, String path) {
+        postRunnable(() -> putPathInternal(id, dc, type, flags, path));
+    }
+
+    /** Commits a path before its caller removes the previous file. Returns false on SQLite failure. */
+    public boolean putPathBlocking(long id, int dc, int type, int flags, String path) {
+        if (dispatchQueue != null && dispatchQueue.getHandler() != null
+                && Thread.currentThread() == dispatchQueue.getHandler().getLooper().getThread()) {
+            return putPathInternal(id, dc, type, flags, path);
+        }
+        boolean[] result = new boolean[1];
+        CountDownLatch latch = new CountDownLatch(1);
         postRunnable(() -> {
-            if (BuildVars.DEBUG_VERSION) {
-                FileLog.d("put file path id=" + id + " dc=" + dc + " type=" + type + " path=" + path);
+            result[0] = putPathInternal(id, dc, type, flags, path);
+            latch.countDown();
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return result[0];
+    }
+
+    private boolean putPathInternal(long id, int dc, int type, int flags, String path) {
+        if (BuildVars.DEBUG_VERSION) {
+            FileLog.d("put file path id=" + id + " dc=" + dc + " type=" + type + " path=" + path);
+        }
+        ensureDatabaseCreated();
+        if (database == null) {
+            return false;
+        }
+        SQLitePreparedStatement state = null;
+        SQLitePreparedStatement deleteState = null;
+        String key = id + "_" + dc + "_" + type;
+        try {
+            if (path != null) {
+                deleteState = database.executeFast("DELETE FROM paths WHERE path = ?");
+                deleteState.bindString(1, path);
+                if (!stepWriteWithRetry(deleteState)) {
+                    return false;
+                }
+
+                state = database.executeFast("REPLACE INTO paths VALUES(?, ?, ?, ?, ?)");
+                state.requery();
+                state.bindLong(1, id);
+                state.bindInteger(2, dc);
+                state.bindInteger(3, type);
+                state.bindString(4, path);
+                state.bindInteger(5, flags);
+                if (!stepWriteWithRetry(state)) {
+                    return false;
+                }
+                cache.put(key, path);
+            } else {
+                SQLitePreparedStatement deletePath = database.executeFast(
+                        "DELETE FROM paths WHERE document_id = ? AND dc_id = ? AND type = ?");
+                try {
+                    deletePath.bindLong(1, id);
+                    deletePath.bindInteger(2, dc);
+                    deletePath.bindInteger(3, type);
+                    if (!stepWriteWithRetry(deletePath)) {
+                        return false;
+                    }
+                } finally {
+                    deletePath.dispose();
+                }
+                cache.put(key, NULL_PATH);
             }
+            return true;
+        } catch (SQLiteException e) {
+            FileLog.e(e);
+            return false;
+        } finally {
+            if (deleteState != null) {
+                deleteState.dispose();
+            }
+            if (state != null) {
+                state.dispose();
+            }
+        }
+    }
+
+    private boolean stepWriteWithRetry(SQLitePreparedStatement statement) throws SQLiteException {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            int result = statement.step();
+            if (result == 1) {
+                return true;
+            }
+            if (result != -1) {
+                return false;
+            }
+            statement.requery();
+            try {
+                Thread.sleep(20L << attempt);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
+    public boolean removeCanonicalPathIfMatches(long id, int dc, int type, String path) {
+        CanonicalPathStatus status = removeCanonicalPathIfMatchesStatus(id, dc, type, path);
+        return status == CanonicalPathStatus.REMOVED || status == CanonicalPathStatus.ABSENT;
+    }
+
+    public CanonicalPathStatus removeCanonicalPathIfMatchesStatus(
+            long id, int dc, int type, String path) {
+        if (path == null) {
+            return CanonicalPathStatus.ERROR;
+        }
+        CanonicalPathStatus[] result = {CanonicalPathStatus.ERROR};
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database != null) {
+                SQLiteCursor cursor = null;
+                try {
+                    cursor = database.queryFinalized(
+                            "SELECT path, flags FROM paths WHERE document_id = ?"
+                                    + " AND dc_id = ? AND type = ?", id, dc, type);
+                    if (!cursor.next()) {
+                        result[0] = CanonicalPathStatus.ABSENT;
+                    } else if (!path.equals(cursor.stringValue(0))) {
+                        result[0] = CanonicalPathStatus.CHANGED;
+                    } else if ((cursor.intValue(1) & FLAG_CANONICAL_DOWNLOAD) == 0) {
+                        result[0] = CanonicalPathStatus.UNCHANGED;
+                    } else {
+                        SQLitePreparedStatement deletePath = database.executeFast(
+                                "DELETE FROM paths WHERE document_id = ? AND dc_id = ?"
+                                        + " AND type = ? AND path = ?");
+                        try {
+                            deletePath.bindLong(1, id);
+                            deletePath.bindInteger(2, dc);
+                            deletePath.bindInteger(3, type);
+                            deletePath.bindString(4, path);
+                            if (stepWriteWithRetry(deletePath)) {
+                                cache.put(id + "_" + dc + "_" + type, NULL_PATH);
+                                result[0] = CanonicalPathStatus.REMOVED;
+                            } else {
+                                result[0] = CanonicalPathStatus.UNCHANGED;
+                            }
+                        } finally {
+                            deletePath.dispose();
+                        }
+                    }
+                } catch (Exception e) {
+                    FileLog.e(e);
+                    result[0] = CanonicalPathStatus.ERROR;
+                } finally {
+                    if (cursor != null) {
+                        cursor.dispose();
+                    }
+                }
+            }
+            latch.countDown();
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CanonicalPathStatus.ERROR;
+        }
+        return result[0];
+    }
+
+    public CanonicalPathStatus getCanonicalMappingStatus(
+            long id, int dc, int type, String path) {
+        if (path == null) {
+            return CanonicalPathStatus.ERROR;
+        }
+        CanonicalPathStatus[] result = {CanonicalPathStatus.ERROR};
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
             ensureDatabaseCreated();
             if (database == null) {
+                latch.countDown();
                 return;
             }
-            SQLitePreparedStatement state = null;
-            SQLitePreparedStatement deleteState = null;
+            SQLiteCursor cursor = null;
             try {
-                if (path != null) {
-                    deleteState = database.executeFast("DELETE FROM paths WHERE path = ?");
-                    deleteState.bindString(1, path);
-                    deleteState.step();
-
-                    state = database.executeFast("REPLACE INTO paths VALUES(?, ?, ?, ?, ?)");
-                    state.requery();
-                    state.bindLong(1, id);
-                    state.bindInteger(2, dc);
-                    state.bindInteger(3, type);
-                    state.bindString(4, path);
-                    state.bindInteger(5, flags);
-                    state.step();
-                    state.dispose();
-                    cache.put(id + "_" + dc + "_" + type, path);
+                cursor = database.queryFinalized(
+                        "SELECT path, flags FROM paths WHERE document_id = ?"
+                                + " AND dc_id = ? AND type = ?", id, dc, type);
+                if (!cursor.next()) {
+                    result[0] = CanonicalPathStatus.ABSENT;
+                } else if (!path.equals(cursor.stringValue(0))) {
+                    result[0] = CanonicalPathStatus.CHANGED;
+                } else if ((cursor.intValue(1) & FLAG_CANONICAL_DOWNLOAD) == 0) {
+                    result[0] = CanonicalPathStatus.UNCHANGED;
                 } else {
-                    database.executeFast("DELETE FROM paths WHERE document_id = " + id + " AND dc_id = " + dc + " AND type = " + type).stepThis().dispose();
-                    cache.put(id + "_" + dc + "_" + type, NULL_PATH);
+                    result[0] = CanonicalPathStatus.CANONICAL;
                 }
-            } catch (SQLiteException e) {
+            } catch (Exception e) {
                 FileLog.e(e);
+                result[0] = CanonicalPathStatus.ERROR;
             } finally {
-                if (deleteState != null) {
-                    deleteState.dispose();
+                if (cursor != null) {
+                    cursor.dispose();
                 }
-                if (state != null) {
-                    state.dispose();
-                }
+                latch.countDown();
             }
         });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CanonicalPathStatus.ERROR;
+        }
+        return result[0];
+    }
+
+    public CanonicalPathStatus getCurrentMappingStatus(long id, int dc, int type) {
+        CanonicalPathStatus[] result = {CanonicalPathStatus.ERROR};
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database == null) {
+                latch.countDown();
+                return;
+            }
+            SQLiteCursor cursor = null;
+            try {
+                cursor = database.queryFinalized(
+                        "SELECT path FROM paths WHERE document_id = ?"
+                                + " AND dc_id = ? AND type = ?", id, dc, type);
+                result[0] = cursor.next()
+                        ? CanonicalPathStatus.PRESENT : CanonicalPathStatus.ABSENT;
+            } catch (Exception e) {
+                FileLog.e(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CanonicalPathStatus.ERROR;
+        }
+        return result[0];
+    }
+
+    public boolean restorePathIfAbsentBlocking(
+            long id, int dc, int type, int flags, String path) {
+        if (path == null) {
+            return false;
+        }
+        boolean[] result = new boolean[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database == null) {
+                latch.countDown();
+                return;
+            }
+            SQLiteCursor cursor = null;
+            try {
+                cursor = database.queryFinalized(
+                        "SELECT path FROM paths WHERE document_id = ?"
+                                + " AND dc_id = ? AND type = ?", id, dc, type);
+                if (!cursor.next()) {
+                    result[0] = putPathInternal(id, dc, type, flags, path);
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return result[0];
+    }
+
+    /** Fail closed: a database error must not permit cache cleanup to delete a user file. */
+    public boolean isCanonicalDownload(String path) {
+        if (path == null) {
+            return false;
+        }
+        boolean[] result = new boolean[]{true};
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database == null) {
+                latch.countDown();
+                return;
+            }
+            SQLiteCursor cursor = null;
+            try {
+                cursor = database.queryFinalized(
+                        "SELECT flags FROM paths WHERE path = ?", path);
+                result[0] = cursor.next()
+                        && (cursor.intValue(0) & FLAG_CANONICAL_DOWNLOAD) != 0;
+            } catch (Exception e) {
+                FileLog.e(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return true;
+        }
+        return result[0];
+    }
+
+    public CanonicalPathStatus getCanonicalPathStatus(String path) {
+        if (path == null) {
+            return CanonicalPathStatus.ERROR;
+        }
+        CanonicalPathStatus[] result = {CanonicalPathStatus.ERROR};
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database == null) {
+                latch.countDown();
+                return;
+            }
+            SQLiteCursor cursor = null;
+            try {
+                cursor = database.queryFinalized(
+                        "SELECT flags FROM paths WHERE path = ?", path);
+                if (!cursor.next()) {
+                    result[0] = CanonicalPathStatus.ABSENT;
+                } else if ((cursor.intValue(0) & FLAG_CANONICAL_DOWNLOAD) != 0) {
+                    result[0] = CanonicalPathStatus.CANONICAL;
+                } else {
+                    result[0] = CanonicalPathStatus.CHANGED;
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+                result[0] = CanonicalPathStatus.ERROR;
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return CanonicalPathStatus.ERROR;
+        }
+        return result[0];
+    }
+
+    public boolean isCanonicalDownload(long id, int dc, int type, String path) {
+        if (path == null) {
+            return false;
+        }
+        boolean[] result = new boolean[1];
+        CountDownLatch latch = new CountDownLatch(1);
+        postRunnable(() -> {
+            ensureDatabaseCreated();
+            if (database == null) {
+                latch.countDown();
+                return;
+            }
+            SQLiteCursor cursor = null;
+            try {
+                cursor = database.queryFinalized(
+                        "SELECT flags FROM paths WHERE document_id = " + id
+                                + " AND dc_id = " + dc + " AND type = " + type
+                                + " AND path = ?", path);
+                result[0] = cursor.next()
+                        && (cursor.intValue(0) & FLAG_CANONICAL_DOWNLOAD) != 0;
+            } catch (Exception e) {
+                FileLog.e(e);
+            } finally {
+                if (cursor != null) {
+                    cursor.dispose();
+                }
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return result[0];
     }
 
     public void checkMediaExistance(ArrayList<MessageObject> messageObjects) {
@@ -358,8 +730,20 @@ public class FilePathDatabase {
         postRunnable(() -> {
             ensureDatabaseCreated();
             try {
-                database.executeFast("DELETE FROM paths WHERE 1").stepThis().dispose();
-                database.executeFast("DELETE FROM paths_by_dialog_id WHERE 1").stepThis().dispose();
+                SQLitePreparedStatement clearPaths = database.executeFast(
+                        "DELETE FROM paths WHERE (flags & " + FLAG_CANONICAL_DOWNLOAD + ") = 0");
+                try {
+                    stepWriteWithRetry(clearPaths);
+                } finally {
+                    clearPaths.dispose();
+                }
+                SQLitePreparedStatement clearDialogs = database.executeFast(
+                        "DELETE FROM paths_by_dialog_id WHERE 1");
+                try {
+                    stepWriteWithRetry(clearDialogs);
+                } finally {
+                    clearDialogs.dispose();
+                }
             } catch (Exception e) {
                 FileLog.e(e);
             }
@@ -555,6 +939,7 @@ public class FilePathDatabase {
         public final long id;
         public final int dc;
         public final int type;
+        public volatile boolean canonicalDestination;
 
         public PathData(long documentId, int dcId, int type) {
             this.id = documentId;

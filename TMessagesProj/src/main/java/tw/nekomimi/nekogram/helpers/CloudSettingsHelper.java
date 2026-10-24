@@ -35,6 +35,7 @@ import org.telegram.ui.Components.ScaleStateListAnimator;
 import org.telegram.ui.Components.TextViewSwitcher;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -46,27 +47,42 @@ import tw.nekomimi.nekogram.utils.GsonUtil;
 
 public class CloudSettingsHelper {
     private static final SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("nekocloud", Context.MODE_PRIVATE);
+    private static final long AUTO_SYNC_DEBOUNCE_MS = 1200;
+    private static final long[] AUTO_SYNC_RETRY_DELAYS_MS = {5000, 30000};
 
     private final SparseArray<Long> cloudSyncedDate = new SparseArray<>();
     private final Handler handler = new Handler();
-    private final Runnable cloudSyncRunnable = () -> CloudSettingsHelper.getInstance().syncToCloud((success, error) -> {
-        if (!success) {
-            var global = BulletinFactory.global();
-            if (global != null) {
-                if (error == null) {
-                    global.createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString("CloudConfigSyncFailed", R.string.CloudConfigSyncFailed)).show();
-                } else {
-                    global.createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString("CloudConfigSyncFailed", R.string.CloudConfigSyncFailed), error).show();
-                }
-            }
-        }
-    });
+    private final ArrayDeque<ManualSyncRequest> manualSyncQueue = new ArrayDeque<>();
+    private final Runnable autoSyncRunnable = this::runAutoSync;
 
     private long localSyncedDate = preferences.getLong("updated_at", -1);
     private boolean autoSync = preferences.getBoolean("auto_sync", false);
+    private boolean syncOperationInFlight;
+    private boolean autoSyncPending;
+    private long autoSyncVersion;
+    private int autoSyncRetryCount;
+    private boolean autoSyncRetryScheduled;
+    private boolean autoSyncRetryDue;
+    private String lastNotifiedAutoSyncError;
+
+    private static final class ManualSyncRequest {
+        private final int account;
+        private final Utilities.Callback2<Boolean, String> callback;
+        private long autoSyncVersion;
+
+        private ManualSyncRequest(int account, Utilities.Callback2<Boolean, String> callback) {
+            this.account = account;
+            this.callback = callback;
+        }
+    }
 
     public static final SharedPreferences.OnSharedPreferenceChangeListener listener = (preferences, key) -> {
-        CloudSettingsHelper.getInstance().doAutoSync();
+        CloudSettingsHelper helper = CloudSettingsHelper.getInstance();
+        if ("auto_sync".equals(key)) {
+            helper.updateAutoSync(preferences.getBoolean("auto_sync", false));
+        } else {
+            helper.doAutoSync();
+        }
     };
 
     private static final class InstanceHolder {
@@ -130,7 +146,7 @@ public class CloudSettingsHelper {
         linearLayout.addView(buttonTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 16, 0, 16, 0));
         buttonTextView.setOnClickListener(view -> {
             syncedDate.setText(AndroidUtilities.replaceTags(LocaleController.formatString("CloudConfigSyncing", R.string.CloudConfigSyncing)));
-            syncToCloud((success, error) -> {
+            requestManualSync((success, error) -> {
                 syncedDate.setText(formatSyncedDate());
                 if (!success) {
                     if (error == null) {
@@ -194,8 +210,7 @@ public class CloudSettingsHelper {
         MiniCheckBoxCell autoSyncCheck = new MiniCheckBoxCell(context, 8, resourcesProvider);
         autoSyncCheck.setTextAndValueAndCheck(LocaleController.getString("CloudConfigAutoSync", R.string.CloudConfigAutoSync), LocaleController.getString("CloudConfigAutoSyncDesc", R.string.CloudConfigAutoSyncDesc), autoSync);
         autoSyncCheck.setOnClickListener(view13 -> {
-            autoSync = !autoSync;
-            preferences.edit().putBoolean("auto_sync", autoSync).apply();
+            updateAutoSync(!autoSync);
             autoSyncCheck.setChecked(autoSync);
         });
         linearLayout.addView(autoSyncCheck, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 8, 8, 8, 0));
@@ -210,12 +225,182 @@ public class CloudSettingsHelper {
         if (!autoSync) {
             return;
         }
-        handler.removeCallbacks(cloudSyncRunnable);
-        handler.postDelayed(cloudSyncRunnable, 1200);
+        autoSyncPending = true;
+        autoSyncVersion++;
+        autoSyncRetryCount = 0;
+        autoSyncRetryScheduled = false;
+        autoSyncRetryDue = false;
+        handler.removeCallbacks(autoSyncRunnable);
+        handler.postDelayed(autoSyncRunnable, AUTO_SYNC_DEBOUNCE_MS);
     }
 
-    private void syncToCloud(Utilities.Callback2<Boolean, String> callback) {
-        int account = UserConfig.selectedAccount;
+    void updateAutoSync(boolean enabled) {
+        autoSync = enabled;
+        preferences.edit().putBoolean("auto_sync", enabled).apply();
+        if (!enabled) {
+            handler.removeCallbacks(autoSyncRunnable);
+            autoSyncPending = false;
+            autoSyncRetryCount = 0;
+            autoSyncRetryScheduled = false;
+            autoSyncRetryDue = false;
+            lastNotifiedAutoSyncError = null;
+        } else {
+            doAutoSync();
+        }
+    }
+
+    private void runAutoSync() {
+        boolean consumedScheduledRetry = autoSyncRetryScheduled;
+        autoSyncRetryScheduled = false;
+        if (!autoSync || syncOperationInFlight || !autoSyncPending) {
+            if (!autoSync) {
+                clearAutoSyncObligation();
+            } else if (syncOperationInFlight && consumedScheduledRetry) {
+                autoSyncRetryDue = true;
+            }
+            return;
+        }
+        autoSyncRetryDue = false;
+        if (!canAutoSyncNow()) {
+            scheduleAutoSyncRetry();
+            return;
+        }
+        autoSyncPending = false;
+        syncOperationInFlight = true;
+        long syncVersion = autoSyncVersion;
+        performAutoSync((success, error) -> onAutoSyncFinished(success, error, syncVersion));
+    }
+
+    void performAutoSync(Utilities.Callback2<Boolean, String> callback) {
+        syncToCloud(callback);
+    }
+
+    boolean canAutoSyncNow() {
+        return UserConfig.isValidAccount(UserConfig.selectedAccount) && ApplicationLoader.isNetworkOnline();
+    }
+
+    private void onAutoSyncFinished(boolean success, String error, long syncVersion) {
+        syncOperationInFlight = false;
+        if (!autoSync) {
+            autoSyncPending = false;
+            autoSyncRetryCount = 0;
+            autoSyncRetryScheduled = false;
+            autoSyncRetryDue = false;
+            drainManualSyncQueue();
+            return;
+        }
+        if (success) {
+            autoSyncRetryCount = 0;
+            lastNotifiedAutoSyncError = null;
+            if (autoSyncPending || autoSyncVersion != syncVersion) {
+                autoSyncPending = true;
+                handler.removeCallbacks(autoSyncRunnable);
+                handler.postDelayed(autoSyncRunnable, AUTO_SYNC_DEBOUNCE_MS);
+            }
+            drainManualSyncQueue();
+            return;
+        }
+
+        String notificationKey = error == null ? "" : error;
+        if (!TextUtils.equals(lastNotifiedAutoSyncError, notificationKey)) {
+            lastNotifiedAutoSyncError = notificationKey;
+            notifyAutoSyncFailure(error);
+        }
+        scheduleAutoSyncRetry();
+        drainManualSyncQueue();
+    }
+
+    void notifyAutoSyncFailure(String error) {
+        var global = BulletinFactory.global();
+        if (global != null) {
+            if (error == null) {
+                global.createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString("CloudConfigSyncFailed", R.string.CloudConfigSyncFailed)).show();
+            } else {
+                global.createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString("CloudConfigSyncFailed", R.string.CloudConfigSyncFailed), error).show();
+            }
+        }
+    }
+
+    private void scheduleAutoSyncRetry() {
+        if (!autoSync) {
+            clearAutoSyncObligation();
+            return;
+        }
+        if (autoSyncRetryScheduled) {
+            autoSyncPending = true;
+            return;
+        }
+        autoSyncPending = true;
+        long delay;
+        if (autoSyncRetryDue) {
+            autoSyncRetryDue = false;
+            delay = 0;
+        } else {
+            if (autoSyncRetryCount >= AUTO_SYNC_RETRY_DELAYS_MS.length) {
+                autoSyncPending = false;
+                return;
+            }
+            delay = AUTO_SYNC_RETRY_DELAYS_MS[autoSyncRetryCount++];
+        }
+        autoSyncRetryScheduled = true;
+        handler.removeCallbacks(autoSyncRunnable);
+        handler.postDelayed(autoSyncRunnable, delay);
+    }
+
+    private void clearAutoSyncObligation() {
+        autoSyncPending = false;
+        autoSyncRetryCount = 0;
+        autoSyncRetryScheduled = false;
+        autoSyncRetryDue = false;
+        handler.removeCallbacks(autoSyncRunnable);
+    }
+
+    void requestManualSync(Utilities.Callback2<Boolean, String> callback) {
+        manualSyncQueue.add(new ManualSyncRequest(UserConfig.selectedAccount, callback));
+        drainManualSyncQueue();
+    }
+
+    private void drainManualSyncQueue() {
+        if (syncOperationInFlight || manualSyncQueue.isEmpty()) {
+            return;
+        }
+        syncOperationInFlight = true;
+        ManualSyncRequest request = manualSyncQueue.remove();
+        request.autoSyncVersion = autoSyncVersion;
+        syncToCloud(request.account, (success, error) -> {
+            if (success) {
+                autoSyncRetryCount = 0;
+                lastNotifiedAutoSyncError = null;
+                if (autoSyncVersion == request.autoSyncVersion) {
+                    clearAutoSyncObligation();
+                } else {
+                    autoSyncPending = true;
+                }
+            }
+            syncOperationInFlight = false;
+            try {
+                request.callback.run(success, error);
+            } finally {
+                drainManualSyncQueue();
+                if (!syncOperationInFlight && manualSyncQueue.isEmpty() && autoSync && autoSyncPending) {
+                    if (success) {
+                        autoSyncRetryScheduled = false;
+                        autoSyncRetryDue = false;
+                        handler.removeCallbacks(autoSyncRunnable);
+                        handler.postDelayed(autoSyncRunnable, AUTO_SYNC_DEBOUNCE_MS);
+                    } else {
+                        scheduleAutoSyncRetry();
+                    }
+                }
+            }
+        });
+    }
+
+    void syncToCloud(Utilities.Callback2<Boolean, String> callback) {
+        syncToCloud(UserConfig.selectedAccount, callback);
+    }
+
+    void syncToCloud(int account, Utilities.Callback2<Boolean, String> callback) {
         CloudStorageHelper storageHelper = CloudStorageHelper.getInstance(account);
         try {
             String setting = NekoSettingsActivity.backupSettingsJson(0);
@@ -226,14 +411,8 @@ public class CloudSettingsHelper {
     }
 
     void syncToCloud(CloudStorageHelper storageHelper, int account, String setting, Utilities.Callback2<Boolean, String> callback) {
-        int chunkSize = 4000;
-        int numChunks = (setting.length() + chunkSize - 1) / chunkSize;
-        ArrayList<String> chunks = new ArrayList<>(numChunks);
-        for (int i = 0; i < numChunks; i++) {
-            int startIndex = i * chunkSize;
-            int endIndex = Math.min(startIndex + chunkSize, setting.length());
-            chunks.add(setting.substring(startIndex, endIndex));
-        }
+        ArrayList<String> chunks = splitSettings(setting);
+        int numChunks = chunks.size();
 
         AtomicBoolean finished = new AtomicBoolean();
         Consumer<String> fail = error -> {
@@ -264,6 +443,40 @@ public class CloudSettingsHelper {
                         },
                         fail),
                 fail);
+    }
+
+    static ArrayList<String> splitSettings(String setting) {
+        if (setting == null || setting.isEmpty()) {
+            return new ArrayList<>();
+        }
+        ArrayList<String> chunks = new ArrayList<>();
+        int start = 0;
+        while (start < setting.length()) {
+            String key = "neko_settings_" + chunks.size();
+            int windowEnd = Math.min(setting.length(), start + CloudStorageHelper.MAX_REQUEST_DATA_BYTES * 2);
+            int remainingCodePoints = setting.codePointCount(start, windowEnd);
+            int low = 1;
+            int high = Math.min(remainingCodePoints, CloudStorageHelper.MAX_REQUEST_DATA_BYTES);
+            int best = 0;
+            while (low <= high) {
+                int middle = (low + high) >>> 1;
+                int end = setting.offsetByCodePoints(start, middle);
+                String payload = CloudStorageHelper.buildSetItemPayload(key, setting.substring(start, end));
+                if (CloudStorageHelper.utf8Length(payload) <= CloudStorageHelper.MAX_REQUEST_DATA_BYTES) {
+                    best = middle;
+                    low = middle + 1;
+                } else {
+                    high = middle - 1;
+                }
+            }
+            if (best == 0) {
+                throw new IllegalArgumentException(CloudStorageHelper.ERROR_DATA_TOO_LONG);
+            }
+            int end = setting.offsetByCodePoints(start, best);
+            chunks.add(setting.substring(start, end));
+            start = end;
+        }
+        return chunks;
     }
 
     private static void uploadChunks(CloudStorageHelper storageHelper, ArrayList<String> chunks, int index,
