@@ -7190,6 +7190,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if (fragmentContextView != null) {
+            fragmentContextView.refreshPlayerState();
+        }
         if (dialogStoriesCell != null) {
             dialogStoriesCell.onResume();
         }

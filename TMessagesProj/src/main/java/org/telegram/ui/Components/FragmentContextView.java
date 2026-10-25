@@ -421,6 +421,10 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
         addView(playButton, LayoutHelper.createFrame(36, 36, Gravity.TOP | Gravity.LEFT));
         playButton.setOnClickListener(v -> {
             if (currentStyle == STYLE_AUDIO_PLAYER) {
+                if (MediaController.getInstance().getPlayingMessageObject() == null) {
+                    checkPlayer(false);
+                    return;
+                }
                 if (MediaController.getInstance().isMessagePaused()) {
                     MediaController.getInstance().playMessage(MediaController.getInstance().getPlayingMessageObject());
                 } else {
@@ -747,6 +751,10 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
                 }
             } else {
                 MediaController.getInstance().cleanupPlayer(true, true);
+                // An already stopped player does not emit another reset notification.
+                if (currentStyle == STYLE_AUDIO_PLAYER) {
+                    checkPlayer(false);
+                }
             }
         });
 
@@ -775,6 +783,10 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
                 }
             } else if (currentStyle == STYLE_AUDIO_PLAYER) {
                 MessageObject messageObject = MediaController.getInstance().getPlayingMessageObject();
+                if (messageObject == null) {
+                    checkPlayer(false);
+                    return;
+                }
                 if (fragment != null && messageObject != null) {
                     if (messageObject.isMusic() || messageObject.isVoice()) {
                         final Activity activity = AndroidUtilities.findActivity(getContext());
@@ -1434,7 +1446,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             globalObserversGroup.removeAllObservers();
             globalObserversGroup = null;
         }
-        for (int a : SharedConfig.activeAccounts) {
+        for (int a = 0; a < observersGroup.length; a++) {
             if (observersGroup[a] != null) {
                 observersGroup[a].removeAllObservers();
                 observersGroup[a] = null;
@@ -1831,6 +1843,13 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
         titleTextView.setText(stringBuilder, false);
     }
 
+    public void refreshPlayerState() {
+        if (!isLocation && (currentStyle == STYLE_AUDIO_PLAYER || currentStyle == STYLE_NOT_SET)) {
+            checkPlayer(true);
+            updatePlaybackButton(false);
+        }
+    }
+
     private void checkPlayer(boolean create) {
         if (visible && (currentStyle == STYLE_CONNECTING_GROUP_CALL || currentStyle == STYLE_ACTIVE_GROUP_CALL || (currentStyle == STYLE_INACTIVE_GROUP_CALL || currentStyle == STYLE_IMPORTING_MESSAGES) && !isPlayingVoice())) {
             return;
@@ -1841,6 +1860,11 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
             if (fragmentView.getParent() == null || ((View) fragmentView.getParent()).getVisibility() != VISIBLE) {
                 create = true;
             }
+        }
+        if (create && animatorSet != null) {
+            AnimatorSet animation = animatorSet;
+            animatorSet = null;
+            animation.cancel();
         }
         boolean wasVisible = visible;
         if (messageObject == null || messageObject.getId() == 0 || messageObject.isVideo()) {
@@ -1906,6 +1930,7 @@ public class FragmentContextView extends FrameLayout implements NotificationCent
                 }
             } else {
                 setVisibility(View.GONE);
+                setTopPadding(0);
             }
         } else {
             checkCreateView();
