@@ -569,6 +569,7 @@ public class ChatActivity extends BaseFragment implements
     private ActionBarMenu.LazyItem attachItem;
     private ActionBarMenuItem.Item savedChatsItem, savedChatsGap;;
     private ActionBarMenuItem headerItem;
+    private ActionBarMenuItem.Item nooagramPinnedHiderItem;
     private ActionBarMenu.LazyItem editTextItem;
     protected ActionBarMenuItem searchItem;
     protected ActionBarMenuItem topicCreateItem;
@@ -3938,20 +3939,23 @@ public class ChatActivity extends BaseFragment implements
         if (headerItem == null) {
             return;
         }
-        ActionBarMenuSubItem item = headerItem.getSubItem(nkheaderbtn_nooagram_hide_pinned);
-        if (item == null && currentChat != null && (currentChat.megagroup || !ChatObject.isChannel(currentChat))) {
-            headerItem.lazilyAddSubItem(nkheaderbtn_nooagram_hide_pinned, R.drawable.msg_pin,
-                    getString(R.string.NooagramHideThisGroupPinned));
-            item = headerItem.getSubItem(nkheaderbtn_nooagram_hide_pinned);
-        }
-        if (item == null) {
+        boolean available = currentChat != null && currentEncryptedChat == null
+                && chatMode == 0 && !isThreadChat();
+        if (!available) {
+            if (nooagramPinnedHiderItem != null) {
+                nooagramPinnedHiderItem.setVisibility(View.GONE);
+            }
             return;
         }
-        item.setTextAndIcon(
-                getString(NooagramPinnedHider.isHidden(currentAccount, dialog_id)
-                        ? R.string.NooagramRestoreThisGroupPinned
-                        : R.string.NooagramHideThisGroupPinned),
-                R.drawable.msg_pin);
+        CharSequence title = getString(NooagramPinnedHider.isHidden(currentAccount, dialog_id)
+                ? R.string.NooagramRestoreThisGroupPinned
+                : R.string.NooagramHideThisGroupPinned);
+        if (nooagramPinnedHiderItem == null) {
+            nooagramPinnedHiderItem = headerItem.lazilyAddSubItem(
+                    nkheaderbtn_nooagram_hide_pinned, R.drawable.msg_pin, title);
+        }
+        nooagramPinnedHiderItem.setText(title);
+        nooagramPinnedHiderItem.setVisibility(View.VISIBLE);
     }
 
     private void toggleNooagramPinnedHider() {
@@ -4877,9 +4881,11 @@ public class ChatActivity extends BaseFragment implements
                 userFull = getMessagesController().getUserFull(currentUser.id);
             }
             headerItem = menu.addItem(chat_menu_options, otherIcon);
+            nooagramPinnedHiderItem = null;
             headerItem.setSubMenuDelegate(new ActionBarMenuItem.ActionBarSubMenuItemDelegate() {
                 @Override
                 public void onShowSubMenu() {
+                    updateNooagramPinnedHiderMenuItem();
                     updateScrimSourceBitmap();
                 }
 
@@ -5013,6 +5019,7 @@ public class ChatActivity extends BaseFragment implements
             if (allowShowPinned) {
                 headerItem.lazilyAddSubItem(nkheaderbtn_show_pinned, R.drawable.msg_pin, LocaleController.getString("PinnedMessage", R.string.PinnedMessage));
             }
+            updateNooagramPinnedHiderMenuItem();
             if (ChatObject.isBoostSupported(currentChat) && (getUserConfig().isPremium() || ChatObject.isBoosted(chatInfo) || ChatObject.hasAdminRights(currentChat))) {
                 RLottieDrawable drawable = new RLottieDrawable(R.raw.boosts, dp(24), dp(24));
                 headerItem.lazilyAddSubItem(boost_group, drawable, LocaleController.getString(ChatObject.isChannelAndNotMegaGroup(currentChat) ? R.string.BoostingBoostChannelMenu : R.string.BoostingBoostGroupMenu));

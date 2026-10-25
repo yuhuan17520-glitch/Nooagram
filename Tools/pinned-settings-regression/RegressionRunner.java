@@ -46,6 +46,7 @@ public class RegressionRunner {
             sources.add(experimentalSettingsMethods(root.resolve("tw/nekomimi/nekogram/settings/NekoExperimentalSettingsActivity.java")));
             sources.add(settingsDeepLinkMethods(root.resolve("tw/nekomimi/nekogram/helpers/SettingsHelper.java")));
             sources.add(launchSettingsRestoreMethods(root.resolve("org/telegram/ui/LaunchActivity.java")));
+            sources.add(pinnedMenuMethods(root.resolve("org/telegram/ui/ChatActivity.java")));
             if (!compiler.getTask(null, manager, null,
                     List.of("-proc:none", "-encoding", "UTF-8", "-d", output.toString()), null, sources).call()) {
                 throw new AssertionError("Probe compilation failed");
@@ -57,6 +58,7 @@ public class RegressionRunner {
             loader.loadClass("DeletedColorTouchProbe").getMethod("verify").invoke(null);
             loader.loadClass("SettingsDeepLinkProbe").getMethod("verify").invoke(null);
             loader.loadClass("LaunchSettingsRestoreProbe").getMethod("verify").invoke(null);
+            loader.loadClass("PinnedMenuProbe").getMethod("verify").invoke(null);
         }
     }
 
@@ -64,6 +66,84 @@ public class RegressionRunner {
         return new SimpleJavaFileObject(URI.create("string:///" + name.replace('.', '/') + ".java"), JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return content; }
         };
+    }
+
+    private static JavaFileObject pinnedMenuMethods(Path file) throws Exception {
+        String body = methodBodies(file).get("updateNooagramPinnedHiderMenuItem");
+        return source("PinnedMenuProbe", """
+                public class PinnedMenuProbe {
+                    static class View { static final int VISIBLE = 0, GONE = 8; }
+                    static class R {
+                        static class string { static final int NooagramRestoreThisGroupPinned = 1, NooagramHideThisGroupPinned = 2; }
+                        static class drawable { static final int msg_pin = 3; }
+                    }
+                    static class Chat { boolean megagroup, channel; }
+                    static class NooagramPinnedHider {
+                        static boolean hidden;
+                        static boolean isHidden(int account, long dialog) { return hidden; }
+                    }
+                    static class ActionBarMenuItem {
+                        static class Item {
+                            CharSequence text; int visibility;
+                            void setText(CharSequence value) { text = value; }
+                            void setVisibility(int value) { visibility = value; }
+                        }
+                        int registrations;
+                        Item lazilyAddSubItem(int id, int icon, CharSequence text) {
+                            registrations++; Item item = new Item(); item.text = text; return item;
+                        }
+                    }
+                    ActionBarMenuItem headerItem = new ActionBarMenuItem();
+                    ActionBarMenuItem.Item nooagramPinnedHiderItem;
+                    Chat currentChat; Object currentEncryptedChat;
+                    int chatMode, currentAccount; long dialog_id = -100; boolean thread;
+                    static final int nkheaderbtn_nooagram_hide_pinned = 2045;
+                    boolean isThreadChat() { return thread; }
+                    String getString(int res) { return res == 1 ? "restore" : "hide"; }
+                    void updateNooagramPinnedHiderMenuItem()
+                """ + body + """
+                    public static void verify() {
+                        for (int type = 0; type < 3; type++) {
+                            PinnedMenuProbe page = new PinnedMenuProbe();
+                            page.currentChat = new Chat();
+                            page.currentChat.channel = type != 0;
+                            page.currentChat.megagroup = type == 1;
+                            NooagramPinnedHider.hidden = false;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (page.headerItem.registrations != 1 || !"hide".contentEquals(page.nooagramPinnedHiderItem.text))
+                                throw new AssertionError("Missing or duplicated group/channel menu before popup inflation");
+                            NooagramPinnedHider.hidden = true;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (!"restore".contentEquals(page.nooagramPinnedHiderItem.text))
+                                throw new AssertionError("Hidden state did not update lazy menu title");
+                            NooagramPinnedHider.hidden = false;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (!"hide".contentEquals(page.nooagramPinnedHiderItem.text) || page.headerItem.registrations != 1)
+                                throw new AssertionError("Restore duplicated menu or left stale label");
+                            page.thread = true;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (page.nooagramPinnedHiderItem.visibility != View.GONE)
+                                throw new AssertionError("Unsupported thread retained group-wide toggle");
+                            page.thread = false;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (page.nooagramPinnedHiderItem.visibility != View.VISIBLE)
+                                throw new AssertionError("Returning to chat did not restore toggle");
+                        }
+                        for (int mode = 0; mode < 4; mode++) {
+                            PinnedMenuProbe page = new PinnedMenuProbe();
+                            page.currentChat = mode == 0 ? null : new Chat();
+                            page.currentEncryptedChat = mode == 1 ? new Object() : null;
+                            page.chatMode = mode == 2 ? 1 : 0;
+                            page.thread = mode == 3;
+                            page.updateNooagramPinnedHiderMenuItem();
+                            if (page.headerItem.registrations != 0)
+                                throw new AssertionError("Unsupported conversation registered toggle");
+                        }
+                        System.out.println("PASS pinned menu groups/channels, lazy registration, hide/restore title, deduplication and unsupported modes");
+                    }
+                }
+                """);
     }
 
     private static JavaFileObject experimentalSettingsMethods(Path file) throws Exception {
