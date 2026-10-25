@@ -25,6 +25,7 @@ import com.radolyn.ayugram.utils.AyuGhostPreferences;
 import com.radolyn.ayugram.utils.AyuGhostUtils;
 import com.radolyn.ayugram.utils.AyuState;
 import com.radolyn.ayugram.utils.LastSeenHelper;
+import tw.nekomimi.nekogram.filters.NooagramFilteredReadBoundary;
 import tw.nekomimi.nekogram.filters.NooagramChatRowVisibility;
 import tw.nekomimi.nekogram.filters.RegexChatFiltersListActivity;
 import tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity;
@@ -17729,10 +17730,34 @@ public class ChatActivity extends BaseFragment implements
         invalidateChatListViewTopPadding();
         if (!firstLoading && !paused && !inPreviewMode && (chatMode == 0 || chatMode == MODE_SUGGESTIONS) && !getMessagesController().ignoreSetOnline) {
             int scheduledRead = 0;
+            if (canUseFilteredPrimaryReadBoundary(true)) {
+                NooagramFilteredReadBoundary.Boundary latestBoundary =
+                        NooagramFilteredReadBoundary.latestLoadedBoundary(messages, dialog_id);
+                if (latestBoundary.hasMessage()) {
+                    canShowPagedownButton = false;
+                    updatePagedownButtonVisibility(true);
+                }
+                if (NooagramFilteredReadBoundary.hasUnreadMessageAfter(
+                        messages, dialog_id, currentReadMaxId)) {
+                    NooagramFilteredReadBoundary.Boundary resolvedBoundary =
+                            NooagramFilteredReadBoundary.resolveBoundary(
+                                    new NooagramFilteredReadBoundary.Boundary(maxPositiveUnreadId, maxUnreadDate),
+                                    latestBoundary,
+                                    true);
+                    if (resolvedBoundary.hasMessage()) {
+                        maxPositiveUnreadId = resolvedBoundary.maxPositiveId;
+                        maxUnreadDate = resolvedBoundary.maxDate;
+                    }
+                }
+            }
             if ((maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE)) {
                 int counterDecrement = 0;
                 for (int a = 0; a < messages.size(); a++) {
                     MessageObject messageObject = messages.get(a);
+                    if (messageObject == null || messageObject.getDialogId() != dialog_id
+                            || messageObject.isAyuDeleted()) {
+                        continue;
+                    }
                     int id = messageObject.getId();
                     if (maxPositiveUnreadId != Integer.MIN_VALUE) {
                         if (id > 0 && id <= maxPositiveUnreadId && (messageObject.messageOwner.from_scheduled && id > currentReadMaxId || messageObject.isUnread() && !messageObject.isOut())) {
@@ -17797,6 +17822,59 @@ public class ChatActivity extends BaseFragment implements
         if (progressView2 != null) {
             progressView2.invalidate();
         }
+    }
+
+    private boolean canUseFilteredPrimaryReadBoundary(boolean suppressRead) {
+        if (chatAdapter == null || chatListView == null || chatLayoutManager == null) {
+            return false;
+        }
+        int firstVisiblePosition = chatLayoutManager.findFirstVisibleItemPosition();
+        View latestAdapterChild = chatLayoutManager.findViewByPosition(0);
+        int latestAdapterPosition = latestAdapterChild != null
+                ? chatLayoutManager.getPosition(latestAdapterChild) : RecyclerView.NO_POSITION;
+        int viewportBottom = chatListView.getHeight() - chatListView.getPaddingBottom();
+        int latestAdapterBottom = latestAdapterChild != null ? latestAdapterChild.getBottom() : Integer.MIN_VALUE;
+        int tolerance = dp(5);
+        boolean collapsedRowsAtLatestEdge = firstVisiblePosition == RecyclerView.NO_POSITION
+                && chatListView.getChildCount() > 0
+                && chatAdapter.getItemCount() > 0
+                && messages != null && !messages.isEmpty()
+                && !chatListView.canScrollVertically(1);
+        if (collapsedRowsAtLatestEdge) {
+            for (int i = 0; i < chatListView.getChildCount(); i++) {
+                View child = chatListView.getChildAt(i);
+                if (child.getMeasuredHeight() != 0
+                        || Math.abs(child.getBottom() - viewportBottom) > tolerance) {
+                    collapsedRowsAtLatestEdge = false;
+                    break;
+                }
+            }
+        }
+        boolean readSuppressed = suppressRead && (
+                !fragmentOpened || paused || inPreviewMode || isInsideContainer || isReport()
+                        || BaseFragment.hasSheets(this));
+        boolean automaticReadBlocked = NooagramFilteredReadBoundary.isAutomaticReadBlocked(
+                AyuGhostController.getInstance(currentAccount).isSendReadMessagePackets(),
+                AyuGhostPreferences.getReadException(dialog_id));
+        return NooagramFilteredReadBoundary.canUseLatestLoadedBoundary(
+                forwardEndReached[0],
+                threadMessageId == 0 && dialog_id != 0 && !isReport(),
+                hideFilteredMessages,
+                chatAdapter.isFiltered,
+                chatAdapter.isFrozen,
+                chatMode == MODE_DEFAULT,
+                reversed,
+                readSuppressed,
+                currentEncryptedChat != null,
+                automaticReadBlocked,
+                loading,
+                loadingForward,
+                firstVisiblePosition,
+                latestAdapterPosition,
+                latestAdapterBottom,
+                collapsedRowsAtLatestEdge,
+                viewportBottom,
+                tolerance);
     }
 
     private float getServiceTop(View view) {
@@ -27304,6 +27382,7 @@ public class ChatActivity extends BaseFragment implements
             updateVisibleRows();
         } else {
             boolean wasAtBottom = false;
+            boolean filteredBottomBeforeInsert = canUseFilteredPrimaryReadBoundary(false);
             if (hasAyuDeleted && chatListView != null && chatLayoutManager != null) {
                 int firstVisible = chatLayoutManager.findFirstVisibleItemPosition();
                 if (firstVisible == RecyclerView.NO_POSITION) {
@@ -27311,7 +27390,8 @@ public class ChatActivity extends BaseFragment implements
                 }
                 View child = chatLayoutManager.findViewByPosition(firstVisible);
                 int diff = child != null ? child.getBottom() - chatListView.getMeasuredHeight() : 0;
-                wasAtBottom = firstVisible == 0 && diff <= AndroidUtilities.dp(5);
+                wasAtBottom = filteredBottomBeforeInsert
+                        || firstVisible == 0 && diff <= AndroidUtilities.dp(5);
             }
 
             LongSparseArray<MessageObject.GroupedMessages> newGroups = null;
@@ -27722,8 +27802,10 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     diff = 0;
                 }
+                boolean filteredBottom = canUseFilteredPrimaryReadBoundary(false);
                 if (!isAd && (!hasAyuDeleted || wasAtBottom)) {
-                    boolean shouldScrollToBottom = lastVisible == 0 && diff <= AndroidUtilities.dp(5) && !hasDraftsReplaces || hasFromMe;
+                    boolean shouldScrollToBottom = (filteredBottom
+                            || lastVisible == 0 && diff <= AndroidUtilities.dp(5)) && !hasDraftsReplaces || hasFromMe;
                     if (hasAyuDeleted) {
                         shouldScrollToBottom = wasAtBottom;
                     }

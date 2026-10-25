@@ -11,6 +11,7 @@ package org.telegram.messenger;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 
 public class NotificationDismissReceiver extends BroadcastReceiver {
 
@@ -20,19 +21,38 @@ public class NotificationDismissReceiver extends BroadcastReceiver {
             return;
         }
         int currentAccount = intent.getIntExtra("currentAccount", UserConfig.selectedAccount);
-        if (!UserConfig.isValidAccount(currentAccount)) {
+        if (!NotificationDismissState.isValidAccount(context, currentAccount)) {
             return;
         }
         long dialogId = intent.getLongExtra("dialogId", 0);
-        int date = intent.getIntExtra("messageDate", 0);
-        if (intent.hasExtra("story") && intent.getBooleanExtra("story", false)) {
+        int date = intent.getIntExtra(NotificationDismissState.EXTRA_MESSAGE_DATE, 0);
+        boolean story = intent.getBooleanExtra("story", false);
+        boolean storyReaction = intent.getBooleanExtra("storyReaction", false);
+        boolean dismissMessages = intent.getBooleanExtra(NotificationDismissState.EXTRA_DISMISS_MESSAGES, !story && !storyReaction);
+        boolean clearStorySummaries = dismissMessages && story && dialogId == 0;
+
+        if (dismissMessages) {
+            SharedPreferences preferences = NotificationDismissState.getAccountPreferences(context, currentAccount);
+            if (dialogId == 0) {
+                FileLog.d("set dismissDate of global to " + date);
+            } else {
+                FileLog.d("set dismissDate of " + dialogId + " to " + date);
+            }
+            NotificationDismissState.dismiss(preferences, dialogId, date);
+            if (clearStorySummaries) {
+                NotificationsController.getInstance(currentAccount);
+            }
+            NotificationsController.reconcileDismissal(currentAccount, dialogId, date, clearStorySummaries);
+        }
+
+        if (story && !clearStorySummaries) {
             NotificationsController.getInstance(currentAccount).processIgnoreStories();
-        } else if (intent.hasExtra("storyReaction") && intent.getBooleanExtra("storyReaction", false)) {
+        } else if (storyReaction) {
             NotificationsController.getInstance(currentAccount).processIgnoreStoryReactions();
-        } else if (dialogId == 0) {
+        } else if (!dismissMessages && dialogId == 0) {
             FileLog.d("set dismissDate of global to " + date);
             NotificationDismissState.dismiss(MessagesController.getNotificationsSettings(currentAccount), 0, date);
-        } else {
+        } else if (!dismissMessages) {
             FileLog.d("set dismissDate of " + dialogId + " to " + date);
             NotificationDismissState.dismiss(MessagesController.getNotificationsSettings(currentAccount), dialogId, date);
         }

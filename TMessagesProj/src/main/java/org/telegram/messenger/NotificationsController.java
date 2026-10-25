@@ -245,6 +245,108 @@ public class NotificationsController extends BaseController implements Notificat
         return localInstance;
     }
 
+    static void reconcileDismissal(int account, long dialogId, int messageDate, boolean clearStorySummaries) {
+        NotificationsController controller;
+        synchronized (lockObject) {
+            controller = Instance.get(account);
+        }
+        if (controller != null) {
+            controller.reconcileDismissalOnQueue(dialogId, messageDate, clearStorySummaries);
+        }
+    }
+
+    private void reconcileDismissalOnQueue(long dialogId, int messageDate, boolean clearStorySummaries) {
+        notificationsQueue.postRunnable(() -> {
+            SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
+            boolean storiesChanged = clearStorySummaries
+                    && (!storyPushMessages.isEmpty() || storyPushMessagesDict.size() > 0);
+            ArrayList<MessageObject> removed;
+            if (clearStorySummaries) {
+                removed = reconcileDismissedSummary(
+                        preferences, pushMessages, pushMessagesDict,
+                        storyPushMessages, storyPushMessagesDict);
+                getMessagesStorage().deleteAllStoryPushMessages();
+            } else {
+                removed = removeDismissedPushMessages(preferences, pushMessages, pushMessagesDict);
+            }
+            if (!storiesChanged && removed.isEmpty()) {
+                return;
+            }
+            for (int i = 0; i < removed.size(); i++) {
+                MessageObject messageObject = removed.get(i);
+                delayedPushMessages.remove(messageObject);
+                if (messageObject.messageOwner != null && messageObject.messageOwner.random_id != 0) {
+                    fcmRandomMessagesDict.remove(messageObject.messageOwner.random_id);
+                }
+                if (isPersonalMessage(messageObject)) {
+                    personalCount--;
+                }
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                for (int i = 0; i < removed.size(); i++) {
+                    popupMessages.remove(removed.get(i));
+                }
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.pushMessagesUpdated);
+            });
+            showOrUpdateNotification(false);
+            FileLog.d("reconciled notification dismissal dialog=" + dialogId + " date=" + messageDate);
+        });
+    }
+
+    static ArrayList<MessageObject> reconcileDismissedSummary(
+            SharedPreferences preferences,
+            ArrayList<MessageObject> messages,
+            LongSparseArray<SparseArray<MessageObject>> messagesDict,
+            ArrayList<StoryNotification> stories,
+            LongSparseArray<StoryNotification> storiesDict) {
+        stories.clear();
+        storiesDict.clear();
+        return removeDismissedPushMessages(preferences, messages, messagesDict);
+    }
+
+    static ArrayList<MessageObject> removeDismissedPushMessages(SharedPreferences preferences, ArrayList<MessageObject> messages, LongSparseArray<SparseArray<MessageObject>> messagesDict) {
+        ArrayList<MessageObject> removed = new ArrayList<>();
+        for (int i = 0; messages != null && i < messages.size(); i++) {
+            MessageObject messageObject = messages.get(i);
+            if (!isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)) {
+                continue;
+            }
+            removed.add(messageObject);
+            messages.remove(i--);
+            if (messagesDict != null && messageObject.messageOwner != null) {
+                long key = getPushMessagesDictKey(messageObject);
+                SparseArray<MessageObject> messagesById = messagesDict.get(key);
+                if (messagesById != null) {
+                    messagesById.remove(messageObject.getId());
+                    if (messagesById.size() == 0) {
+                        messagesDict.remove(key);
+                    }
+                }
+            }
+        }
+        return removed;
+    }
+
+    static long getPushMessagesDictKey(MessageObject messageObject) {
+        if (messageObject.isStoryReactionPush) {
+            return messageObject.getDialogId();
+        }
+        if (messageObject.messageOwner != null && messageObject.messageOwner.peer_id != null
+                && messageObject.messageOwner.peer_id.channel_id != 0) {
+            return -messageObject.messageOwner.peer_id.channel_id;
+        }
+        return 0;
+    }
+
+    static void setSummaryDismissExtras(Intent intent, MessageObject latestPushMessage, ArrayList<StoryNotification> storyPushMessages) {
+        intent.putExtra(NotificationDismissState.EXTRA_MESSAGE_DATE,
+                latestPushMessage != null ? latestPushMessage.messageOwner.date : 0);
+        intent.putExtra(NotificationDismissState.EXTRA_DISMISS_MESSAGES, latestPushMessage != null);
+        if (storyPushMessages != null && !storyPushMessages.isEmpty()) {
+            intent.putExtra("story", true);
+        }
+    }
+
     public NotificationsController(int instance) {
         super(instance);
 
@@ -1224,12 +1326,19 @@ public class NotificationsController extends BaseController implements Notificat
 
             LongSparseArray<Boolean> settingsCache = new LongSparseArray<>();
             SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
+            ArrayList<MessageObject> deliverableMessages = getVisiblePushMessages(preferences, messageObjects);
+            if (deliverableMessages.isEmpty()) {
+                if (countDownLatch != null) {
+                    countDownLatch.countDown();
+                }
+                return;
+            }
             boolean allowPinned = preferences.getBoolean("PinnedMessages", true);
             int popup = 0;
             boolean hasScheduled = false;
 
-            for (int a = 0; a < messageObjects.size(); a++) {
-                MessageObject messageObject = messageObjects.get(a);
+            for (int a = 0; a < deliverableMessages.size(); a++) {
+                MessageObject messageObject = deliverableMessages.get(a);
                 if (messageObject.messageOwner != null && (messageObject.isImportedForward() ||
                         messageObject.messageOwner.action instanceof TLRPC.TL_messageActionSetMessagesTTL ||
                         messageObject.messageOwner.silent && (messageObject.messageOwner.action instanceof TLRPC.TL_messageActionContactSignUp || messageObject.messageOwner.action instanceof TLRPC.TL_messageActionUserJoined)) ||
@@ -1299,14 +1408,7 @@ public class NotificationsController extends BaseController implements Notificat
                 } else {
                     isChannel = false;
                 }
-                long did;
-                if (messageObject.isStoryReactionPush) {
-                    did = messageObject.getDialogId();
-                } else if (messageObject.messageOwner.peer_id.channel_id != 0) {
-                    did = -messageObject.messageOwner.peer_id.channel_id;
-                } else {
-                    did = 0;
-                }
+                long did = getPushMessagesDictKey(messageObject);
                 SparseArray<MessageObject> sparseArray = pushMessagesDict.get(did);
                 MessageObject oldMessageObject = sparseArray != null ? sparseArray.get(mid) : null;
                 if (oldMessageObject == null && messageObject.messageOwner.random_id != 0) {
@@ -1458,7 +1560,7 @@ public class NotificationsController extends BaseController implements Notificat
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.d("NotificationsController processNewMessages: added branch");
                     }
-                    MessageObject messageObject = messageObjects.get(0);
+                    MessageObject messageObject = deliverableMessages.get(0);
                     long dialog_id = messageObject.getDialogId();
                     long topicId = MessageObject.getTopicId(currentAccount, messageObject.messageOwner, getMessagesController().isForum(dialog_id));
                     Boolean isChannel;
@@ -1712,6 +1814,9 @@ public class NotificationsController extends BaseController implements Notificat
                         continue;
                     }
                     MessageObject messageObject = new MessageObject(currentAccount, message, false, false);
+                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)) {
+                        continue;
+                    }
                     if (isPersonalMessage(messageObject)) {
                         personalCount++;
                     }
@@ -1782,6 +1887,9 @@ public class NotificationsController extends BaseController implements Notificat
             if (push != null) {
                 for (int a = 0; a < push.size(); a++) {
                     MessageObject messageObject = push.get(a);
+                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)) {
+                        continue;
+                    }
                     int mid = messageObject.getId();
                     if (pushMessagesDict.indexOfKey(mid) >= 0) {
                         continue;
@@ -1813,14 +1921,7 @@ public class NotificationsController extends BaseController implements Notificat
                         continue;
                     }
                     if (mid != 0) {
-                        long did;
-                        if (messageObject.isStoryReactionPush) {
-                            did = messageObject.getDialogId();
-                        } else if (messageObject.messageOwner.peer_id.channel_id != 0) {
-                            did = -messageObject.messageOwner.peer_id.channel_id;
-                        } else {
-                            did = 0;
-                        }
+                        long did = getPushMessagesDictKey(messageObject);
                         SparseArray<MessageObject> sparseArray = pushMessagesDict.get(did);
                         if (sparseArray == null) {
                             sparseArray = new SparseArray<>();
@@ -4826,11 +4927,8 @@ public class NotificationsController extends BaseController implements Notificat
             try {
                 Intent dismissIntent = new Intent(ApplicationLoader.applicationContext, NotificationDismissReceiver.class);
                 dismissIntent.setData(NotificationDismissState.getIntentData(currentAccount, 0));
-                dismissIntent.putExtra("messageDate", lastMessageObject.messageOwner.date);
+                setSummaryDismissExtras(dismissIntent, latestPushMessage, storyPushMessages);
                 dismissIntent.putExtra("currentAccount", currentAccount);
-                if (lastMessageObject.isStoryPush) {
-                    dismissIntent.putExtra("story", true);
-                }
                 if (lastMessageObject.isStoryReactionPush) {
                     dismissIntent.putExtra("storyReaction", true);
                 }
@@ -5849,7 +5947,7 @@ public class NotificationsController extends BaseController implements Notificat
             try {
                 Intent dismissIntent = new Intent(ApplicationLoader.applicationContext, NotificationDismissReceiver.class);
                 dismissIntent.setData(NotificationDismissState.getIntentData(currentAccount, dialogId));
-                dismissIntent.putExtra("messageDate", maxDate);
+                dismissIntent.putExtra(NotificationDismissState.EXTRA_MESSAGE_DATE, maxDate);
                 dismissIntent.putExtra("dialogId", dialogId);
                 dismissIntent.putExtra("currentAccount", currentAccount);
                 if (dialogKey.story) {

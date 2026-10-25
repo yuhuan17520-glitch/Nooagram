@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.os.Handler;
 import android.os.Looper;
 import android.util.SparseArray;
 
@@ -43,6 +44,7 @@ public class NotificationDismissStateTest {
     private CopyOnWriteArraySet<Integer> previousActiveAccounts;
     private SparseArray<UserConfig> previousUserConfigs;
     private SparseArray<MessagesController> previousMessagesControllers;
+    private SparseArray<NotificationsController> previousNotificationsControllers;
 
     @Before
     public void setUp() {
@@ -51,9 +53,11 @@ public class NotificationDismissStateTest {
         previousActiveAccounts = SharedConfig.activeAccounts;
         previousUserConfigs = ReflectionHelpers.getStaticField(UserConfig.class, "Instance");
         previousMessagesControllers = ReflectionHelpers.getStaticField(MessagesController.class, "Instance");
+        previousNotificationsControllers = ReflectionHelpers.getStaticField(NotificationsController.class, "Instance");
         SharedConfig.activeAccounts = new CopyOnWriteArraySet<>();
         ReflectionHelpers.setStaticField(UserConfig.class, "Instance", new SparseArray<UserConfig>());
         ReflectionHelpers.setStaticField(MessagesController.class, "Instance", new SparseArray<MessagesController>());
+        ReflectionHelpers.setStaticField(NotificationsController.class, "Instance", new SparseArray<NotificationsController>());
         preferences("Notifications").edit().clear().commit();
         preferences("Notifications1").edit().clear().commit();
     }
@@ -63,6 +67,7 @@ public class NotificationDismissStateTest {
         SharedConfig.activeAccounts = previousActiveAccounts;
         ReflectionHelpers.setStaticField(UserConfig.class, "Instance", previousUserConfigs);
         ReflectionHelpers.setStaticField(MessagesController.class, "Instance", previousMessagesControllers);
+        ReflectionHelpers.setStaticField(NotificationsController.class, "Instance", previousNotificationsControllers);
     }
 
     @Test
@@ -156,6 +161,43 @@ public class NotificationDismissStateTest {
     }
 
     @Test
+    public void receiverPersistsColdDismissalWithoutStartingMessagesController() {
+        preferences("userconfig1").edit().putString("user", "serialized-user").commit();
+        NotificationDismissReceiver receiver = new NotificationDismissReceiver();
+
+        receiver.onReceive(context, dismissIntent(1, -123, 200));
+
+        assertTrue(NotificationDismissState.isDismissed(preferences("Notifications1"), -123, 200, false));
+        SparseArray<MessagesController> controllers = ReflectionHelpers.getStaticField(MessagesController.class, "Instance");
+        assertEquals(0, controllers.size());
+    }
+
+    @Test
+    public void receiverWakesControllerForColdMixedStorySummaryCleanup() {
+        preferences("userconfig1").edit().putString("user", "serialized-user").commit();
+        NotificationDismissReceiver receiver = new NotificationDismissReceiver();
+        Intent intent = dismissIntent(1, 0, 200);
+        intent.putExtra("story", true);
+        intent.putExtra(NotificationDismissState.EXTRA_DISMISS_MESSAGES, true);
+        StubNotificationsControllerRegistry controllers = new StubNotificationsControllerRegistry();
+        ReflectionHelpers.setStaticField(NotificationsController.class, "Instance", controllers);
+        DispatchQueue queue = ReflectionHelpers.getStaticField(NotificationsController.class, "notificationsQueue");
+        Handler previousHandler = ReflectionHelpers.getField(queue, "handler");
+        Handler pausedHandler = new Handler(Looper.getMainLooper());
+        ReflectionHelpers.setField(queue, "handler", pausedHandler);
+
+        try {
+            receiver.onReceive(context, intent);
+        } finally {
+            pausedHandler.removeCallbacksAndMessages(null);
+            ReflectionHelpers.setField(queue, "handler", previousHandler);
+        }
+
+        assertTrue(NotificationDismissState.isDismissed(preferences("Notifications1"), 0, 200, false));
+        assertEquals(2, controllers.lookupCount);
+    }
+
+    @Test
     public void pendingIntentIdentityKeepsAccountDialogAndExtrasIndependent() throws Exception {
         List<Intent> delivered = new ArrayList<>();
         BroadcastReceiver captureReceiver = new BroadcastReceiver() {
@@ -187,6 +229,9 @@ public class NotificationDismissStateTest {
     }
 
     private void installAccount(int account) {
+        preferences(account == 0 ? "userconfing" : "userconfig" + account).edit()
+                .putString("user", "serialized-user")
+                .commit();
         preferences(account).edit().clear().commit();
         TLRPC.TL_user user = new TLRPC.TL_user();
         user.id = account + 1;
@@ -240,6 +285,17 @@ public class NotificationDismissStateTest {
         assertEquals(dialogId, intent.getLongExtra("dialogId", Long.MIN_VALUE));
         assertEquals(date, intent.getIntExtra("messageDate", -1));
         assertEquals(NotificationDismissState.getIntentData(account, dialogId), intent.getData());
+    }
+
+    private static final class StubNotificationsControllerRegistry extends SparseArray<NotificationsController> {
+        private final NotificationsController controller = allocateWithoutConstructor(NotificationsController.class);
+        private int lookupCount;
+
+        @Override
+        public NotificationsController get(int key) {
+            lookupCount++;
+            return controller;
+        }
     }
 
     private SharedPreferences preferences(int account) {
