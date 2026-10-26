@@ -55,7 +55,8 @@ public final class AyuOptions {
     }
     public static String getCustomSavePath() {
         if (!enableCustomSavePath.Bool()) return "";
-        return AyuCustomSavePath.normalize(customSavePath.String());
+        String folder = com.radolyn.ayugram.utils.NooagramDownloadDestination.downloadsFolder(customSavePath.String());
+        return folder == null ? "" : folder;
     }
     public static final tw.nekomimi.nekogram.config.ConfigItem regexFiltersEnabled = ayuBoolean(
             "RegexFiltersEnabled", () -> AyuConfig.INSTANCE.getRegexFiltersEnabled());

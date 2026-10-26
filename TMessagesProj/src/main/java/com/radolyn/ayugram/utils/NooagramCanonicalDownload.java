@@ -23,6 +23,7 @@ import android.webkit.MimeTypeMap;
 import com.radolyn.ayugram.AyuOptions;
 
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
@@ -195,6 +196,7 @@ public final class NooagramCanonicalDownload {
 
     public static Claim createClaim(MessageObject messageObject) {
         if (messageObject == null || !AyuOptions.enableCustomSavePath.Bool()
+                || !NooagramDownloadDestination.usesCanonicalDocuments()
                 || !isEligibleDocument(messageObject, true)) {
             return null;
         }
@@ -245,6 +247,48 @@ public final class NooagramCanonicalDownload {
             }
         }
         return !TextUtils.isEmpty(FileLoader.getDocumentFileName(document));
+    }
+
+    static boolean isEligibleMedia(MessageObject message, boolean enabled, boolean peerNoForwards) {
+        if (!enabled || peerNoForwards || message == null || message.messageOwner == null
+                || !message.putInDownloadsStore || message.isAnyKindOfSticker()
+                || message.messageOwner.noforwards || DialogObject.isEncryptedDialog(message.getDialogId())
+                || message.isSecret() || message.isSecretMedia() || message.shouldEncryptPhotoOrVideo()
+                || message.messageOwner.media != null && message.messageOwner.media.ttl_seconds != 0) {
+            return false;
+        }
+        TLRPC.Document document = message.getDocument();
+        if (document != null) {
+            return document.key == null;
+        }
+        return message.isPhoto() && mediaPhoto(message) != null;
+    }
+
+    static TLRPC.PhotoSize mediaPhoto(MessageObject message) {
+        ArrayList<TLRPC.PhotoSize> sizes = message.photoThumbs;
+        if ((sizes == null || sizes.isEmpty()) && MessageObject.getMedia(message.messageOwner) != null
+                && MessageObject.getMedia(message.messageOwner).photo != null) {
+            sizes = MessageObject.getMedia(message.messageOwner).photo.sizes;
+        }
+        return FileLoader.getClosestPhotoSizeWithSize(sizes, AndroidUtilities.getPhotoSize());
+    }
+
+    static String mediaFileName(MessageObject message) {
+        TLRPC.Document document = message.getDocument();
+        return document != null ? FileLoader.getAttachFileName(document)
+                : FileLoader.getAttachFileName(mediaPhoto(message));
+    }
+
+    static Claim createMediaClaim(MessageObject message, boolean enabled, boolean peerNoForwards) {
+        if (!isEligibleMedia(message, enabled, peerNoForwards)) return null;
+        TLRPC.Document document = message.getDocument();
+        String name = document == null ? mediaFileName(message) : FileLoader.getDocumentFileName(document);
+        if (TextUtils.isEmpty(name)) name = mediaFileName(message);
+        if (TextUtils.isEmpty(name)) return null;
+        long id = document == null ? message.getId() : document.id;
+        name = safeFileName(name, id);
+        return new Claim(relativeDownloadPath(AyuMediaFolders.getFolderName(message)), name,
+                document == null ? "image/jpeg" : resolveMimeType(document, name));
     }
 
     public static Publication publish(Context context, File sourceFile, Claim claim,
@@ -1274,7 +1318,7 @@ public final class NooagramCanonicalDownload {
             }
         }
         if (!hasSegment) {
-            result.append("/nooagram");
+            result.append('/').append(tw.nekomimi.nekogram.NekoConfig.DEFAULT_CUSTOM_SAVE_PATH);
         }
         return result.toString();
     }

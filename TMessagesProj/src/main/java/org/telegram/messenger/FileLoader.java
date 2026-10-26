@@ -859,6 +859,9 @@ public class FileLoader extends BaseController {
             loadOperationPathsUI.put(fileName, new LoadOperationUIObject());
         }
 
+        if (cacheType != ImageLoader.CACHE_TYPE_ENCRYPTED && cacheType != 10 && parentObject instanceof MessageObject message) {
+            com.radolyn.ayugram.utils.NooagramMediaDownload.request(message, fileName);
+        }
         MessageObject downloadParent = null;
         if (document != null && parentObject instanceof MessageObject
                 && ((MessageObject) parentObject).putInDownloadsStore
@@ -1019,6 +1022,10 @@ public class FileLoader extends BaseController {
         } else if (cacheType == ImageLoader.CACHE_TYPE_ENCRYPTED) {
             operation.setEncryptFile(true);
         }
+        if (type == MEDIA_DIR_DOCUMENT && storeDir != null && storeDir.equals(getDirectory(MEDIA_DIR_DOCUMENT))) {
+            File existing = com.radolyn.ayugram.utils.NooagramDocumentStorage.resolve(storeDir, storeFileName);
+            storeDir = existing.getParentFile();
+        }
         operation.setPaths(currentAccount, fileName, loaderQueue, storeDir, tempDir, storeFileName);
         if (cacheType == 10) {
             operation.setIsPreloadVideoOperation(true);
@@ -1055,6 +1062,7 @@ public class FileLoader extends BaseController {
                 }
 
                 if (!operation.isPreloadVideoOperation()) {
+                    com.radolyn.ayugram.utils.NooagramMediaDownload.onFileLoaded(currentAccount, fileName, finalFile);
                     loadOperationPathsUI.remove(fileName);
                     if (getDelegate() != null) {
                         delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
@@ -1066,6 +1074,7 @@ public class FileLoader extends BaseController {
 
             @Override
             public void didFailedLoadingFile(FileLoadOperation operation, int reason) {
+                com.radolyn.ayugram.utils.NooagramMediaDownload.onFileFailed(currentAccount, fileName);
                 loadOperationPathsUI.remove(fileName);
                 checkDownloadQueue(operation, operation.getQueue());
                 if (getDelegate() != null) {
@@ -1493,7 +1502,10 @@ public class FileLoader extends BaseController {
                 return new File(path);
             }
         }
-        return new File(dir, getAttachFileName(attach, ext));
+        String fileName = getAttachFileName(attach, ext);
+        return dir.equals(getDirectory(MEDIA_DIR_DOCUMENT))
+                ? com.radolyn.ayugram.utils.NooagramDocumentStorage.resolve(dir, fileName)
+                : new File(dir, fileName);
     }
 
     public FilePathDatabase getFileDatabase() {

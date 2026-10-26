@@ -472,6 +472,77 @@ public class NooagramCanonicalDownloadTest {
                 NooagramCanonicalDownload.relativeDownloadPath("nooagram/My Chat"));
     }
 
+    @Test
+    public void manualMediaIncludesVideoAudioAndImageDocumentsButNotAutomaticDownloads() {
+        for (String mime : new String[]{"video/mp4", "audio/mpeg", "audio/ogg", "image/png"}) {
+            MessageObject message = message("media.bin", mime, mime.startsWith("video/"));
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+            message.putInDownloadsStore = true;
+            assertTrue(mime, NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, false, false));
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, true));
+            message.messageOwner.noforwards = true;
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+            message.messageOwner.noforwards = false;
+            message.messageOwner.media.ttl_seconds = 5;
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+            message.messageOwner.media.ttl_seconds = 0;
+            message.getDocument().key = new byte[]{1};
+            assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+        }
+    }
+
+    @Test
+    public void manualPhotoUsesFullSizeAndRejectsMissingPhoto() {
+        TLRPC.TL_photo photo = new TLRPC.TL_photo();
+        TLRPC.TL_photoSize size = new TLRPC.TL_photoSize();
+        size.type = "x";
+        size.w = 1280;
+        size.h = 720;
+        size.size = 80;
+        size.location = new TLRPC.TL_fileLocationToBeDeprecated();
+        size.location.volume_id = 101;
+        size.location.local_id = 7;
+        photo.sizes.add(size);
+        TLRPC.TL_message raw = new TLRPC.TL_message();
+        TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto();
+        media.photo = photo;
+        raw.media = media;
+        raw.id = 5;
+        raw.dialog_id = 10;
+        MessageObject message = new TestMessageObject(raw);
+        message.putInDownloadsStore = true;
+        assertTrue(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+        assertEquals(size, NooagramCanonicalDownload.mediaPhoto(message));
+        assertEquals("101_7.jpg", NooagramCanonicalDownload.mediaFileName(message));
+        photo.sizes.clear();
+        if (message.photoThumbs != null) message.photoThumbs.clear();
+        assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
+    }
+
+    @Test
+    public void mediaExportKeepsPlaybackCacheAndDoesNotDuplicateCompletedFiles() throws Exception {
+        File source = writeSource("media bytes");
+        NooagramCanonicalDownload.Claim target = new NooagramCanonicalDownload.Claim(
+                "Download/Nooagram", "clip.mp4", "video/mp4");
+        File first = new File(NooagramMediaDownload.saveCompleted(context, "manual-video", source, target, "Nooagram", ""));
+        assertTrue(source.isFile());
+        assertTrue(first.isFile());
+        assertArrayEquals(readFile(source), readFile(first));
+        assertEquals(first.getAbsolutePath(), NooagramMediaDownload.saveCompleted(context, "manual-video", source, target, "Nooagram", ""));
+        assertEquals(1, provider.rowCount());
+        assertTrue(first.delete());
+        File restored = new File(NooagramMediaDownload.saveCompleted(context, "manual-video", source, target, "Nooagram", ""));
+        assertTrue(restored.isFile());
+        assertTrue(source.isFile());
+        assertArrayEquals(readFile(source), readFile(restored));
+    }
+
+    @Test
+    public void defaultPublicFolderUsesProductCasing() {
+        assertEquals("Download/Nooagram", NooagramCanonicalDownload.relativeDownloadPath(""));
+    }
+
     private NooagramCanonicalDownload.Claim claim(String fileName) {
         return new NooagramCanonicalDownload.Claim(
                 "Download/nooagram", fileName, "application/pdf");

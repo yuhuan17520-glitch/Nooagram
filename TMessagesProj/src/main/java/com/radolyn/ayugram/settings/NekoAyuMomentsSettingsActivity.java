@@ -32,7 +32,6 @@ import org.telegram.ui.Components.UndoView;
 
 import java.util.ArrayList;
 
-import com.radolyn.ayugram.AyuCustomSavePath;
 import com.radolyn.ayugram.config.CellGroup;
 import com.radolyn.ayugram.config.ConfigItem;
 import com.radolyn.ayugram.AyuOptions;
@@ -63,6 +62,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "RegexFilters", null, R.drawable.menu_tag_filter, true, () -> presentFragment(new RegexFiltersSettingActivity())));
     private final AbstractConfigCell spySettingsRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "AyuSpySettings", null, R.drawable.msg_bot, true, () -> presentFragment(new NekoAyuSpySettingsActivity())));
     private final AbstractConfigCell pinnedHiderRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "NooagramPinnedHider", null, R.drawable.msg_pin, true, () -> presentFragment(new NooagramPinnedHiderActivity())));
+    private final AbstractConfigCell downloadsRow = cellGroup.appendCell(new ConfigCellTextCheckIcon(null, "NooagramDownloadSettings", null, R.drawable.msg_download, true, () -> presentFragment(new NooagramDownloadSettingsActivity())));
     private final AbstractConfigCell customSectionDividerRow = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell customHeaderRow = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AyuMomentsCustomHeader)));
     private final AbstractConfigCell deletedMessagesPreviewRow = cellGroup.appendCell(new ConfigCellCustom("DeletedMessagesAppearancePreviewRow", ConfigCellCustom.CUSTOM_ITEM_DeletedMessagesAppearanceCard, false));
@@ -73,12 +73,6 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell dividerCustomExperimentalRow = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell localPremiumRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuOptions.localPremium));
     private final AbstractConfigCell disableAdsRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuOptions.disableAds));
-    private final AbstractConfigCell enableCustomSavePathRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuOptions.enableCustomSavePath));
-    private final AbstractConfigCell customSavePathRow = cellGroup.appendCell(new ConfigCellTextInput(null,
-            AyuOptions.customSavePath, getString(R.string.customSavePathHint), null,
-            input -> AyuCustomSavePath.validateInput(input,
-                    (String) AyuOptions.customSavePath.defaultValue)));
-    private final AbstractConfigCell saveToChatSubfolderRow = cellGroup.appendCell(new ConfigCellTextCheck(AyuConfig.INSTANCE.getSaveToChatSubfolder()));
     private final AbstractConfigCell showGhostModeStatusRow = cellGroup.appendCell(new ConfigCellCustom("GhostModeStatusIndicator", CellGroup.ITEM_TYPE_TEXT_CHECK, true));
     private final AbstractConfigCell highRefreshRateRow = cellGroup.appendCell(new ConfigCellTextCheck(
             AyuOptions.nooagramHighRefreshRate,

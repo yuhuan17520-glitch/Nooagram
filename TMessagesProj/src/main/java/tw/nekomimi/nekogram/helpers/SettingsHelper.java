@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Map;
 
 import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
+import com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity;
 import tw.nekomimi.nekogram.ChatHistoryActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity;
@@ -40,11 +41,18 @@ public class SettingsHelper {
             unknown.run();
             return;
         }
+        var row = uri.getQueryParameter("r");
+        if (TextUtils.isEmpty(row)) row = uri.getQueryParameter("row");
+        String page = segments.size() == 2 ? segments.get(1) : "";
+        boolean legacyDownloadRow = ("ayumoments".equals(page) || "general".equals(page) || "g".equals(page))
+                && ("enableCustomSavePath".equals(row) || "customSavePath".equals(row) || "SaveToChatSubfolder".equals(row));
         BaseFragment fragment;
         com.radolyn.ayugram.settings.BaseNekoXSettingsActivity ayu_fragment = null;
         BaseNekoSettingsActivity neko_fragment = null;
         BaseNekoXSettingsActivity nekox_fragment = null;
-        if (segments.size() == 1) {
+        if (legacyDownloadRow) {
+            fragment = ayu_fragment = new NooagramDownloadSettingsActivity();
+        } else if (segments.size() == 1) {
             fragment = new NekoSettingsActivity();
         } else if (PasscodeHelper.getSettingsKey().equals(segments.get(1))) {
             fragment = neko_fragment = new NekoPasscodeSettingsActivity();
@@ -59,6 +67,9 @@ public class SettingsHelper {
                     break;
                 case "ayumoments":
                     fragment = ayu_fragment = new NekoAyuMomentsSettingsActivity();
+                    break;
+                case "downloads":
+                    fragment = ayu_fragment = new NooagramDownloadSettingsActivity();
                     break;
                 case "chat":
                 case "chats":
@@ -97,10 +108,6 @@ public class SettingsHelper {
             }
         }
         callback.presentFragment(fragment);
-        var row = uri.getQueryParameter("r");
-        if (TextUtils.isEmpty(row)) {
-            row = uri.getQueryParameter("row");
-        }
         var value = uri.getQueryParameter("v");
         if (TextUtils.isEmpty(value)) {
             value = uri.getQueryParameter("value");

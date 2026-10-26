@@ -8,10 +8,20 @@ import static org.junit.Assert.assertTrue;
 
 public class AyuCustomSavePathTest {
     @Test
-    public void emptyPathUsesLowercaseDefaultWithoutRewritingExplicitPaths() {
-        assertEquals("nooagram", AyuCustomSavePath.normalize(null));
-        assertEquals("nooagram", AyuCustomSavePath.normalize(""));
-        assertEquals("nooagram", AyuCustomSavePath.normalize("   "));
+    public void fullStoragePathsAllowNestedFoldersAndRejectTraversalOrControls() {
+        assertTrue(AyuCustomSavePath.isValidStoragePath("/sdcard/My Files/Videos"));
+        assertTrue(AyuCustomSavePath.isValidStoragePath("/storage/ABCD-1234/Media"));
+        assertTrue(AyuCustomSavePath.isValidStoragePath("/storage/emulated/0/下载目录"));
+        assertFalse(AyuCustomSavePath.isValidStoragePath("/sdcard/../data"));
+        assertFalse(AyuCustomSavePath.isValidStoragePath("/sdcard/./Media"));
+        assertFalse(AyuCustomSavePath.isValidStoragePath("/sdcard/Media\nHidden"));
+        assertFalse(AyuCustomSavePath.isValidStoragePath("/"));
+    }
+    @Test
+    public void emptyPathUsesProductDefaultWithoutRewritingExplicitPaths() {
+        assertEquals("Nooagram", AyuCustomSavePath.normalize(null));
+        assertEquals("Nooagram", AyuCustomSavePath.normalize(""));
+        assertEquals("Nooagram", AyuCustomSavePath.normalize("   "));
         assertEquals("Nagram", AyuCustomSavePath.normalize("Nagram"));
         assertEquals("Nooagram", AyuCustomSavePath.normalize("Nooagram"));
         assertEquals("Archive", AyuCustomSavePath.normalize(" Archive "));
@@ -32,7 +42,7 @@ public class AyuCustomSavePathTest {
         assertFalse(AyuCustomSavePath.isValid("Archive/Child"));
         assertFalse(AyuCustomSavePath.isValid("C:Archive"));
 
-        assertEquals("nooagram", AyuCustomSavePath.validateInput("../Private", "nooagram"));
-        assertEquals("My Archive", AyuCustomSavePath.validateInput(" My Archive ", "nooagram"));
+        assertEquals("Nooagram", AyuCustomSavePath.validateInput("../Private", "Nooagram"));
+        assertEquals("My Archive", AyuCustomSavePath.validateInput(" My Archive ", "Nooagram"));
     }
 }

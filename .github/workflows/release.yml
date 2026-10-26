@@ -92,7 +92,7 @@ jobs:
         run: java Tools/PrepareNooagramSigning.java
       - name: Migration regression tests
         if: matrix.abi == 'arm64-v8a'
-        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'tw.nekomimi.nekogram.helpers.CloudSettingsHelperTest' --tests 'tw.nekomimi.nekogram.settings.*' --tests 'org.telegram.messenger.NotificationDismissStateTest' --tests 'org.telegram.messenger.NotificationsControllerDismissTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --tests 'org.telegram.ui.Components.FragmentContextViewPlayerTest' --no-daemon --max-workers=2
+        run: ./gradlew :TMessagesProj:testDebugUnitTest --tests 'com.radolyn.ayugram.*' --tests 'tw.nekomimi.nekogram.filters.*' --tests 'tw.nekomimi.nekogram.helpers.remote.*' --tests 'tw.nekomimi.nekogram.helpers.CloudSettingsHelperTest' --tests 'tw.nekomimi.nekogram.settings.*' --tests 'org.telegram.messenger.NotificationDismissStateTest' --tests 'org.telegram.messenger.NotificationsControllerDismissTest' --tests 'org.telegram.utils.localization.ProductBrandingLocalizationTest' --tests 'org.telegram.ui.Components.FragmentContextViewPlayerTest' --tests 'org.telegram.ui.ActionBar.ActionBarCenterTitleTest' --tests 'org.telegram.ui.Cells.TextSettingsCellLayoutTest' --no-daemon --max-workers=2
       - name: Build actual release variant
         env:
           LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}

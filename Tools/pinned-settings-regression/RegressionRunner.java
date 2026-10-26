@@ -47,6 +47,8 @@ public class RegressionRunner {
             sources.add(settingsDeepLinkMethods(root.resolve("tw/nekomimi/nekogram/helpers/SettingsHelper.java")));
             sources.add(launchSettingsRestoreMethods(root.resolve("org/telegram/ui/LaunchActivity.java")));
             sources.add(pinnedMenuMethods(root.resolve("org/telegram/ui/ChatActivity.java")));
+            sources.add(profileAvatarMethods(root.resolve("org/telegram/ui/Components/glass/GlassTabView.java")));
+            sources.add(storiesTitleMethods(root.resolve("org/telegram/ui/Stories/DialogStoriesCell.java")));
             if (!compiler.getTask(null, manager, null,
                     List.of("-proc:none", "-encoding", "UTF-8", "-d", output.toString()), null, sources).call()) {
                 throw new AssertionError("Probe compilation failed");
@@ -59,6 +61,8 @@ public class RegressionRunner {
             loader.loadClass("SettingsDeepLinkProbe").getMethod("verify").invoke(null);
             loader.loadClass("LaunchSettingsRestoreProbe").getMethod("verify").invoke(null);
             loader.loadClass("PinnedMenuProbe").getMethod("verify").invoke(null);
+            loader.loadClass("ProfileAvatarProbe").getMethod("verify").invoke(null);
+            loader.loadClass("StoriesTitleProbe").getMethod("verify").invoke(null);
         }
     }
 
@@ -66,6 +70,140 @@ public class RegressionRunner {
         return new SimpleJavaFileObject(URI.create("string:///" + name.replace('.', '/') + ".java"), JavaFileObject.Kind.SOURCE) {
             @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return content; }
         };
+    }
+
+    private static JavaFileObject storiesTitleMethods(Path file) throws Exception {
+        String body = methodBodies(file).get("updateTitlePosition");
+        if (!Files.readString(file).contains("updateTitlePosition(lastViewRight, actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() * progress);")) {
+            throw new AssertionError("Collapsed stories must use the tested title placement");
+        }
+        return source("StoriesTitleProbe", """
+                public class StoriesTitleProbe {
+                    static class Drawable {
+                        float width, padding; boolean empty = true;
+                        float getCurrentWidth() { return width; }
+                        void setRightPadding(float value) { padding = value; }
+                        boolean isEmpty() { return empty; }
+                    }
+                    static class View {
+                        int width; float x, scale = 1; Drawable drawable = new Drawable();
+                        int getMeasuredWidth() { return width; }
+                        float getScaleX() { return scale; }
+                        Drawable getDrawable() { return drawable; }
+                        void setTranslationX(float value) { x = value; }
+                    }
+                    static class ActionBar { boolean centered; boolean isTitleCentered() { return centered; } }
+                    ActionBar actionBar = new ActionBar();
+                    Drawable statusDrawable = new Drawable();
+                    View titleView = new View(), telegramLogoView = new View(), emojiStatusView = new View(), subtitleOverlayContainer = new View();
+                    int getWidth() { return 360; }
+                    static int dp(float value) { return (int) Math.ceil(value); }
+                    static float dpf2(float value) { return value; }
+                    static void near(float expected, float actual) {
+                        if (Math.abs(expected - actual) > 0.01f) throw new AssertionError(expected + " != " + actual);
+                    }
+                    private void updateTitlePosition(float leading, float menuWidth) %s
+                    public static void verify() {
+                        StoriesTitleProbe probe = new StoriesTitleProbe();
+                        probe.titleView.width = 360;
+                        probe.titleView.drawable.width = 80;
+                        probe.telegramLogoView.width = 100;
+                        probe.subtitleOverlayContainer.width = 120;
+                        probe.updateTitlePosition(60, 96);
+                        near(60, probe.titleView.x);
+                        near(144, probe.titleView.drawable.padding);
+                        near(61, probe.telegramLogoView.x);
+                        near(60, probe.subtitleOverlayContainer.x);
+                        probe.actionBar.centered = true;
+                        probe.updateTitlePosition(60, 96);
+                        near(140, probe.titleView.x);
+                        near(280, probe.titleView.drawable.padding);
+                        near(130, probe.telegramLogoView.x);
+                        near(120, probe.subtitleOverlayContainer.x);
+                        probe.statusDrawable.empty = false;
+                        probe.updateTitlePosition(60, 96);
+                        near(116, probe.telegramLogoView.x);
+                        probe.titleView.drawable.width = 240;
+                        probe.updateTitlePosition(60, 120);
+                        near(132, probe.titleView.x);
+                        near(264, probe.titleView.drawable.padding);
+                        probe.titleView.drawable.width = 80;
+                        probe.titleView.scale = 0.95f;
+                        probe.updateTitlePosition(60, 96);
+                        near(180, probe.titleView.x + 80 * 0.95f / 2);
+                        probe.actionBar.centered = false;
+                        probe.updateTitlePosition(60, 96);
+                        near(60, probe.titleView.x);
+                        near(144, probe.titleView.drawable.padding);
+                        near(61, probe.telegramLogoView.x);
+                        System.out.println("PASS collapsed stories title preference, status, subtitle, long text, scaled text and toggle restoration");
+                    }
+                }
+                """.formatted(body));
+    }
+
+    private static JavaFileObject profileAvatarMethods(Path file) throws Exception {
+        String body = methodBodies(file).get("updateUserAvatar");
+        return source("ProfileAvatarProbe", """
+                public class ProfileAvatarProbe {
+                    static class TLRPC { static class User { long id; User(long id) { this.id = id; } } }
+                    static class UserConfig {
+                        static final UserConfig[] slots = {new UserConfig(), new UserConfig()};
+                        TLRPC.User user;
+                        static UserConfig getInstance(int account) { return slots[account]; }
+                        long getClientUserId() { return user == null ? 0 : user.id; }
+                        TLRPC.User getCurrentUser() { return user; }
+                    }
+                    static class MessagesController {
+                        static final MessagesController[] slots = {new MessagesController(), new MessagesController()};
+                        TLRPC.User user;
+                        static MessagesController getInstance(int account) { return slots[account]; }
+                        TLRPC.User getUser(long id) { return user != null && user.id == id ? user : null; }
+                    }
+                    static class AvatarDrawable {
+                        boolean initialized; int account = -1; long id;
+                        AvatarDrawable(Object provider) {}
+                        void setInfo(int account, TLRPC.User user) {
+                            this.account = account; id = user.id; initialized = true;
+                        }
+                        void setInfo(long id) { this.id = id; initialized = true; }
+                    }
+                    static class Receiver { int account = -1; void setCurrentAccount(int value) { account = value; } }
+                    static class BackupImageView {
+                        Receiver receiver = new Receiver(); TLRPC.User user; AvatarDrawable placeholder;
+                        Receiver getImageReceiver() { return receiver; }
+                        void setForUserOrChat(TLRPC.User user, AvatarDrawable placeholder) {
+                            this.user = user; this.placeholder = placeholder;
+                        }
+                    }
+                    Object resourcesProvider = new Object();
+                    BackupImageView backupImageView = new BackupImageView(); AvatarDrawable avatarDrawable;
+                    public void updateUserAvatar(int currentAccount)
+                """ + body + """
+                    static void require(boolean value, String message) { if (!value) throw new AssertionError(message); }
+                    public static void verify() {
+                        ProfileAvatarProbe tab = new ProfileAvatarProbe();
+                        UserConfig.slots[0].user = new TLRPC.User(100);
+                        UserConfig.slots[1].user = new TLRPC.User(200);
+                        tab.updateUserAvatar(0);
+                        require(tab.backupImageView.user == UserConfig.slots[0].user, "Cold cache lost persisted self avatar");
+                        require(tab.avatarDrawable.initialized && tab.avatarDrawable.id == 100, "Uninitialized black placeholder");
+                        TLRPC.User updated = new TLRPC.User(100);
+                        MessagesController.slots[0].user = updated;
+                        tab.updateUserAvatar(0);
+                        require(tab.backupImageView.user == updated, "Warm cache avatar update was ignored");
+                        tab.updateUserAvatar(1);
+                        require(tab.backupImageView.user == UserConfig.slots[1].user, "Account switch used another user");
+                        require(tab.backupImageView.receiver.account == 1 && tab.avatarDrawable.account == 1, "Account switch used another image loader or colors");
+                        UserConfig.slots[1].user = null;
+                        tab.updateUserAvatar(1);
+                        require(tab.backupImageView.user == null && tab.avatarDrawable.id == 0 && tab.avatarDrawable.initialized, "Missing user left stale identity or black placeholder");
+                        tab.backupImageView = null;
+                        tab.updateUserAvatar(0);
+                        System.out.println("PASS profile avatar cold cache, persisted self, fresh photo, account isolation and initialized fallback");
+                    }
+                }
+                """);
     }
 
     private static JavaFileObject pinnedMenuMethods(Path file) throws Exception {
@@ -345,6 +483,7 @@ public class RegressionRunner {
                 import org.telegram.messenger.R;
                 import org.telegram.ui.ActionBar.BaseFragment;
                 import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
+                import com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity;
                 import tw.nekomimi.nekogram.ChatHistoryActivity;
                 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
                 import tw.nekomimi.nekogram.settings.*;
@@ -665,6 +804,7 @@ public class RegressionRunner {
                 }
                 """);
         stub("com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity", "public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {}");
+        stub("com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity", "public class NooagramDownloadSettingsActivity extends BaseNekoXSettingsActivity {}");
         stub("tw.nekomimi.nekogram.ChatHistoryActivity", "public class ChatHistoryActivity extends org.telegram.ui.ActionBar.BaseFragment {}");
         stub("xyz.nextalone.nagram.network.NetworkLogActivity", "public class NetworkLogActivity extends org.telegram.ui.ActionBar.BaseFragment {}");
         stub("tw.nekomimi.nekogram.helpers.PasscodeHelper", "public class PasscodeHelper { public static String getSettingsKey() { return \"passcode\"; } }");

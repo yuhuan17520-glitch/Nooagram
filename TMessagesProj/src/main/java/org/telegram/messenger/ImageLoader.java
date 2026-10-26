@@ -2477,7 +2477,7 @@ public class ImageLoader {
                 }
 
                 try {
-                    File documentPath = new File(telegramPath, "documents");
+                    File documentPath = com.radolyn.ayugram.utils.NooagramDocumentStorage.directory(telegramPath);
                     FileUtil.initDir(documentPath);
                     if (documentPath.isDirectory() && canMoveFiles(cachePath, documentPath, FileLoader.MEDIA_DIR_DOCUMENT)) {
                         AndroidUtilities.createEmptyFile(new File(documentPath, ".nomedia"));

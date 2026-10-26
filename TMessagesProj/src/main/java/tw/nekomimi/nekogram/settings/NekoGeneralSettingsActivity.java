@@ -57,7 +57,7 @@ import java.util.LinkedList;
 import java.util.List;
 
 import cn.hutool.core.util.StrUtil;
-import com.radolyn.ayugram.AyuCustomSavePath;
+import com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity;
 import kotlin.Unit;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.NekoXConfig;
@@ -299,10 +299,7 @@ private final AbstractConfigCell defaultHlsVideoQualityRow = cellGroup.appendCel
     private final AbstractConfigCell customTitleRow = cellGroup.appendCell(new ConfigCellTextInput(null, NaConfig.INSTANCE.getCustomTitle(),
             LocaleController.getString("customTitleHint", R.string.CustomTitleHint), null,
             (input) -> input.isEmpty() ? (String) NaConfig.INSTANCE.getCustomTitle().defaultValue : input));
-    private final AbstractConfigCell enableCustomSavePathRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.enableCustomSavePath));
-    private final AbstractConfigCell customSavePathRow = cellGroup.appendCell(new ConfigCellTextInput(null, NekoConfig.customSavePath,
-            LocaleController.getString("customSavePathHint", R.string.customSavePathHint), null,
-            (input) -> AyuCustomSavePath.validateInput(input, NekoConfig.DEFAULT_CUSTOM_SAVE_PATH)));
+    private final AbstractConfigCell downloadsRow = cellGroup.appendCell(new ConfigCellCustom("NooagramDownloadSettings", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
     private final AbstractConfigCell customTitleUserNameRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getCustomTitleUserName()));
     private final AbstractConfigCell useSystemUnlockRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getUseSystemUnlock()));
     private final AbstractConfigCell disableUndoRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableUndo));
@@ -387,7 +384,9 @@ private final AbstractConfigCell defaultHlsVideoQualityRow = cellGroup.appendCel
                     }
                 }
             } else if (a instanceof ConfigCellCustom) { // Custom OnClick
-                if (position == cellGroup.rows.indexOf(pgpAppRow)) {
+                if (a == downloadsRow) {
+                    presentFragment(new NooagramDownloadSettingsActivity());
+                } else if (position == cellGroup.rows.indexOf(pgpAppRow)) {
                     PopupBuilder builder = new PopupBuilder(view);
 
                     builder.addSubItem(0, LocaleController.getString("None", R.string.None));
@@ -482,6 +481,8 @@ private final AbstractConfigCell defaultHlsVideoQualityRow = cellGroup.appendCel
                         ConnectionsManager.native_setIpStrategy(a, ConnectionsManager.getIpStrategy());
                     }
                 }
+            } else if (key.equals(NaConfig.INSTANCE.getCenterActionBarTitle().getKey())) {
+                actionBar.centerTitle((Boolean) newValue);
             } else if (key.equals(NaConfig.INSTANCE.getSwitchStyle().getKey())) {
                 Switch.invalidateAll();
             } else if (key.equals(NekoConfig.inappCamera.getKey())) {
@@ -729,7 +730,9 @@ private final AbstractConfigCell defaultHlsVideoQualityRow = cellGroup.appendCel
                     // Custom binds
                     if (holder.itemView instanceof TextSettingsCell) {
                         TextSettingsCell textCell = (TextSettingsCell) holder.itemView;
-                        if (position == cellGroup.rows.indexOf(translationProviderRow)) {
+                        if (a == downloadsRow) {
+                            textCell.setTextAndValue(LocaleController.getString(R.string.NooagramDownloadSettings), "", divider);
+                        } else if (position == cellGroup.rows.indexOf(translationProviderRow)) {
                             String value;
                             switch (NekoConfig.translationProvider.Int()) {
                                 case Translator.providerGoogle:

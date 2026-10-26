@@ -942,16 +942,11 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
             titleView.setTranslationY(bottomY + dp(14) - offset + dp(FAKE_TOP_PADDING) - dp(6) * subtitleOverlayContainer.getTotalVisibility());
             int cellWidth = dp(72);
             lastViewRight += -cellWidth + getAvatarRight(cellWidth, collapsedProgress) + dp(12);
-            titleView.setTranslationX(lastViewRight);
-            titleView.getDrawable().setRightPadding(lastViewRight - dp(12) + actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() * progress);
-
-            telegramLogoView.setTranslationX(titleView.getTranslationX() + dp(1));
+            updateTitlePosition(lastViewRight, actionBar.menu.getVisibleItemsMeasuredWidthWithAlpha() * progress);
             telegramLogoView.setTranslationY(bottomY + dp(14 + FAKE_TOP_PADDING + 4.333f) + translationOffset /*titleView.getTranslationY() + dpf2(37.33f)*/);
 
-            emojiStatusView.setTranslationX(titleView.getTranslationX() - dpf2(3.33f) + telegramLogoView.getMeasuredWidth());
             emojiStatusView.setTranslationY(bottomY + dp(14 - 11 + FAKE_TOP_PADDING + 4.333f) + translationOffset);
 
-            subtitleOverlayContainer.setTranslationX(titleView.getTranslationX());
             subtitleOverlayContainer.setTranslationY(bottomY + dp(15 + FAKE_TOP_PADDING + 4.333f + 8));
         }
 
@@ -1356,6 +1351,28 @@ public class DialogStoriesCell extends FrameLayout implements NotificationCenter
 
         openStoryForCell(overscrollSelectedView, true);
         return true;
+    }
+
+    private void updateTitlePosition(float leading, float menuWidth) {
+        boolean centered = actionBar.isTitleCentered();
+        float titleX = leading;
+        if (centered) {
+            float inset = Math.max(leading, menuWidth + dp(12));
+            float available = Math.max(0, getWidth() - 2 * inset);
+            float scale = Math.max(0.01f, titleView.getScaleX());
+            float visibleWidth = Math.min(titleView.getDrawable().getCurrentWidth() * scale, available);
+            titleX = (getWidth() - visibleWidth) / 2f;
+            titleView.getDrawable().setRightPadding(Math.max(0, titleView.getMeasuredWidth() - visibleWidth / scale));
+        } else {
+            titleView.getDrawable().setRightPadding(leading - dp(12) + menuWidth);
+        }
+        titleView.setTranslationX(titleX);
+        float logoWidth = telegramLogoView.getMeasuredWidth() + (statusDrawable.isEmpty() ? 0 : dp(28));
+        float logoX = centered ? (getWidth() - logoWidth) / 2f : titleX + dp(1);
+        telegramLogoView.setTranslationX(logoX);
+        emojiStatusView.setTranslationX(logoX - dpf2(4.33f) + telegramLogoView.getMeasuredWidth());
+        subtitleOverlayContainer.setTranslationX(centered
+                ? (getWidth() - subtitleOverlayContainer.getMeasuredWidth()) / 2f : titleX);
     }
 
     public void setActionBar(ActionBar actionBar) {

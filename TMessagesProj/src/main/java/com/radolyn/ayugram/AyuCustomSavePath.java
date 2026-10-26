@@ -35,4 +35,17 @@ public final class AyuCustomSavePath {
         }
         return true;
     }
+
+    public static boolean isValidStoragePath(String input) {
+        if (input == null) return false;
+        String path = input.trim();
+        if (path.isEmpty()) return true;
+        if (!path.startsWith("/")) return isValid(path);
+        if (path.length() > 4096 || "/".equals(path)) return false;
+        for (String part : path.split("/")) {
+            if (".".equals(part) || "..".equals(part)) return false;
+            if (!part.isEmpty() && !isValid(part)) return false;
+        }
+        return true;
+    }
 }

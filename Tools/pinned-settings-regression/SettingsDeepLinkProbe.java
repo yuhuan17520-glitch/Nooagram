@@ -25,6 +25,20 @@ public final class SettingsDeepLinkProbe {
         require("DeletedIconColor=3".equals(imported),
                 "ayumoments row import was not dispatched: " + imported);
 
+        for (String page : List.of("downloads", "ayumoments", "general", "g")) {
+            callback = new SettingsHelperProbe.TestCallback();
+            SettingsHelperProbe.processDeepLink(null,
+                    new UriStub(List.of("nasettings", page), "customSavePath", "Archive"),
+                    callback, () -> { throw new AssertionError("Missing download settings route"); });
+            require(callback.fragment.getClass().getName().equals(
+                    "com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity"),
+                    "Download link did not reach the shared page: " + page);
+            org.telegram.messenger.AndroidUtilities.flush();
+            require("customSavePath=Archive".equals(
+                    com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastImport),
+                    "Legacy download link lost its value");
+        }
+
         callback = new SettingsHelperProbe.TestCallback();
         unknown[0] = false;
         SettingsHelperProbe.processDeepLink(

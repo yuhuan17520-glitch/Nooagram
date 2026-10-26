@@ -579,6 +579,17 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                 }
             }
         }
+        if (subtitleTextView != null) {
+            subtitleTextView.setGravity(isCenterTitle ? Gravity.CENTER : Gravity.LEFT);
+        }
+        if (additionalSubtitleTextView != null) {
+            additionalSubtitleTextView.setGravity(isCenterTitle ? Gravity.CENTER : Gravity.LEFT);
+        }
+        requestLayout();
+    }
+
+    public boolean isTitleCentered() {
+        return isCenterTitle;
     }
 
     public void setTitleRightMargin(int value) {
@@ -606,6 +617,26 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
             titleTextView[0].setRightDrawableOnClick(rightDrawableOnClickListener);
         }
         fromBottom = false;
+    }
+
+    /** Updates the decoration without replacing the base title or its connection overlay. */
+    public void setTitleRightDrawable(Drawable drawable) {
+        if (drawable instanceof AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable status && status.isEmpty()) {
+            drawable = null;
+        }
+        if (attached && lastRightDrawable instanceof AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable status) {
+            status.setParentView(null);
+        }
+        lastRightDrawable = drawable;
+        for (SimpleTextView title : titleTextView) {
+            if (title != null) {
+                title.setRightDrawable(titleOverlayShown ? null : drawable);
+            }
+        }
+        if (attached && drawable instanceof AnimatedEmojiDrawable.SwapAnimatedEmojiDrawable status) {
+            status.setParentView(titleTextView[0]);
+        }
+        requestLayout();
     }
 
     public void setRightDrawableOnClick(OnClickListener onClickListener) {
@@ -1466,7 +1497,9 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
                 int availableWidth = width - (menu != null ? menu.getMeasuredWidth() : 0) - dp(16) - textLeft - titleRightMargin;
                 availableWidth = Math.max(availableWidth, 0);
                 if (isCenterTitle) {
-                    availableWidth = width - dp(120);
+                    int inset = Math.max(textLeft + additionalTextLeft,
+                            (menu != null && menu.getVisibility() != GONE ? menu.getMeasuredWidth() : 0) + dp(16) + titleRightMargin);
+                    availableWidth = Math.max(width - 2 * inset, 0);
                 }
 
                 if (((fromBottom && i == 0) || (!fromBottom && i == 1)) && overlayTitleAnimation && titleAnimationRunning) {
@@ -1669,6 +1702,7 @@ public class ActionBar extends FrameLayout implements FactorAnimator.Target, The
     }
 
     public void onResume() {
+        centerTitle(NaConfig.INSTANCE.getCenterActionBarTitle().Bool());
         resumed = true;
         updateAttachState();
     }

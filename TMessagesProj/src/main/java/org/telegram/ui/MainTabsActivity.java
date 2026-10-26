@@ -320,6 +320,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     @Override
     public void onResume() {
         super.onResume();
+        updateProfileTabAvatar();
         blur3_updateColors();
         checkContactsTabBadge();
         checkUnreadCount(true);
@@ -1088,6 +1089,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.notificationsCountUpdated || id == NotificationCenter.updateInterfaces) {
             checkUnreadCount(fragmentView != null && fragmentView.isAttachedToWindow());
+            if (id == NotificationCenter.updateInterfaces && args.length > 0
+                    && ((Integer) args[0] & (MessagesController.UPDATE_MASK_AVATAR | MessagesController.UPDATE_MASK_NAME)) != 0) {
+                updateProfileTabAvatar();
+            }
         } else if (id == NotificationCenter.appUpdateLoading) {
             if (updateLayout != null) {
                 updateLayout.updateFileProgress(null);
@@ -1130,15 +1135,19 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS);
             }
         } else if (id == NotificationCenter.mainUserInfoChanged) {
-            if (tabs != null && tabs[INDEX_PROFILE] != null) {
-                tabs[INDEX_PROFILE].updateUserAvatar(currentAccount);
-            }
+            updateProfileTabAvatar();
         } else if (id == NotificationCenter.contactsPermissionBadgeCheck) {
             checkContactsTabBadge();
         }
     }
 
     private NotificationCenter.ObserversGroup observersGroup;
+
+    private void updateProfileTabAvatar() {
+        if (tabs != null && tabs[INDEX_PROFILE] != null) {
+            tabs[INDEX_PROFILE].updateUserAvatar(currentAccount);
+        }
+    }
 
     @Override
     public boolean onFragmentCreate() {

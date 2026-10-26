@@ -3115,6 +3115,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             actionBar.setRightDrawableOnClick(null);
         }
         statusDrawable.setColor(getThemedColor(Theme.key_profile_verifiedBackground));
+        actionBar.setTitleRightDrawable(statusDrawable);
         if (animatedStatusView != null) {
             animatedStatusView.setColor(getThemedColor(Theme.key_profile_verifiedBackground));
         }
@@ -3626,7 +3627,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     TLRPC.User self = UserConfig.getInstance(currentAccount).getCurrentUser();
                     if (self != null && self.first_name != null) title = self.first_name;
                 }
-                actionBar.centerTitle(false);
+                actionBar.centerTitle(NaConfig.INSTANCE.getCenterActionBarTitle().Bool());
                 actionBar.setTitle(title, statusDrawable);
                 actionBar.setOnLongClickListener(v -> {
                     if (NekoConfig.hideAllTab.Bool() && filterTabsView != null && filterTabsView.getCurrentTabId() != Integer.MAX_VALUE) {
@@ -5475,7 +5476,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
         undoView[1] = null;
 
         if (hasMainTabs) {
-            actionBar.getTitlesContainer().setTranslationX(dp(4));
+            actionBar.getTitlesContainer().setTranslationX(actionBar.isTitleCentered() ? 0 : dp(4));
             actionBar.setTitleColor(getThemedColor(Theme.key_telegram_color_dialogsLogo));
         }
 
@@ -7190,6 +7191,9 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if (hasMainTabs && actionBar != null && actionBar.getTitlesContainer() != null) {
+            actionBar.getTitlesContainer().setTranslationX(actionBar.isTitleCentered() ? 0 : dp(4));
+        }
         if (fragmentContextView != null) {
             fragmentContextView.refreshPlayerState();
         }

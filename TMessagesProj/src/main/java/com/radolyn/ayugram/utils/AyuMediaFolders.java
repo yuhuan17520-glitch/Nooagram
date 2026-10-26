@@ -23,7 +23,12 @@ public final class AyuMediaFolders {
     public static String getFolderName(MessageObject message) {
         String folder = AyuOptions.getCustomSavePath();
         if (!TextUtils.isEmpty(folder)) {
-            folder = sanitizeFolderName(folder, 0);
+            StringBuilder parts = new StringBuilder();
+            for (String part : folder.split("/")) {
+                if (parts.length() > 0) parts.append('/');
+                parts.append(sanitizeFolderName(part, 0));
+            }
+            folder = parts.toString();
             if ("0".equals(folder)) folder = NekoConfig.DEFAULT_CUSTOM_SAVE_PATH;
         }
         if (message != null && AyuConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {

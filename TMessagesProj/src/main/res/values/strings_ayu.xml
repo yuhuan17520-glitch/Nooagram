@@ -192,4 +192,13 @@
     <string name="RegexFiltersMaskMessages">Mask filtered or blocked messages instead of hiding them</string>
     <string name="DisableAds">Disable ads</string>
     <string name="SaveReadDate">Save read receipts</string>
+    <string name="NooagramDownloadSettings">Downloads and saving</string>
+    <string name="NooagramDownloadSaveEnabled">Save manual downloads to this folder</string>
+    <string name="NooagramDownloadSaveInfo">Files, photos, videos and audio you download manually are saved here when complete. Automatic previews keep their existing cache behavior. This setting is shared by N Settings and AyuMoments.</string>
+    <string name="NooagramDownloadFolder">Save directory</string>
+    <string name="NooagramDownloadFolderHint">Enter a full path, e.g. /sdcard/Download/Nooagram</string>
+    <string name="NooagramDownloadSelectDirectory">Choose directory</string>
+    <string name="NooagramDownloadNeedsAccess">Grant access</string>
+    <string name="NooagramDownloadFolderAccessFailed">Cannot access this directory. Choose a writable folder in the system picker.</string>
+    <string name="NooagramDownloadChatFoldersInfo">Create a subfolder for each chat inside the folder above. Changing the folder applies to future downloads; existing files stay where they are.</string>
 </resources>

@@ -21074,6 +21074,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (download) {
                 if (currentMessageObject != null) {
                     if (!FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[0])) {
+                        currentMessageObject.putInDownloadsStore = true;
+                        com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
                         FileLoader.getInstance(currentAccount).loadFile(currentMessageObject.getDocument(), currentMessageObject, FileLoader.PRIORITY_NORMAL, 0);
                     } else {
                         FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());

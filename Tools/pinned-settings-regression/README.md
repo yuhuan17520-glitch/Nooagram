@@ -9,6 +9,21 @@ Run from the repository root with JDK 21:
 This runner does not use Gradle, network access, device state, or existing app
 build outputs. Generated classes go to `build/pinned-settings-regression`.
 
+The profile-avatar probe executes the production refresh method against cold
+controller caches, persisted self profiles, new photos, account switches, and
+missing users. It checks that the image receiver uses the requested account and
+that the fallback drawable is initialized. The settings-link probe also checks
+the shared download page and links from the former AyuMoments/general rows.
+
+The collapsed-stories title probe executes the production placement method with
+centering enabled and disabled, an emoji status, a subtitle, long text, and a
+scaled title. It checks horizontal coordinates and clipping width with view
+doubles; Android view measurement is covered separately by
+`ActionBarCenterTitleTest`, which also checks the actual StaticLayout text
+coordinates, empty status decoration, status removal, and connection overlays.
+The home-title source check requires the saved
+centering preference instead of a forced left alignment.
+
 The runner compiles the actual `NooagramPinnedHider` and `ConfigItem`. It uses
 the JDK parser to extract the current activity row-click, observer lifecycle,
 settings-import, and filter-notification method bodies. Android preferences,

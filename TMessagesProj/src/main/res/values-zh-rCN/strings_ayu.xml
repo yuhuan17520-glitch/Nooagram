@@ -190,4 +190,13 @@
     <string name="RegexFiltersMaskMessages">将过滤或被屏蔽的消息遮罩而不是隐藏</string>
     <string name="DisableAds">禁用广告</string>
     <string name="SaveReadDate">保存已读回执</string>
+    <string name="NooagramDownloadSettings">下载与保存</string>
+    <string name="NooagramDownloadSaveEnabled">自动保存手动下载的文件</string>
+    <string name="NooagramDownloadSaveInfo">手动下载的文件、图片、视频和音频完成后保存到下方目录。自动预览仍使用缓存。本设置与 N 设置、AyuMoments 共用。</string>
+    <string name="NooagramDownloadFolder">保存目录</string>
+    <string name="NooagramDownloadFolderHint">输入完整路径，例如 /sdcard/Download/Nooagram</string>
+    <string name="NooagramDownloadSelectDirectory">选择目录</string>
+    <string name="NooagramDownloadNeedsAccess">需要授权</string>
+    <string name="NooagramDownloadFolderAccessFailed">无法访问此目录，请通过系统选择器选择可写入的文件夹。</string>
+    <string name="NooagramDownloadChatFoldersInfo">在上方目录内按会话建立子目录。更改目录对后续下载生效，已有文件保留在原处。</string>
 </resources>

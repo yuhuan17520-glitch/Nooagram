@@ -43856,6 +43856,7 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 message.putInDownloadsStore = true;
             }
+            com.radolyn.ayugram.utils.NooagramMediaDownload.request(message);
             if (message.isSendError()) {
                 createMenu(cell, false, false, x, y, false);
                 return;

@@ -35,6 +35,10 @@ public class PinnedSettingsProbe {
                     "The user-name title preference is no longer honored");
             require(dialogs.contains("actionBar.setTitle(title, statusDrawable);"),
                     "The default title no longer uses normal text and its status drawable");
+            require(dialogs.contains("actionBar.centerTitle(NaConfig.INSTANCE.getCenterActionBarTitle().Bool());"),
+                    "The home title must honor the saved centering preference");
+            require(dialogs.contains("actionBar.setTitleRightDrawable(statusDrawable);"),
+                    "Status changes must refresh the actual title decoration, including an empty status");
             require(!dialogs.contains("nagram_logo_2") && !dialogs.contains("new ImageSpan("),
                     "The home title still embeds the legacy Nagram wordmark");
 

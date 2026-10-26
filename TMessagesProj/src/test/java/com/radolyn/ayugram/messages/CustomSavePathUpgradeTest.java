@@ -48,15 +48,15 @@ public class CustomSavePathUpgradeTest {
     }
 
     @Test
-    public void staleDefaultIsReregisteredAsLowercaseWithoutCreatingOverride() {
+    public void staleDefaultIsReregisteredAsProductWithoutCreatingOverride() {
         assertTrue(defaults.edit().putString("customSavePath", "Nagram").commit());
-        assertStableFolders("nooagram", false);
+        assertStableFolders("Nooagram", false);
     }
 
     @Test
-    public void lowercaseDefaultWithoutUserOverrideDoesNotCreateOverride() {
+    public void productDefaultWithoutUserOverrideDoesNotCreateOverride() {
         assertTrue(defaults.edit().putString("customSavePath", "Nooagram").commit());
-        assertStableFolders("nooagram", false);
+        assertStableFolders("Nooagram", false);
     }
 
     @Test
@@ -67,10 +67,10 @@ public class CustomSavePathUpgradeTest {
     }
 
     @Test
-    public void explicitlyChosenNooagramDirectoryIsNotRewritten() {
+    public void explicitlyChosenLowercaseDirectoryIsNotRewritten() {
         assertTrue(defaults.edit().putString("customSavePath", "Nooagram").commit());
-        assertTrue(user.edit().putString("customSavePath", "Nooagram").commit());
-        assertStableFolders("Nooagram", true);
+        assertTrue(user.edit().putString("customSavePath", "nooagram").commit());
+        assertStableFolders("nooagram", true);
     }
 
     @Test
@@ -80,8 +80,8 @@ public class CustomSavePathUpgradeTest {
     }
 
     @Test
-    public void freshInstallUsesLowercaseDefaultWithoutCreatingAnOverride() {
-        assertStableFolders("nooagram", false);
+    public void freshInstallUsesProductDefaultWithoutCreatingAnOverride() {
+        assertStableFolders("Nooagram", false);
     }
 
     @Test
@@ -90,8 +90,8 @@ public class CustomSavePathUpgradeTest {
         NekoConfig.loadConfig(true);
         assertEquals("", AyuOptions.customSavePath.String());
         assertEquals("", user.getString("customSavePath", null));
-        assertEquals("nooagram", AyuOptions.getCustomSavePath());
-        assertEquals("nooagram", AyuMediaFolders.getFolderName(null));
+        assertEquals("Nooagram", AyuOptions.getCustomSavePath());
+        assertEquals("Nooagram", AyuMediaFolders.getFolderName(null));
     }
 
     @Test
@@ -122,20 +122,20 @@ public class CustomSavePathUpgradeTest {
         NekoConfig.loadConfig(true);
         assertTrue(NekoConfig.enableCustomSavePath.Bool());
         assertTrue(AyuOptions.enableCustomSavePath.Bool());
-        assertTrue(user.getBoolean("enableCustomSavePath", false));
+        assertTrue(user.getBoolean("enableCustomSavePath", true));
         assertEquals("My Archive", AyuOptions.getCustomSavePath());
         assertEquals("My Archive", NekoConfig.customSavePath.String());
         assertEquals("My Archive", AyuOptions.customSavePath.String());
     }
 
     @Test
-    public void freshInstallKeepsCustomSavePathSwitchDisabled() {
+    public void freshInstallEnablesManualDownloadSaving() {
         assertTrue(user.edit().remove("enableCustomSavePath").commit());
         NekoConfig.loadConfig(true);
 
-        assertFalse(NekoConfig.enableCustomSavePath.Bool());
-        assertFalse(AyuOptions.enableCustomSavePath.Bool());
-        assertEquals("", AyuOptions.getCustomSavePath());
+        assertTrue(NekoConfig.enableCustomSavePath.Bool());
+        assertTrue(AyuOptions.enableCustomSavePath.Bool());
+        assertEquals("Nooagram", AyuOptions.getCustomSavePath());
         assertFalse(user.contains("enableCustomSavePath"));
     }
 
@@ -154,7 +154,7 @@ public class CustomSavePathUpgradeTest {
             assertEquals(new File(new File(downloads, expected), "Saved Attachments"),
                     AyuAttachmentPaths.defaultParent(true, AyuOptions.getCustomSavePath(),
                             downloads, privateFiles, privateFiles));
-            assertEquals("nooagram", defaults.getString("customSavePath", null));
+            assertEquals("Nooagram", defaults.getString("customSavePath", null));
             if (hasOverride) {
                 assertEquals(expected, user.getString("customSavePath", null));
             } else {
