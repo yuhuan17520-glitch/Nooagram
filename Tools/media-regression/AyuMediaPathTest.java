@@ -39,6 +39,14 @@ public class AyuMediaPathTest {
     }
 
     @Test
+    public void imageLoaderRegistersAllSixTypedDirectoriesAndKeepsLegacyMediaReadable() throws Exception {
+        String method = method("org/telegram/messenger/ImageLoader.java", "createMediaPaths", 0);
+        try (URLClassLoader loader = compile("MediaDirectoriesProbe", MEDIA_DIRECTORIES_STUBS + method + "}")) {
+            loader.loadClass("MediaDirectoriesProbe").getMethod("verify").invoke(null);
+        }
+    }
+
+    @Test
     public void mediaStoreUsesTheEnabledPathForEveryMediaTypeAndChatOption() throws Exception {
         String saveMethod = method("org/telegram/messenger/MediaController.java", "saveFileInternal", 5);
         String deleteMethod = method("org/telegram/messenger/MediaController.java", "deleteMediaStoreUri", 1);
@@ -165,7 +173,20 @@ public class AyuMediaPathTest {
         Path directory = Files.createTempDirectory("ayu-media-path-probe-");
         Path path = directory.resolve(name + ".java");
         Files.writeString(path, source);
-        int result = ToolProvider.getSystemJavaCompiler().run(null, null, null, "-proc:none", "-d",
+        Path fileLoaderStub = directory.resolve("org/telegram/messenger/FileLoader.java");
+        Files.createDirectories(fileLoaderStub.getParent());
+        Files.writeString(fileLoaderStub, """
+                package org.telegram.messenger;
+                public class FileLoader {
+                    public static final int MEDIA_DIR_IMAGE=0, MEDIA_DIR_AUDIO=1, MEDIA_DIR_VIDEO=2,
+                        MEDIA_DIR_DOCUMENT=3, MEDIA_DIR_CACHE=4, MEDIA_DIR_FILES=5, MEDIA_DIR_STORIES=6;
+                }
+                """);
+        int helpers = ToolProvider.getSystemJavaCompiler().run(null, null, null, "-proc:none", "-d", directory.toString(),
+                fileLoaderStub.toString(), SOURCE_ROOT.resolve("com/radolyn/ayugram/utils/NooagramMediaStorage.java").toString(),
+                SOURCE_ROOT.resolve("com/radolyn/ayugram/utils/NooagramDocumentStorage.java").toString());
+        assertEquals("Production storage resolver must compile", 0, helpers);
+        int result = ToolProvider.getSystemJavaCompiler().run(null, null, null, "-proc:none", "-cp", directory.toString(), "-d",
                 directory.toString(), path.toString());
         assertEquals("Production method probe must compile", 0, result);
         return new URLClassLoader(new URL[]{directory.toUri().toURL()});
@@ -189,7 +210,7 @@ public class AyuMediaPathTest {
                         MEDIA_DIR_DOCUMENT = 3, MEDIA_DIR_IMAGE = 0;
                 static class TLObject { }
                 static class TLRPC {
-                    static class Document extends TLObject { String localPath; byte[] key; long id = 7; int dc_id = 2; }
+                    static class Document extends TLObject { String localPath, mime_type; byte[] key; long id = 7; int dc_id = 2; }
                     static class Photo extends TLObject { ArrayList<PhotoSize> sizes; }
                     static class PhotoSize extends TLObject { FileLocation location; int size; }
                     static class TL_photoStrippedSize extends PhotoSize { }
@@ -244,9 +265,54 @@ public class AyuMediaPathTest {
                     document.localPath = null;
                     background.database.path = null;
                     check(background.getPathToAttach(document, null, null, false, true), "directory-3" + File.separator + "fallback.dat");
+                    document.mime_type = "audio/mpeg";
+                    check(background.getPathToAttach(document, null, null, false, true), "directory-1" + File.separator + "fallback.dat");
+                    document.mime_type = "image/jpeg";
+                    check(background.getPathToAttach(document, null, null, false, true), "directory-0" + File.separator + "fallback.dat");
+                    document.mime_type = "video/mp4";
+                    check(background.getPathToAttach(document, null, null, false, true), "directory-2" + File.separator + "fallback.dat");
                     AyuFileLocation location = new AyuFileLocation();
                     location.path = "legacy-ayu-file";
                     check(background.getPathToAttach(location, null, null, false, true), "legacy-ayu-file");
+                }
+            """;
+
+    private static final String MEDIA_DIRECTORIES_STUBS = """
+            import java.io.*;
+            import java.nio.file.Files;
+            import java.util.*;
+            public class MediaDirectoriesProbe {
+                static class SparseArray<T> extends HashMap<Integer,T> { }
+                static class FileLoader extends org.telegram.messenger.FileLoader { }
+                static class EnvUtil { static File selected; static File getTelegramPath() { return selected; } }
+                static class AndroidUtilities {
+                    static File getCacheDir() { File f = new File(EnvUtil.selected, "caches"); f.mkdirs(); return f; }
+                    static void createEmptyFile(File f) { try { f.createNewFile(); } catch (IOException e) { throw new RuntimeException(e); } }
+                }
+                static class FileUtil { static void initDir(File f) { f.mkdirs(); } }
+                static class BuildVars { static boolean LOGS_ENABLED = false; }
+                static class FileLog { static void d(String s) {} static void e(Exception e) { throw new RuntimeException(e); } }
+                static class SharedConfig { static String storageCacheDir=""; static void checkSaveToGalleryFiles() {} }
+                File telegramPath;
+                boolean canMoveFiles(File from, File to, int type) { return true; }
+                public static void verify() throws Exception {
+                    EnvUtil.selected = Files.createTempDirectory("nooagram-typed-paths").toFile();
+                    File oldImages = new File(EnvUtil.selected, "images"); oldImages.mkdir();
+                    File old = new File(oldImages, "old.jpg"); Files.write(old.toPath(), new byte[]{1,2});
+                    SparseArray<File> dirs = new MediaDirectoriesProbe().createMediaPaths();
+                    int[] types={0,1,2,3,5,6};
+                    String[] names={"Telegram Images","Telegram Audio","Telegram Video","Telegram Documents","Telegram Files","Telegram Stories"};
+                    if (dirs.size()!=7) throw new AssertionError("Missing typed directory: "+dirs);
+                    for(int i=0;i<types.length;i++) {
+                        File expected = new File(EnvUtil.selected, "Telegram/"+names[i]);
+                        if(!expected.equals(dirs.get(types[i])) || !expected.isDirectory()) throw new AssertionError("Incorrect media path: "+dirs);
+                        if(!new File(expected,".nomedia").isFile()) throw new AssertionError("Missing cache marker");
+                    }
+                    File resolved = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(dirs.get(0), "old.jpg");
+                    if(!old.equals(resolved) || old.length()!=2) throw new AssertionError("Lost legacy image");
+                    for(File entry:new File(EnvUtil.selected,"Telegram").listFiles()) {
+                        if(entry.isFile() && !entry.getName().equals(".nomedia")) throw new AssertionError("Loose media in root");
+                    }
                 }
             """;
 

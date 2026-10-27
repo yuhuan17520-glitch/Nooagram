@@ -1703,9 +1703,9 @@ public class SharedConfig {
         Utilities.globalQueue.postRunnable(() -> {
             try {
                 File telegramPath = EnvUtil.getTelegramPath();
-                File imagePath = new File(telegramPath, "images");
+                File imagePath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_IMAGE);
                 imagePath.mkdirs();
-                File videoPath = new File(telegramPath, "videos");
+                File videoPath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_VIDEO);
                 videoPath.mkdirs();
 
                 if (!BuildVars.NO_SCOPED_STORAGE) {

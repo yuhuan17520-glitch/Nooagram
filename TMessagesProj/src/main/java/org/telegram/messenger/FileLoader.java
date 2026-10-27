@@ -791,13 +791,13 @@ public class FileLoader extends BaseController {
         f = new File(getDirectory(MEDIA_DIR_CACHE), fileName);
         if (f.exists()) return f;
 
-        f = new File(getDirectory(MEDIA_DIR_IMAGE), fileName);
+        f = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(getDirectory(MEDIA_DIR_IMAGE), fileName);
         if (f.exists()) return f;
 
-        f = new File(getDirectory(MEDIA_DIR_VIDEO), fileName);
+        f = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(getDirectory(MEDIA_DIR_VIDEO), fileName);
         if (f.exists()) return f;
 
-        f = new File(getDirectory(MEDIA_DIR_FILES), fileName);
+        f = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(getDirectory(MEDIA_DIR_FILES), fileName);
         if (f.exists()) return f;
 
         return null;
@@ -970,6 +970,15 @@ public class FileLoader extends BaseController {
                 boolean customPath = false;
                 if (path != null) {
                     File file = new File(path);
+                    File downloadFile = com.radolyn.ayugram.utils.NooagramMediaStorage.resolveMappedDownload(
+                            getDirectory(isStory ? MEDIA_DIR_STORIES : com.radolyn.ayugram.utils.NooagramMediaStorage.typeForMime(
+                                    document == null ? null : document.mime_type, type)), file, operation.totalBytesCount);
+                    if (!file.equals(downloadFile)) {
+                        // Replace stale legacy mappings when the download finishes in Telegram.
+                        operation.pathSaveData = new FilePathDatabase.PathData(documentId, dcId, type);
+                        operation.pathSaveData.canonicalDestination = operation.hasCanonicalDownload();
+                        file = downloadFile;
+                    }
                     if (file.exists()) {
                         customPath = true;
                         storeFileName = file.getName();
@@ -978,7 +987,8 @@ public class FileLoader extends BaseController {
                 }
                 if (!customPath) {
                     storeFileName = fileName;
-                    storeDir = getDirectory(type);
+                    storeDir = getDirectory(com.radolyn.ayugram.utils.NooagramMediaStorage.typeForMime(
+                            document == null ? null : document.mime_type, type));
                     boolean saveCustomPath = false;
 
                     if (isStory) {
@@ -1000,7 +1010,7 @@ public class FileLoader extends BaseController {
                         }
                     } else if (!TextUtils.isEmpty(getDocumentFileName(document)) && canSaveAsFile(parentObject)) {
                         storeFileName = getDocumentFileName(document);
-                        File newDir = getDirectory(MEDIA_DIR_DOCUMENT);
+                        File newDir = storeDir;
                         if (newDir != null) {
                             storeDir = newDir;
                             saveCustomPath = true;
@@ -1017,13 +1027,15 @@ public class FileLoader extends BaseController {
                     operation.pathSaveData.canonicalDestination = true;
                 }
             } else {
-                storeDir = getDirectory(type);
+                storeDir = getDirectory(com.radolyn.ayugram.utils.NooagramMediaStorage.typeForMime(
+                        document == null ? null : document.mime_type, type));
             }
         } else if (cacheType == ImageLoader.CACHE_TYPE_ENCRYPTED) {
             operation.setEncryptFile(true);
         }
-        if (type == MEDIA_DIR_DOCUMENT && storeDir != null && storeDir.equals(getDirectory(MEDIA_DIR_DOCUMENT))) {
-            File existing = com.radolyn.ayugram.utils.NooagramDocumentStorage.resolve(storeDir, storeFileName);
+        if (storeDir != null) {
+            File existing = com.radolyn.ayugram.utils.NooagramMediaStorage.resolveForDownload(
+                    storeDir, storeFileName, operation.totalBytesCount);
             storeDir = existing.getParentFile();
         }
         operation.setPaths(currentAccount, fileName, loaderQueue, storeDir, tempDir, storeFileName);
@@ -1421,7 +1433,7 @@ public class FileLoader extends BaseController {
                 }
                 documentId = document.id;
                 dcId = document.dc_id;
-                dir = getDirectory(type);
+                dir = getDirectory(com.radolyn.ayugram.utils.NooagramMediaStorage.typeForMime(document.mime_type, type));
             } else if (attach instanceof TLRPC.Photo) {
                 TLRPC.PhotoSize photoSize = getClosestPhotoSizeWithSize(((TLRPC.Photo) attach).sizes, AndroidUtilities.getPhotoSize(true));
                 return getPathToAttach(photoSize, ext, false, useFileDatabaseQueue);
@@ -1503,9 +1515,7 @@ public class FileLoader extends BaseController {
             }
         }
         String fileName = getAttachFileName(attach, ext);
-        return dir.equals(getDirectory(MEDIA_DIR_DOCUMENT))
-                ? com.radolyn.ayugram.utils.NooagramDocumentStorage.resolve(dir, fileName)
-                : new File(dir, fileName);
+        return com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(dir, fileName);
     }
 
     public FilePathDatabase getFileDatabase() {

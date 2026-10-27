@@ -7,15 +7,20 @@ public final class NooagramDocumentStorage {
     private NooagramDocumentStorage() {}
 
     public static File directory(File mediaRoot) {
-        return new File(mediaRoot, "Telegram");
+        return NooagramMediaStorage.directory(mediaRoot, org.telegram.messenger.FileLoader.MEDIA_DIR_DOCUMENT);
     }
 
     public static File resolve(File directory, String name) {
-        File target = new File(directory, name);
-        if (!target.exists() && "Telegram".equals(directory.getName())) {
-            File legacy = new File(new File(directory.getParentFile(), "documents"), name);
-            if (legacy.isFile()) return legacy;
-        }
-        return target;
+        return NooagramMediaStorage.resolve(directory, name);
+    }
+
+    /** Reuse complete legacy files, but never redownload into the legacy directory. */
+    public static File resolveForDownload(File directory, String name, long expectedSize) {
+        return NooagramMediaStorage.resolveForDownload(directory, name, expectedSize);
+    }
+
+    /** Applies the same rule to paths remembered in the file database. */
+    public static File resolveMappedDownload(File directory, File file, long expectedSize) {
+        return NooagramMediaStorage.resolveMappedDownload(directory, file, expectedSize);
     }
 }

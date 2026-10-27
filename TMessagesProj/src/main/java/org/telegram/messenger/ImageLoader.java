@@ -2431,11 +2431,13 @@ public class ImageLoader {
         FileLog.d("selected SD card = " + SharedConfig.storageCacheDir);
 
         try {
-            telegramPath = EnvUtil.getTelegramPath();
+            telegramPath = com.radolyn.ayugram.utils.NooagramMediaStorage.root(EnvUtil.getTelegramPath());
+            FileUtil.initDir(telegramPath);
+            AndroidUtilities.createEmptyFile(new File(telegramPath, ".nomedia"));
 
             if (telegramPath.isDirectory()) {
                 try {
-                    File imagePath = new File(telegramPath, "images");
+                    File imagePath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_IMAGE);
                     FileUtil.initDir(imagePath);
                     if (imagePath.isDirectory() && canMoveFiles(cachePath, imagePath, FileLoader.MEDIA_DIR_IMAGE)) {
                         AndroidUtilities.createEmptyFile(new File(imagePath, ".nomedia"));
@@ -2449,7 +2451,7 @@ public class ImageLoader {
                 }
 
                 try {
-                    File videoPath = new File(telegramPath, "videos");
+                    File videoPath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_VIDEO);
                     FileUtil.initDir(videoPath);
                     if (videoPath.isDirectory() && canMoveFiles(cachePath, videoPath, FileLoader.MEDIA_DIR_VIDEO)) {
                         AndroidUtilities.createEmptyFile(new File(videoPath, ".nomedia"));
@@ -2463,7 +2465,7 @@ public class ImageLoader {
                 }
 
                 try {
-                    File audioPath = new File(telegramPath, "audios");
+                    File audioPath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_AUDIO);
                     FileUtil.initDir(audioPath);
                     if (audioPath.isDirectory() && canMoveFiles(cachePath, audioPath, FileLoader.MEDIA_DIR_AUDIO)) {
                         AndroidUtilities.createEmptyFile(new File(audioPath, ".nomedia"));
@@ -2491,7 +2493,18 @@ public class ImageLoader {
                 }
 
                 try {
-                    File storyPath = new File(telegramPath, "stories");
+                    File filesPath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_FILES);
+                    FileUtil.initDir(filesPath);
+                    if (filesPath.isDirectory() && canMoveFiles(cachePath, filesPath, FileLoader.MEDIA_DIR_FILES)) {
+                        AndroidUtilities.createEmptyFile(new File(filesPath, ".nomedia"));
+                        mediaDirs.put(FileLoader.MEDIA_DIR_FILES, filesPath);
+                    }
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+
+                try {
+                    File storyPath = com.radolyn.ayugram.utils.NooagramMediaStorage.directory(telegramPath, FileLoader.MEDIA_DIR_STORIES);
                     FileUtil.initDir(storyPath);
                     if (storyPath.isDirectory() && canMoveFiles(cachePath, storyPath, FileLoader.MEDIA_DIR_STORIES)) {
                         AndroidUtilities.createEmptyFile(new File(storyPath, ".nomedia"));
@@ -3074,11 +3087,12 @@ public class ImageLoader {
                             if (document instanceof TLRPC.TL_documentEncrypted) {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), url);
                             } else if (MessageObject.isVideoDocument(document) || MessageObject.isGifDocument(document)) {
-                                cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_VIDEO), url);
+                                cacheFile = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(FileLoader.getDirectory(FileLoader.MEDIA_DIR_VIDEO), url);
                             } else if (MessageObject.isStickerDocument(document)) {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), url);
                             } else {
-                                cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), url);
+                                cacheFile = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(FileLoader.getDirectory(
+                                        com.radolyn.ayugram.utils.NooagramMediaStorage.typeForMime(document.mime_type, FileLoader.MEDIA_DIR_DOCUMENT)), url);
                             }
                             if ((isAnimatedAvatar(filter) || AUTOPLAY_FILTER.equals(filter) || AUTOPLAY_FILTER_NONLOOP.equals(filter)) && !cacheFile.exists()) {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), document.dc_id + "_" + document.id + ".temp");
@@ -3104,12 +3118,12 @@ public class ImageLoader {
                             }
                             fileSize = document.size;
                         } else if (imageLocation.webFile != null) {
-                            cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), url);
+                            cacheFile = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(FileLoader.getDirectory(FileLoader.MEDIA_DIR_DOCUMENT), url);
                         } else {
                             if (cacheType == 1) {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), url);
                             } else {
-                                cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_IMAGE), url);
+                                cacheFile = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(FileLoader.getDirectory(FileLoader.MEDIA_DIR_IMAGE), url);
                             }
                             if (isAnimatedAvatar(filter) || (AUTOPLAY_FILTER.equals(filter) || AUTOPLAY_FILTER_NONLOOP.equals(filter)) && imageLocation.location != null && !cacheFile.exists()) {
                                 cacheFile = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), imageLocation.location.volume_id + "_" + imageLocation.location.local_id + ".temp");
