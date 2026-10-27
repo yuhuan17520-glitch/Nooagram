@@ -346,6 +346,7 @@ public class SharedConfig {
     public static int pendingAppUpdateBuildVersion;
     public static long pendingAppUpdateBuildTimestamp;
     public static long lastUpdateCheckTime;
+    public static long lastUpdateCheckFailedTime;
 
     public static boolean hasEmailLogin;
 
@@ -527,6 +528,7 @@ public class SharedConfig {
                     editor.remove("appUpdate");
                 }
                 editor.putLong("appUpdateCheckTime", lastUpdateCheckTime);
+                editor.putLong("appUpdateCheckFailedTime", lastUpdateCheckFailedTime);
 
                 editor.apply();
 
@@ -602,7 +604,8 @@ public class SharedConfig {
             } else {
                 passcodeSalt = new byte[0];
             }
-            lastUpdateCheckTime = preferences.getLong("appUpdateCheckTime", System.currentTimeMillis());
+            lastUpdateCheckTime = preferences.getLong("appUpdateCheckTime", 0L);
+            lastUpdateCheckFailedTime = preferences.getLong("appUpdateCheckFailedTime", 0L);
             try {
                 String update = preferences.getString("appUpdate", null);
                 if (update != null) {

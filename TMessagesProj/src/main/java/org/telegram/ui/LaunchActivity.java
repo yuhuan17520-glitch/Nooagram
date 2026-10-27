@@ -271,6 +271,7 @@ import tw.nekomimi.nekogram.helpers.remote.ExtendedHelper;
 import tw.nekomimi.nekogram.helpers.remote.InlineBotRulesHelper;
 import tw.nekomimi.nekogram.helpers.remote.PagePreviewRulesHelper;
 import tw.nekomimi.nekogram.helpers.remote.PeerColorHelper;
+import tw.nekomimi.nekogram.helpers.remote.NooagramUpdateCheckScheduler;
 import tw.nekomimi.nekogram.helpers.remote.UpdateHelper;
 import tw.nekomimi.nekogram.helpers.remote.WallpaperHelper;
 import tw.nekomimi.nekogram.settings.NekoGhostModeActivity;
@@ -6156,6 +6157,49 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private boolean firstAppUpdateCheck = true;
+    private NooagramUpdateCheckScheduler appUpdateCheckScheduler;
+    private final ArrayList<Browser.Progress> appUpdateCheckProgresses = new ArrayList<>();
+
+    private NooagramUpdateCheckScheduler getAppUpdateCheckScheduler() {
+        if (appUpdateCheckScheduler == null) {
+            appUpdateCheckScheduler = new NooagramUpdateCheckScheduler(
+                    new NooagramUpdateCheckScheduler.State() {
+                        @Override
+                        public long lastSuccessTime() {
+                            return SharedConfig.lastUpdateCheckTime;
+                        }
+
+                        @Override
+                        public long lastFailureTime() {
+                            return SharedConfig.lastUpdateCheckFailedTime;
+                        }
+
+                        @Override
+                        public void recordResult(boolean success, long time) {
+                            if (success) {
+                                SharedConfig.lastUpdateCheckTime = time;
+                                SharedConfig.lastUpdateCheckFailedTime = 0L;
+                            } else {
+                                SharedConfig.lastUpdateCheckFailedTime = time;
+                            }
+                            SharedConfig.saveConfig();
+                        }
+                    }, new NooagramUpdateCheckScheduler.Timer() {
+                        @Override
+                        public void postDelayed(Runnable task, long delay) {
+                            AndroidUtilities.runOnUIThread(task, delay);
+                        }
+
+                        @Override
+                        public void cancel(Runnable task) {
+                            AndroidUtilities.cancelRunOnUIThread(task);
+                        }
+                    }, System::currentTimeMillis,
+                    () -> !BuildConfig.MIGRATION_TEST_BUILD && NekoXConfig.autoUpdateReleaseChannel != 0,
+                    () -> checkAppUpdate(false, null));
+        }
+        return appUpdateCheckScheduler;
+    }
     public void checkAppUpdate(boolean force, Browser.Progress progress) {
         checkAppUpdate(force, progress, false);
     }
@@ -6188,13 +6232,13 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             });
             return;
         }
-        long updateCheckDelay;
-        if (NekoXConfig.autoUpdateReleaseChannel == 3) {
-            updateCheckDelay = 30 * 60 * 1000;
-        } else {
-            updateCheckDelay = 24 * 60 * 60 * 1000;
+        final boolean forceCheck = force || updateAlways;
+        final boolean started = getAppUpdateCheckScheduler().begin(forceCheck);
+        if (progress != null && (started || forceCheck) && !appUpdateCheckProgresses.contains(progress)) {
+            appUpdateCheckProgresses.add(progress);
+            progress.init();
         }
-        if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < /* MessagesController.getInstance(0).updateCheckDelay */ updateCheckDelay) {
+        if (!started) {
             return;
         }
         final TLRPC.TL_help_getAppUpdate req = new TLRPC.TL_help_getAppUpdate();
@@ -6207,11 +6251,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             req.source = "";
         }
         final int accountNum = currentAccount;
-        if (progress != null) progress.init();
         UpdateHelper.getInstance().checkNewVersionAvailable((res, error) -> {
-            SharedConfig.lastUpdateCheckTime = System.currentTimeMillis();
-            SharedConfig.saveConfig();
             AndroidUtilities.runOnUIThread(() -> {
+                boolean requestedManually = getAppUpdateCheckScheduler().wasManuallyRequested();
+                ArrayList<Browser.Progress> progresses = new ArrayList<>(appUpdateCheckProgresses);
+                appUpdateCheckProgresses.clear();
+                getAppUpdateCheckScheduler().complete(error == null);
                 if (res != null) {
                     SharedConfig.setNewAppVersionAvailable(res);
                     if (res.can_not_skip) {
@@ -6220,7 +6265,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                         ApplicationLoader.applicationLoaderInstance.showUpdateAppPopup(LaunchActivity.this, res, accountNum);
                     }
                 } else {
-                    if (force) {
+                    if (requestedManually) {
                         BaseFragment fragment = getLastFragment();
                         if (fragment != null) {
                             if (error == null) {
@@ -6230,17 +6275,16 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                             }
                         }
                     }
-                    SharedConfig.setNewAppVersionAvailable(null);
+                    if (error == null) {
+                        SharedConfig.setNewAppVersionAvailable(null);
+                    }
                 }
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
-                if (progress != null) {
-                    progress.end();
+                for (Browser.Progress pendingProgress : progresses) {
+                    pendingProgress.end();
                 }
             });
-        }, updateAlways);
-        if (progress != null) {
-            progress.init();
-        }
+        }, forceCheck);
     }
 
     public Dialog showAlertDialog(AlertDialog.Builder builder) {
@@ -6939,6 +6983,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     protected void onPause() {
         super.onPause();
         isResumed = false;
+        if (appUpdateCheckScheduler != null) {
+            appUpdateCheckScheduler.pause();
+        }
         pipActivityHandler.onPause();
         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.stopAllHeavyOperations, 4096);
         ApplicationLoader.mainInterfacePaused = true;
@@ -7068,6 +7115,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
 
     @Override
     protected void onDestroy() {
+        if (appUpdateCheckScheduler != null) {
+            appUpdateCheckScheduler.pause();
+        }
         GramWalletStorageAuth.onActivityDestroyed(this);
         isActive = false;
         activeInstanceCount--;
@@ -7263,7 +7313,11 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         } else if (SharedConfig.pendingAppUpdate != null && SharedConfig.pendingAppUpdate.can_not_skip) {
             showUpdateActivity(UserConfig.selectedAccount, SharedConfig.pendingAppUpdate, true);
         }
-        checkAppUpdate(false, null);
+        if (ApplicationLoader.applicationLoaderInstance.isCustomUpdate()) {
+            checkAppUpdate(false, null);
+        } else {
+            getAppUpdateCheckScheduler().resume();
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             ApplicationLoader.canDrawOverlays = Settings.canDrawOverlays(this);
