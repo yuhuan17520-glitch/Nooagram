@@ -373,8 +373,10 @@ public class AyuFilter {
             return false;
         }
 
-        AyuFilterCache.DialogKey cacheKey = AyuFilterCache.keyFor(dialogId, msg);
-        Boolean cached = AyuFilterCache.get(cacheKey, msg, group);
+        // Push payloads carry preview text only; never let them share cache entries with the real message.
+        boolean cacheable = !msg.isFcmMessage();
+        AyuFilterCache.DialogKey cacheKey = cacheable ? AyuFilterCache.keyFor(dialogId, msg) : null;
+        Boolean cached = cacheable ? AyuFilterCache.get(cacheKey, msg, group) : null;
         if (cached != null) {
             return cached;
         }
@@ -392,7 +394,7 @@ public class AyuFilter {
         }
 
         boolean result = isFilteredInternal(text, dialogId);
-        if (group != null || msg.getGroupId() == 0) {
+        if (cacheable && (group != null || msg.getGroupId() == 0)) {
             AyuFilterCache.put(cacheKey, msg, group, result);
         }
 
@@ -434,6 +436,17 @@ public class AyuFilter {
             return false;
         }
         return shouldMaskFilteredMessages() && isFiltered(msg, group);
+    }
+
+    /** Filtered or ignored-blocked messages never notify, whether the chat hides or masks them. */
+    public static boolean shouldSuppressNotification(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null || msg.isStoryPush || msg.isStoryReactionPush) {
+            return false;
+        }
+        if (isFiltered(msg, null)) {
+            return true;
+        }
+        return AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool() && isIgnoredBlockedMessage(msg);
     }
 
     public static boolean shouldMaskMessage(MessageObject msg, MessageObject.GroupedMessages group) {

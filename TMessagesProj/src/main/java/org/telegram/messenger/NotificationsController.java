@@ -1348,7 +1348,10 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     continue;
                 }
-                if (AyuFilter.shouldHideIgnoredBlockedMessages() && AyuFilter.isIgnoredBlockedMessage(messageObject)) {
+                if (AyuFilter.shouldSuppressNotification(messageObject)) {
+                    if (BuildVars.LOGS_ENABLED) {
+                        FileLog.d("skipped message because it matches a message filter");
+                    }
                     continue;
                 }
                 // Ghost Mode: Schedule Messages — suppress notifications for our own scheduled-delivery messages.
@@ -1814,7 +1817,8 @@ public class NotificationsController extends BaseController implements Notificat
                         continue;
                     }
                     MessageObject messageObject = new MessageObject(currentAccount, message, false, false);
-                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)) {
+                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)
+                            || AyuFilter.shouldSuppressNotification(messageObject)) {
                         continue;
                     }
                     if (isPersonalMessage(messageObject)) {
@@ -1887,7 +1891,8 @@ public class NotificationsController extends BaseController implements Notificat
             if (push != null) {
                 for (int a = 0; a < push.size(); a++) {
                     MessageObject messageObject = push.get(a);
-                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)) {
+                    if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)
+                            || AyuFilter.shouldSuppressNotification(messageObject)) {
                         continue;
                     }
                     int mid = messageObject.getId();
@@ -5593,7 +5598,7 @@ public class NotificationsController extends BaseController implements Notificat
                         FileLog.d("showExtraNotifications: ["+dialogId+"] continue; topic id is not equal: topicId=" + topicId + " messageTopicId=" + messageTopicId + "; selfId=" + getUserConfig().getClientUserId());
                         continue;
                     }
-                    if (AyuFilter.shouldHideIgnoredBlockedMessages() && AyuFilter.isIgnoredBlockedMessage(messageObject)) {
+                    if (AyuFilter.shouldSuppressNotification(messageObject)) {
                         continue;
                     }
                     String message = getShortStringForMessage(messageObject, senderName, preview);
