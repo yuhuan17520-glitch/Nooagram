@@ -1,5 +1,5 @@
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class SettingsDeepLinkProbe {
     private SettingsDeepLinkProbe() {
@@ -37,6 +37,27 @@ public final class SettingsDeepLinkProbe {
             require("customSavePath=Archive".equals(
                     com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastImport),
                     "Legacy download link lost its value");
+        }
+
+        for (var entry : Map.of(
+                "ghostmode", "com.radolyn.ayugram.settings.GhostModeActivity",
+                "ayuspy", "com.radolyn.ayugram.settings.NekoAyuSpySettingsActivity",
+                "regexfilters", "tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity").entrySet()) {
+            for (String value : new String[]{null, "3"}) {
+                callback = new SettingsHelperProbe.TestCallback();
+                com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastImport = null;
+                com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastScroll = null;
+                SettingsHelperProbe.processDeepLink(null,
+                        new UriStub(List.of("nasettings", entry.getKey()), "probeRow", value),
+                        callback, () -> { throw new AssertionError("Missing settings route: " + entry.getKey()); });
+                require(callback.fragment != null && callback.fragment.getClass().getName().equals(entry.getValue()),
+                        "Settings link reached the wrong page: " + entry.getKey());
+                org.telegram.messenger.AndroidUtilities.flush();
+                require(value == null
+                                ? "probeRow".equals(com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastScroll)
+                                : "probeRow=3".equals(com.radolyn.ayugram.settings.BaseNekoXSettingsActivity.lastImport),
+                        "Settings row was not dispatched: " + entry.getKey());
+            }
         }
 
         callback = new SettingsHelperProbe.TestCallback();

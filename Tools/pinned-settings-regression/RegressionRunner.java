@@ -463,7 +463,8 @@ public class RegressionRunner {
                 import org.telegram.messenger.*;
                 public class FilterNotificationProbe {
                     private static final Object cacheLock = new Object();
-                    private static Object filterModels, chatFilterEntries, excludedSharedFilterIdsByDialog;
+                    private static long cacheVersion, rulesVersion;
+                    private static Object filterModels, chatFilterEntries, excludedSharedFilterIdsByDialog, excludedDialogs;
                     public static class AyuFilterCache {
                         public static int clears;
                         public static void clearAll() { clears++; }
@@ -483,8 +484,11 @@ public class RegressionRunner {
                 import org.telegram.messenger.R;
                 import org.telegram.ui.ActionBar.BaseFragment;
                 import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
+                import com.radolyn.ayugram.settings.GhostModeActivity;
+                import com.radolyn.ayugram.settings.NekoAyuSpySettingsActivity;
                 import com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity;
                 import tw.nekomimi.nekogram.ChatHistoryActivity;
+                import tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity;
                 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
                 import tw.nekomimi.nekogram.settings.*;
                 import xyz.nextalone.nagram.network.NetworkLogActivity;
@@ -804,6 +808,9 @@ public class RegressionRunner {
                 }
                 """);
         stub("com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity", "public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {}");
+        stub("com.radolyn.ayugram.settings.GhostModeActivity", "public class GhostModeActivity extends BaseNekoXSettingsActivity {}");
+        stub("com.radolyn.ayugram.settings.NekoAyuSpySettingsActivity", "public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {}");
+        stub("tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity", "public class RegexFiltersSettingActivity extends com.radolyn.ayugram.settings.BaseNekoXSettingsActivity {}");
         stub("com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity", "public class NooagramDownloadSettingsActivity extends BaseNekoXSettingsActivity {}");
         stub("tw.nekomimi.nekogram.ChatHistoryActivity", "public class ChatHistoryActivity extends org.telegram.ui.ActionBar.BaseFragment {}");
         stub("xyz.nextalone.nagram.network.NetworkLogActivity", "public class NetworkLogActivity extends org.telegram.ui.ActionBar.BaseFragment {}");

@@ -86,8 +86,8 @@ public class TLRPC {
  public static class TL_messageEmpty extends Message {}
  public static class TL_messageActionChatMigrateTo {}
  public static class TL_messageActionChannelCreate {}
- public static class User {}
- public static class Chat { public boolean megagroup = true, channel = true; }
+ public static class User { public long id; }
+ public static class Chat { public long id; public boolean megagroup = true, channel = true; }
  public static class Dialog { public int top_message; }
  public static class InputPeer { public long dialog; }
  public static class TL_messages_getHistory { public InputPeer peer; public int limit, offset_id, add_offset; }
@@ -125,6 +125,7 @@ public class MessageObject {
  public final int currentAccount; public final TLRPC.Message messageOwner;
  public boolean skipAyuFiltering;
  public MessageObject(int account, TLRPC.Message message, boolean layout, boolean media) { currentAccount = account; messageOwner = message; }
+ public MessageObject(int account, TLRPC.Message message, java.util.AbstractMap<Long, TLRPC.User> users, java.util.AbstractMap<Long, TLRPC.Chat> chats, boolean layout, boolean media) { this(account, message, layout, media); }
  public int getId() { return messageOwner.id; }
  public long getDialogId() { return messageOwner.dialog_id; }
  public long getGroupId() { return messageOwner.grouped_id; }
@@ -248,8 +249,13 @@ import java.util.*;
 import org.telegram.messenger.MessageObject;
 public class AyuFilter {
  public static final Set<Integer> regex = new HashSet<>(), blocked = new HashSet<>();
- public static boolean hideRegex = true, hideBlocked = true;
+ public static boolean hideRegex = true, hideBlocked = true, maskRegex, loaded = true;
+ public static long rulesVersion;
  public static boolean shouldHideFilteredMessages() { return hideRegex; }
+ public static boolean shouldMaskFilteredMessages() { return maskRegex; }
+ public static boolean isLoaded() { return loaded; }
+ public static long getRulesVersion() { return rulesVersion; }
+ public static void preloadAsync(Runnable onLoaded) { loaded = true; org.telegram.messenger.AndroidUtilities.runOnUIThread(onLoaded); }
  public static boolean shouldHideIgnoredBlockedMessages() { return hideBlocked; }
  public static boolean isFiltered(MessageObject message, MessageObject.GroupedMessages group) {
   if (message.skipAyuFiltering) return false;
@@ -271,6 +277,7 @@ public class DialogCell {
  public long getDialogId() { return dialog; }
  public int getCurrentAccount() { return account; }
  public boolean isAttachedToWindow() { return attached; }
+ void onFilterRulesLoaded() { refreshFilteredPreview(); }
  public void refreshFilteredPreview() {
   refreshes++;
   int visibility = NooagramDialogPreviewFilter.getVisibility(account, dialog, source);

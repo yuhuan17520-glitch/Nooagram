@@ -14,6 +14,8 @@ controller caches, persisted self profiles, new photos, account switches, and
 missing users. It checks that the image receiver uses the requested account and
 that the fallback drawable is initialized. The settings-link probe also checks
 the shared download page and links from the former AyuMoments/general rows.
+It also verifies the `ghostmode`, `ayuspy`, and `regexfilters` routes resolve to
+their respective pages and dispatch both row navigation and value imports.
 
 The collapsed-stories title probe executes the production placement method with
 centering enabled and disabled, an emoji status, a subtitle, long text, and a
@@ -62,6 +64,10 @@ encoding/decoding API pairing are source checks. These do not simulate Android
 view rendering, disk durability, or execute Android's URI implementation.
 
 ## Review Result
+
+2026-10-31: revalidated against the updated production APIs with JDK 21:
+**30 passed, 0 failed**, plus PASS results for the pinned-menu, profile-avatar,
+and collapsed-stories probes; exit code 0.
 
 2026-10-23: all 30 probes passed, including the color picker, AyuMoments deep
 link, custom-settings process restoration, and home branding checks.

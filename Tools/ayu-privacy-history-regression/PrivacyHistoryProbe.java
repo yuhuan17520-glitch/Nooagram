@@ -24,6 +24,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_account;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -33,7 +34,10 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -112,11 +116,29 @@ public class PrivacyHistoryProbe {
         var contents = new TLRPC.TL_messages_readMessageContents();
         contents.id.add(42);
         check(blocked(contents, 1), "R02 content read without peer leaked");
-        AyuGhostPreferences.reads.put(70L, AyuGhostPreferences.TYPE_FORCE_ALLOW);
+        AyuGhostPreferences.setReadException(1, 70L, AyuGhostPreferences.TYPE_FORCE_ALLOW);
         check(!blocked(read(70), 1), "explicit allow exception must still work");
-        AyuGhostPreferences.reads.put(70L, AyuGhostPreferences.TYPE_FORCE_BLOCK);
+        AyuGhostConfig.setSendReadMessagePackets(0, false);
+        check(blocked(read(70), 0), "R02 account 1 read allow leaked to account 0");
+        AyuGhostConfig.setSendReadMessagePackets(0, true);
+        AyuGhostPreferences.setReadException(0, 70L, AyuGhostPreferences.TYPE_FORCE_BLOCK);
         check(blocked(read(70), 0), "explicit block exception must still work");
-        AyuGhostPreferences.reads.clear();
+        check(!blocked(read(70), 1), "R02 account 0 read block overrode account 1 allow");
+        AyuGhostPreferences.setReadException(0, 70L, AyuGhostPreferences.TYPE_DEFAULT);
+        AyuGhostPreferences.setReadException(1, 70L, AyuGhostPreferences.TYPE_DEFAULT);
+        var typing = new TLRPC.TL_messages_setTyping();
+        typing.peer = peer(70);
+        AyuGhostConfig.setSendUploadProgress(0, false);
+        AyuGhostConfig.setSendUploadProgress(1, false);
+        AyuGhostPreferences.setTypingException(1, 70L, AyuGhostPreferences.TYPE_FORCE_ALLOW);
+        check(!blocked(typing, 1), "R02 explicit typing allow exception must still work");
+        check(blocked(typing, 0), "R02 account 1 typing allow leaked to account 0");
+        AyuGhostConfig.setSendUploadProgress(0, true);
+        AyuGhostPreferences.setTypingException(0, 70L, AyuGhostPreferences.TYPE_FORCE_BLOCK);
+        check(blocked(typing, 0), "R02 explicit typing block exception must still work");
+        check(!blocked(typing, 1), "R02 account 0 typing block overrode account 1 allow");
+        AyuGhostPreferences.setTypingException(0, 70L, AyuGhostPreferences.TYPE_DEFAULT);
+        AyuGhostPreferences.setTypingException(1, 70L, AyuGhostPreferences.TYPE_DEFAULT);
         for (Method method : AyuState.class.getDeclaredMethods()) {
             check(!method.getName().equals("setAllowReadPacket") && !method.getName().equals("getAllowReadPacket"),
                     "obsolete process-global read API remains");
@@ -288,6 +310,15 @@ public class PrivacyHistoryProbe {
     }
 
     private static void deletePermitSynchronization() throws Exception {
+        AyuState.clearDeletePermits(0);
+        AyuState.clearDeletePermits(1);
+        AyuState.permitDeleteMessage(0, 70L, 7);
+        check(AyuState.isDeletePermitted(0, 70L, 7), "R24 account 0 permit was not stored");
+        check(!AyuState.isDeletePermitted(1, 70L, 7), "R24 account 0 permit leaked to account 1");
+        AyuState.permitDeleteMessage(1, 70L, 7);
+        AyuState.clearDeletePermits(0);
+        check(!AyuState.isDeletePermitted(0, 70L, 7), "R24 account 0 permits were not cleared");
+        check(AyuState.isDeletePermitted(1, 70L, 7), "R24 clearing account 0 removed account 1 permit");
         int threads = 8;
         int messagesPerWriter = 2000;
         var executor = Executors.newFixedThreadPool(threads);
@@ -299,8 +330,8 @@ public class PrivacyHistoryProbe {
                 start.await();
                 long dialogId = worker % 2 == 0 ? 70L : 99L;
                 for (int id = 1; id <= messagesPerWriter; id++) {
-                    AyuState.permitDeleteMessage(dialogId, id);
-                    AyuState.isDeletePermitted(dialogId, id);
+                    AyuState.permitDeleteMessage(0, dialogId, id);
+                    AyuState.isDeletePermitted(0, dialogId, id);
                 }
                 return null;
             }));
@@ -312,15 +343,18 @@ public class PrivacyHistoryProbe {
 
         for (long dialogId : List.of(70L, 99L)) {
             for (int id = 1; id <= messagesPerWriter; id++) {
-                check(AyuState.isDeletePermitted(dialogId, id), "R24 concurrent delete permit was lost");
+                check(AyuState.isDeletePermitted(0, dialogId, id), "R24 concurrent delete permit was lost");
             }
         }
-        AyuState.permitDeleteMessage(70L, 7);
-        AyuState.permitDeleteMessage(70L, 7);
-        AyuState.messageDeleted(70L, 7);
-        check(!AyuState.isDeletePermitted(70L, 7), "R24 duplicate delete permit survived message cleanup");
-        check(!AyuState.isDeletePermitted(70L, messagesPerWriter + 1), "R24 unrelated delete permit appeared");
-        passed("R24 delete permits stay consistent across concurrent queue-style producers and consumers");
+        AyuState.permitDeleteMessage(0, 70L, 7);
+        AyuState.permitDeleteMessage(0, 70L, 7);
+        AyuState.messageDeleted(0, 70L, 7);
+        check(!AyuState.isDeletePermitted(0, 70L, 7), "R24 duplicate delete permit survived message cleanup");
+        check(AyuState.isDeletePermitted(1, 70L, 7), "R24 message cleanup crossed account boundaries");
+        check(!AyuState.isDeletePermitted(0, 70L, messagesPerWriter + 1), "R24 unrelated delete permit appeared");
+        AyuState.clearDeletePermits(0);
+        AyuState.clearDeletePermits(1);
+        passed("R24 delete permits stay consistent under concurrency, isolate accounts, and clear only the requested account");
     }
 
     private static Migration migration(String fieldName) throws Exception {
@@ -400,18 +434,27 @@ public class PrivacyHistoryProbe {
         Path fixture = Files.createDirectories(root.resolve("attachment-import"));
         Path source = Files.writeString(fixture.resolve("history-attachment.bin"), "attachment payload");
         Path unavailable = Files.createFile(fixture.resolve("unavailable-sentinel"));
-        Method copyAttachment = AyuDatabaseMerger.class.getDeclaredMethod("copyAttachment", String.class);
+        Method copyAttachment = AyuDatabaseMerger.class.getDeclaredMethod("copyAttachment",
+                String.class, File.class, List.class, Map.class);
         copyAttachment.setAccessible(true);
+        List<File> copiedFiles = new ArrayList<>();
+        Map<String, String> importedPaths = new HashMap<>();
 
         AyuMessagesController.attachmentsPath = unavailable.toFile();
-        check(copyAttachment.invoke(null, source.toString()) == null,
+        check(copyAttachment.invoke(null, source.toString(), AyuMessagesController.getWritableAttachmentsDirectory(),
+                copiedFiles, importedPaths) == null,
                 "R24 attachment import bypassed an unavailable writable directory");
         check(Files.isRegularFile(unavailable), "R24 attachment import changed the unavailable sentinel");
 
         Path writable = Files.createDirectories(fixture.resolve("writable"));
         AyuMessagesController.attachmentsPath = writable.toFile();
-        String copiedPath = (String) copyAttachment.invoke(null, source.toString());
+        String copiedPath = (String) copyAttachment.invoke(null, source.toString(),
+                AyuMessagesController.getWritableAttachmentsDirectory(), copiedFiles, importedPaths);
         check(copiedPath != null, "R24 attachment import rejected a writable managed directory");
+        check(Path.of(copiedPath).getParent().equals(writable.toAbsolutePath()),
+                "R24 attachment import escaped the managed directory");
+        check(copiedFiles.equals(List.of(new File(copiedPath))) && copiedPath.equals(importedPaths.get(source.toString())),
+                "R24 attachment import did not record the owned copy");
         check(Files.readString(Path.of(copiedPath)).equals("attachment payload"),
                 "R24 attachment import corrupted the copied file");
         AyuMessagesController.attachmentsPath = Path.of("build/ayu-privacy-history-regression").toFile();

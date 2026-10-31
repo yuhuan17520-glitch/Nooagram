@@ -183,6 +183,12 @@ public class RegressionRunner {
                     private final java.util.Map<String, Object> values = new java.util.HashMap<>();
                     public boolean getBoolean(String key, boolean fallback) { return (boolean) values.getOrDefault(key, fallback); }
                     public int getInt(String key, int fallback) { return (int) values.getOrDefault(key, fallback); }
+                    public boolean contains(String key) { return values.containsKey(key); }
+                    public interface OnSharedPreferenceChangeListener {
+                        void onSharedPreferenceChanged(SharedPreferences preferences, String key);
+                    }
+                    private final java.util.List<OnSharedPreferenceChangeListener> listeners = new java.util.ArrayList<>();
+                    public void registerOnSharedPreferenceChangeListener(OnSharedPreferenceChangeListener listener) { listeners.add(listener); }
                     public Editor edit() { return new Editor(); }
                     public class Editor {
                         public Editor putBoolean(String key, boolean value) { values.put(key, value); return this; }
@@ -224,7 +230,12 @@ public class RegressionRunner {
                 }
                 """);
         stub("org.telegram.messenger.BaseController", "public class BaseController { protected final int currentAccount; public BaseController(int account) { currentAccount = account; } }");
-        stub("org.telegram.messenger.DialogObject", "public class DialogObject { public static int getEncryptedChatId(long id) { return (int) (id >> 32); } }");
+        stub("org.telegram.messenger.DialogObject", """
+                public class DialogObject {
+                    public static long makeEncryptedDialogId(long chatId) { return 0x4000000000000000L | (chatId & 0x00000000ffffffffL); }
+                    public static int getEncryptedChatId(long dialogId) { return (int) (dialogId & 0x00000000ffffffffL); }
+                }
+                """);
         stub("org.telegram.messenger.MessageObject", """
                 public class MessageObject {
                     public static int constructions;
@@ -324,12 +335,21 @@ public class RegressionRunner {
                 }
                 """);
         stub("com.radolyn.ayugram.AyuConstants", "public class AyuConstants { public static final String AYU_DATABASE = \"ayu-data\"; public static final int MESSAGE_EDITED_NOTIFICATION = 3; }");
+        stub("tw.nekomimi.nekogram.helpers.CloudSettingsHelper", """
+                public class CloudSettingsHelper {
+                    public static final android.content.SharedPreferences.OnSharedPreferenceChangeListener listener = (preferences, key) -> {};
+                }
+                """);
         stub("com.radolyn.ayugram.utils.AyuGhostPreferences", """
                 public class AyuGhostPreferences {
                     public static final int TYPE_DEFAULT=0, TYPE_FORCE_BLOCK=1, TYPE_FORCE_ALLOW=2;
-                    public static final java.util.Map<Long, Integer> reads = new java.util.HashMap<>();
-                    public static int getReadException(long id) { return reads.getOrDefault(id, 0); }
-                    public static int getTypingException(long id) { return 0; }
+                    private static final java.util.Map<String, Integer> reads = new java.util.HashMap<>();
+                    private static final java.util.Map<String, Integer> typing = new java.util.HashMap<>();
+                    private static String key(int account, long dialogId) { return account + "_" + dialogId; }
+                    public static void setReadException(int account, long dialogId, int type) { reads.put(key(account, dialogId), type); }
+                    public static int getReadException(int account, long dialogId) { return reads.getOrDefault(key(account, dialogId), TYPE_DEFAULT); }
+                    public static void setTypingException(int account, long dialogId, int type) { typing.put(key(account, dialogId), type); }
+                    public static int getTypingException(int account, long dialogId) { return typing.getOrDefault(key(account, dialogId), TYPE_DEFAULT); }
                     public static boolean shouldBlockWhenGlobalDisabled(int type) { return type != TYPE_FORCE_ALLOW; }
                     public static boolean shouldBlockWhenGlobalEnabled(int type) { return type == TYPE_FORCE_BLOCK; }
                 }
@@ -372,7 +392,7 @@ public class RegressionRunner {
                     public static class TL_messages_affectedMessages extends TLObject { public int pts, pts_count; }
                     public static class TL_messages_readEncryptedHistory extends TLObject { public TL_inputEncryptedChat peer; public int max_date; }
                     public static class TL_messages_setEncryptedTyping extends TLObject { public TL_inputEncryptedChat peer; }
-                    public static class TL_messages_markDialogUnread extends TLObject { public TLObject peer; }
+                    public static class TL_messages_markDialogUnread extends TLObject { public TLObject peer; public boolean unread; }
                 """);
         for (String name : List.of("messages_setTyping", "messages_readHistory", "messages_readDiscussion",
                 "messages_sendMessage", "messages_sendMedia", "messages_sendMultiMedia", "messages_forwardMessages",
@@ -535,6 +555,7 @@ public class RegressionRunner {
                     public static java.io.File getWritableAttachmentsDirectory() {
                         return getManagedAttachmentsDirectory();
                     }
+                    public static void registerOwnedAttachments(java.io.File directory, java.util.List<java.io.File> files) {}
                     public java.util.List<com.radolyn.ayugram.database.entities.EditedMessage> getRevisions(long userId, long dialogId, int messageId) {
                         revisionQueries++;
                         var revision = new com.radolyn.ayugram.database.entities.EditedMessage();

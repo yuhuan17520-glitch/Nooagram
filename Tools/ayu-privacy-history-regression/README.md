@@ -23,7 +23,7 @@ full history view is not compiled by this harness.
 Covered behaviors:
 
 - R02: conflicting foreground/background account policy, channel/content reads,
-  and force-allow/force-block exceptions.
+  and account-isolated force-allow/force-block read and typing exceptions.
 - R03: both wrapped manual-read overloads leave subsequent reads blocked for
   the same dialog, another dialog, and another account. Manual and queued
   read-after-send callbacks retain their original account after selection changes.
@@ -36,9 +36,10 @@ Covered behaviors:
   the storage task runs; `MessageObject` is constructed only on the UI binding
   path; only the latest snapshot is committed; destroyed pages drop late
   results; null attachment paths are accepted; concurrent delete permits stay
-  consistent; production v29->30->31 migrations retain `DeletedDialog` rows,
+  consistent and account-isolated, including message cleanup and clearing one
+  account without removing another's permits; production v29->30->31 migrations retain `DeletedDialog` rows,
   indexes, and schema; attachment import uses only the writable managed
-  directory and preserves its unavailable failure path.
+  directory, records copied-file ownership, and preserves its unavailable failure path.
 - R22: actual file-copy errors on the first backup file and after a partial
   backup, unchanged live database/WAL bytes, reopened DAO access, validation
   failure rollback, and successful replacement.
@@ -47,6 +48,8 @@ Covered behaviors:
   rows; repeat import; and older source schemas missing target columns.
 
 Recorded result on 2026-10-23: **13 cases, 4327 assertions passed**.
+Revalidated against the updated production APIs on 2026-10-31 with JDK 21:
+**13 cases, 4342 assertions passed**, exit code 0.
 
 The Room, notification, network, and worker scheduling dependencies are doubles;
 these checks do not claim Android lifecycle, native SQLite/Room migration, real
