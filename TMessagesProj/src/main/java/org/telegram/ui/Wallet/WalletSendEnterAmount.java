@@ -55,6 +55,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_wallet;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -95,6 +96,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+
+import xyz.nextalone.nagram.helper.MessageHelper;
 
 public class WalletSendEnterAmount extends UniversalFragment implements NotificationCenter.NotificationCenterDelegate {
 
@@ -916,6 +919,11 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
     }
 
     public WalletSendEnterAmount(String address) {
+        this(UserConfig.selectedAccount, address);
+    }
+
+    public WalletSendEnterAmount(int account, String address) {
+        setCurrentAccount(account);
         this.recipientUser = null;
         this.recipientAddress = address;
         loadFee();
@@ -977,6 +985,7 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
         otherItem.setContentDescription(getString(R.string.AccDescrMoreOptions));
         otherItem.addSubItem(2, R.drawable.msg_addbot, getString(R.string.WalletDepositFunds));
         otherItem.addSubItem(3, R.drawable.menu_comments, getString(R.string.WalletAddComment));
+        otherItem.addSubItem(100, R.drawable.menu_info, getString(R.string.Info));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -986,6 +995,8 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
                     WalletActivity.openWalletQRAlert(getContext(), currentAccount, getResourceProvider());
                 } else if (id == 3) {
                     openAddCommentAlert();
+                } else if (id == 100) {
+                    MessageHelper.INSTANCE.openWalletInExplorer(getContext(), currentAccount, recipientAddress);
                 }
             }
         });
@@ -1889,7 +1900,7 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
         showError(!TextUtils.isEmpty(amountEdit.getText()) && amount > balance, true);
 
         final String amountText = getGramsText();
-        sendButton.setLoading(loadingRecipient);
+        sendButton.setLoading(loadingRecipient || sendingToUser);
         sendButton.setText(TextUtils.isEmpty(amountText) ? LocaleController.getString(R.string.WalletSendGrams) : LocaleController.formatSpannable(R.string.WalletSendAmount, GramWallet.formatGramsWithUnit(amountText)), true);
         sendButton.setEnabled(valid);
         updateBalance();
@@ -1903,6 +1914,7 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
     }
 
     private int shakeDp = 6;
+    private boolean sendingToUser;
     private TL_wallet.walletTransaction queuedTransaction;
     private WalletActivity sendDestination;
     private WalletSendTransition sendTransition;
@@ -1961,12 +1973,17 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
         sendButton.setLoading(true);
         queuedTransaction = null;
         if (recipientUser != null && TextUtils.isEmpty(recipientDomain)) {
+            // Queuing publishes wallet updates before navigation. Keep the spinner
+            // through those updates and the transition's asynchronous readiness wait.
+            sendingToUser = true;
             wallet.send(recipientUser, recipientAddress, amount, comment, comment_encrypted ? getPublicKey() : null, null, error2 -> {
                 if ("PASSCODE_FAILED".equalsIgnoreCase(error2)) {
+                    sendingToUser = false;
                     sendButton.setLoading(false);
                     return;
                 }
                 if (error2 != null) {
+                    sendingToUser = false;
                     sendButton.setLoading(false);
                     BulletinFactory.of(WalletSendEnterAmount.this).showForError(error2);
                     return;
@@ -2144,7 +2161,7 @@ public class WalletSendEnterAmount extends UniversalFragment implements Notifica
             return;
         }
         final GramWallet wallet = GramWallet.getInstance(currentAccount);
-        balanceView.setText(LocaleController.formatSpannable(R.string.WalletBalanceAmount, GramWallet.formatGramsWithUnit(wallet.getBalance(), wallet.getBalance() < 1_000_000_000L)));
+        balanceView.setText(LocaleController.formatSpannable(R.string.WalletBalanceAmount, GramWallet.formatGramsBalanceWithUnit(wallet.getBalance(), false)));
         hasEnteredAmount |= amountEdit != null && !TextUtils.isEmpty(amountEdit.getText());
         final boolean showFee = !(wallet.isGaslessAvailable() && !GramWallet.addressEquals(wallet.getAddress(), getAddress())) && hasEnteredAmount;
         if (showFee) {

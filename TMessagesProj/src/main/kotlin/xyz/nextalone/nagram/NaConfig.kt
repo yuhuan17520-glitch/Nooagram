@@ -1473,6 +1473,30 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val adminActionsOnAvatarLongPress =
+        addConfig(
+            "AdminActionsOnAvatarLongPress",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val adminActionsOnMentionLongPress =
+        addConfig(
+            "AdminActionsOnMentionLongPress",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val deleteMessagesWhenRemovingMembers =
+        addConfig(
+            "DeleteMessagesWhenRemovingMembers",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val stickerShape =
+        addConfig(
+            "StickerShape",
+            ConfigItem.configTypeInt,
+            0
+        )
 
     private fun addConfig(
         k: String,

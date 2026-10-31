@@ -1,6 +1,8 @@
 import io.sentry.android.gradle.extensions.InstrumentationFeature
 import io.sentry.android.gradle.instrumentation.logcat.LogcatLevel
 
+import java.nio.file.Paths
+
 apply plugin: "com.android.application"
 apply plugin: "kotlin-android"
 apply plugin: "org.jetbrains.kotlin.plugin.serialization"
@@ -9,6 +11,7 @@ apply plugin: "io.objectbox"
 
 apply plugin: 'org.telegram.build-plugin'
 apply plugin: 'org.telegram.build-app-plugin'
+apply plugin: 'xyz.nagram.auto-patch-plugin'
 apply plugin: 'idea'
 
 idea {
@@ -139,6 +142,8 @@ if (!gradle.startParameter.taskNames.isEmpty()) {
 def nativeTarget = System.getenv("NATIVE_TARGET")
 if (nativeTarget == null) nativeTarget = ""
 
+def isWindows = System.getProperties().getProperty("os.name").toUpperCase().indexOf("WINDOWS") != -1
+
 android {
     compileSdkVersion 36
     buildToolsVersion '36.0.0'
@@ -161,17 +166,11 @@ android {
             java {
                 srcDirs "src/main/java"
             }
-            jniLibs {
-                srcDir "src/main/libs"
-            }
         }
 
         release {
             java {
                 srcDirs "src/main/java"
-            }
-            jniLibs {
-                srcDir "src/main/libs"
             }
         }
     }
@@ -244,8 +243,18 @@ android {
         externalNativeBuild {
             cmake {
                 version '3.22.1'
-                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-21' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
+                arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-23' //, '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON'
                 arguments "-DNOOAGRAM_EXPECTED_SIGNER_SHA1=${nativeSignerSha1}", "-DCMAKE_OBJECT_PATH_MAX=200"
+                System.getenv('PATH').split(File.pathSeparator).any { path ->
+                    var file = Paths.get("${path}${File.separator}ccache${if (isWindows) ".exe" else ""}").toFile()
+                    if (file.exists()) {
+                        println("Using ccache ${file.getAbsolutePath()} isWindows ${isWindows}")
+                        arguments += "-DCMAKE_C_COMPILER_LAUNCHER=${file.getAbsolutePath()}"
+                        arguments += "-DCMAKE_CXX_COMPILER_LAUNCHER=${file.getAbsolutePath()}"
+                        arguments += "-DANDROID_CCACHE=${file.getAbsolutePath()}"
+                        return true
+                    }
+                }
                 targets 'tmessages.49'
             }
         }
@@ -349,10 +358,6 @@ android {
             excludes += ['/fabric/**', '/META-INF/*.version', '/META-INF/*.kotlin_module', '/META-INF/native-image/**', '/builddef.lst', '/*.txt', '/DebugProbesKt.bin', '/okhttp3/internal/publicsuffix/NOTICE']
             excludes += ["META-INF/INDEX.LIST"]  // hutool
         }
-
-        def lib = "libtmessages.*.so"
-        pickFirst "lib/armeabi-v7a/$lib"
-        pickFirst "lib/arm64-v8a/$lib"
     }
 
     buildFeatures {
@@ -638,7 +643,7 @@ sentry {
         // as Gradle will resolve it to the latest version.
         //
         // Defaults to the latest published Sentry version.
-        sentryVersion = '8.58.0'
+        sentryVersion = '8.61.0'
     }
 
     // Disables or enables dependencies metadata reporting for Sentry.

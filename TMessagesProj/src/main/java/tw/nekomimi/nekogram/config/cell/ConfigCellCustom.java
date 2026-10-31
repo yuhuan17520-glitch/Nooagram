@@ -2,6 +2,8 @@ package tw.nekomimi.nekogram.config.cell;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import tw.nekomimi.nekogram.config.ConfigItem;
+
 public class ConfigCellCustom extends AbstractConfigCell {
 
     public static final int CUSTOM_ITEM_StickerSize = 998;
@@ -11,13 +13,26 @@ public class ConfigCellCustom extends AbstractConfigCell {
     public static final int CUSTOM_ITEM_LiquidGlassIntensity = 994;
     public static final int CUSTOM_ITEM_MessagesPreview = 993;
     public static final int CUSTOM_ITEM_InputAnimationStrength = 992;
+    public static final int CUSTOM_ITEM_FilterTabsPreview = 991;
+    public static final int CUSTOM_ITEM_StickerShape = 990;
+    public static final int CUSTOM_ITEM_DoubleTap = 989;
 
     public final int type;
     public boolean enabled;
     private final String key;
+    private final ConfigItem bindConfig;
 
     public ConfigCellCustom(String key, int type, boolean enabled) {
+        this(key, null, type, enabled);
+    }
+
+    public ConfigCellCustom(ConfigItem bindConfig, int type, boolean enabled) {
+        this(bindConfig.getKey(), bindConfig, type, enabled);
+    }
+
+    public ConfigCellCustom(String key, ConfigItem bindConfig, int type, boolean enabled) {
         this.key = key;
+        this.bindConfig = bindConfig;
         this.type = type;
         this.enabled = enabled;
     }
@@ -30,6 +45,10 @@ public class ConfigCellCustom extends AbstractConfigCell {
         return this.key;
     }
 
+    public ConfigItem getBindConfig() {
+        return bindConfig;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -40,5 +59,10 @@ public class ConfigCellCustom extends AbstractConfigCell {
 
     public void onBindViewHolder(RecyclerView.ViewHolder holder) {
         // Not Used
+    }
+
+    public void runCallback(Object newValue) {
+        if (bindConfig == null || cellGroup == null) return;
+        cellGroup.runCallback(bindConfig.getKey(), newValue);
     }
 }
