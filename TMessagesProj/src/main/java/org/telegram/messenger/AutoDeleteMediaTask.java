@@ -4,11 +4,14 @@ import static org.telegram.messenger.CacheByChatsController.KEEP_MEDIA_TYPE_STOR
 
 import android.util.SparseArray;
 
+import com.radolyn.ayugram.utils.NooagramMediaStorage;
 
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -67,6 +70,7 @@ public class AutoDeleteMediaTask {
             //if (!allKeepMediaTypesForever) {
                 //long currentTime = time - 60 * 60 * 24 * days;
                 final SparseArray<File> paths = ImageLoader.getInstance().createMediaPaths();
+                Set<String> scannedFiles = new HashSet<>();
                 for (int a = 0; a < paths.size(); a++) {
                     if (allKeepMediaTypesForever && (paths.keyAt(a) == FileLoader.MEDIA_DIR_AUDIO || paths.keyAt(a) == FileLoader.MEDIA_DIR_DOCUMENT)) {
                         continue;
@@ -77,13 +81,14 @@ public class AutoDeleteMediaTask {
                     }
                     File dir = paths.valueAt(a);
                     try {
-                        File[] files = dir.listFiles();
+                        File[] files = listCacheFiles(dir);
                         ArrayList<CacheByChatsController.KeepMediaFile> keepMediaFiles = new ArrayList<>();
                         if (files != null) {
                             for (int i = 0; i < files.length; i++) {
                                 if (files[i].isDirectory() || usingFilePaths.contains(files[i].getAbsolutePath())) {
                                     continue;
                                 }
+                                if (!scannedFiles.add(files[i].getCanonicalPath())) continue;
                                 keepMediaFiles.add(new CacheByChatsController.KeepMediaFile(files[i]));
                             }
                         }
@@ -148,13 +153,18 @@ public class AutoDeleteMediaTask {
                     maxCacheSize = maxCacheGb * 1024L * 1024L * 1000L;
                 }
                 long totalSize = 0;
+                File[] currentPaths = new File[paths.size()];
                 for (int a = 0; a < paths.size(); a++) {
-                    totalSize += Utilities.getDirSize(paths.valueAt(a).getAbsolutePath(), 0, true);
+                    currentPaths[a] = paths.valueAt(a);
+                }
+                List<File> cleanupPaths = NooagramMediaStorage.cleanupDirectories(currentPaths);
+                for (File path : cleanupPaths) {
+                    totalSize += path.isFile() ? path.length()
+                            : Utilities.getDirSize(path.getAbsolutePath(), 0, true);
                 }
                 if (totalSize > maxCacheSize) {
                     ArrayList<FileInfoInternal> allFiles = new ArrayList<>();
-                    for (int a = 0; a < paths.size(); a++) {
-                        File dir = paths.valueAt(a);
+                    for (File dir : cleanupPaths) {
                         fillFilesRecursive(dir, allFiles);
                     }
                     for (int i = 0; i < cacheByChatsControllers.size(); i++) {
@@ -214,11 +224,24 @@ public class AutoDeleteMediaTask {
         });
     }
 
+    private static File[] listCacheFiles(File directory) {
+        ArrayList<File> files = new ArrayList<>();
+        for (File path : NooagramMediaStorage.cleanupDirectories(directory)) {
+            if (path.isFile()) {
+                files.add(path);
+            } else {
+                File[] children = path.listFiles();
+                if (children != null) Collections.addAll(files, children);
+            }
+        }
+        return files.toArray(new File[0]);
+    }
+
     private static void fillFilesRecursive(final File fromFolder, ArrayList<FileInfoInternal> fileInfoList) {
         if (fromFolder == null) {
             return;
         }
-        File[] files = fromFolder.listFiles();
+        File[] files = fromFolder.isFile() ? new File[]{fromFolder} : fromFolder.listFiles();
         if (files == null) {
             return;
         }

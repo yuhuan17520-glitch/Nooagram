@@ -194,6 +194,101 @@ public class NooagramCanonicalDownloadTest {
     }
 
     @Test
+    public void sharedSourceIsRetainedAfterCanonicalCommitAndMappedRecovery() throws Exception {
+        File source = writeSource("shared account bytes");
+        FilePathDatabase.PathData pathData = new FilePathDatabase.PathData(520, 2, 3);
+        FakePathDatabase database = new FakePathDatabase();
+        database.sourceReferenced = true;
+        NooagramCanonicalDownload.Publication publication = NooagramCanonicalDownload.publish(
+                context, source, claim("shared.pdf"), null, 0, pathData, database);
+        assertEquals(publication.file, NooagramCanonicalDownload.commitAndRemoveSource(
+                source, publication, 0, pathData, database, null));
+        assertTrue(source.isFile());
+        assertTrue(publication.file.isFile());
+        assertFalse(context.getSharedPreferences("nooagram_canonical_recovery", Context.MODE_PRIVATE)
+                .contains("journal:0:520:2:3"));
+
+        FilePathDatabase.PathData recoveryData = new FilePathDatabase.PathData(521, 2, 3);
+        NooagramCanonicalDownload.Publication recovery = NooagramCanonicalDownload.publish(
+                context, source, claim("shared-recovery.pdf"), null, 0, recoveryData, database);
+        database.putPathBlocking(recoveryData.id, recoveryData.dc, recoveryData.type,
+                FilePathDatabase.FLAG_CANONICAL_DOWNLOAD, recovery.file.getAbsolutePath());
+        NooagramCanonicalDownload.recoverPending(context, database, 0);
+        assertTrue(source.isFile());
+        assertTrue(recovery.file.isFile());
+        assertFalse(context.getSharedPreferences("nooagram_canonical_recovery", Context.MODE_PRIVATE)
+                .contains("journal:0:521:2:3"));
+    }
+
+    @Test
+    public void missingSourceDoesNotLeaveRecoveryBlockingRetry() throws Exception {
+        File source = writeSource("removed source");
+        FilePathDatabase.PathData pathData = new FilePathDatabase.PathData(522, 2, 3);
+        FakePathDatabase database = new FakePathDatabase();
+        NooagramCanonicalDownload.Publication publication = NooagramCanonicalDownload.publish(
+                context, source, claim("missing-source.pdf"), null, 0, pathData, database);
+        assertTrue(source.delete());
+        NooagramCanonicalDownload.retryPendingForDocument(context, database, 0, pathData);
+        assertFalse(publication.file.exists());
+        assertNull(database.mappedPath);
+        assertFalse(context.getSharedPreferences("nooagram_canonical_recovery", Context.MODE_PRIVATE)
+                .contains("journal:0:522:2:3"));
+        File retrySource = writeSource("retry source");
+        assertTrue(NooagramCanonicalDownload.publish(context, retrySource,
+                claim("missing-source.pdf"), null, 0, pathData, database).file.isFile());
+    }
+
+    @Test
+    public void missingSourceAndInvalidMappedTargetUnblocksRetryWithoutDeletingPublicBytes() throws Exception {
+        File source = writeSource("original source bytes");
+        FilePathDatabase.PathData pathData = new FilePathDatabase.PathData(523, 2, 3);
+        FakePathDatabase database = new FakePathDatabase();
+        NooagramCanonicalDownload.Publication publication = NooagramCanonicalDownload.publish(
+                context, source, claim("unverifiable.pdf"), null, 0, pathData, database);
+        database.putPathBlocking(pathData.id, pathData.dc, pathData.type,
+                FilePathDatabase.FLAG_CANONICAL_DOWNLOAD, publication.file.getAbsolutePath());
+        assertTrue(source.delete());
+        java.nio.file.Files.write(publication.file.toPath(), new byte[]{1});
+        NooagramCanonicalDownload.retryPendingForDocument(context, database, 0, pathData);
+        assertTrue(publication.file.isFile());
+        assertNull(database.mappedPath);
+        assertFalse(context.getSharedPreferences("nooagram_canonical_recovery", Context.MODE_PRIVATE)
+                .contains("journal:0:523:2:3"));
+    }
+
+    @Test
+    @Config(sdk = 28, application = NooagramCanonicalDownloadTest.TestApplication.class)
+    public void legacyCancellationWithoutJournalRemovesOnlyTheCreatedTarget() throws Exception {
+        shadowOf(context).grantPermissions(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        File source = writeSource("partial legacy bytes");
+        File target = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "nooagram/partial-without-journal.pdf");
+        assertThrows(IOException.class, () -> NooagramCanonicalDownload.publish(context, source,
+                claim(target.getName()), target::isFile));
+        assertFalse(target.exists());
+        assertTrue(source.isFile());
+    }
+
+    @Test
+    public void configuredPathSegmentsKeepTheirLengthAndCompatibilityCharacters() {
+        String folder = "\u2460" + "a".repeat(70);
+        assertEquals("Download/" + folder + "/My Chat",
+                NooagramCanonicalDownload.relativeDownloadPath(folder + "/My Chat"));
+    }
+
+    @Test
+    public void unicodeFileNamesKeepExtensionsAndLeaveRoomForCollisionSuffixes() {
+        for (String stem : new String[]{"\u4e2d".repeat(100), "\ud83d\ude00".repeat(100), "a".repeat(300)}) {
+            String safe = NooagramCanonicalDownload.safeFileName(stem + ".mp3", 10);
+            assertTrue(safe.endsWith(".mp3"));
+            assertTrue(safe.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 248);
+            String collision = NooagramCanonicalDownload.numberedFileName(safe, 9999);
+            assertTrue(collision.endsWith(" (9999).mp3"));
+            assertTrue(collision.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 255);
+        }
+    }
+
+    @Test
     public void restartUsesActualMappingAndVerifiesPublishedBytesBeforeSourceCleanup()
             throws Exception {
         File source = writeSource("verified mapped source");
@@ -416,6 +511,16 @@ public class NooagramCanonicalDownloadTest {
     }
 
     @Test
+    public void providerWithADifferentFileStillRequiresContentVerification() throws Exception {
+        File source = writeSource("original bytes");
+        provider.readOverride = writeSource("modified bytes");
+        assertThrows(IOException.class, () -> NooagramCanonicalDownload.publish(
+                context, source, claim("different-provider.pdf"), null));
+        assertTrue(source.isFile());
+        assertEquals(0, provider.rowCount());
+    }
+
+    @Test
     public void filenameCollisionProducesNewNameWithoutOverwriting() throws Exception {
         provider.addPublished("Download/nooagram/", "report.pdf", "existing".getBytes("UTF-8"));
         File source = writeSource("new content");
@@ -515,6 +620,18 @@ public class NooagramCanonicalDownloadTest {
         assertTrue(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
         assertEquals(size, NooagramCanonicalDownload.mediaPhoto(message));
         assertEquals("101_7.jpg", NooagramCanonicalDownload.mediaFileName(message));
+        TLRPC.TL_photoSize hd = new TLRPC.TL_photoSize();
+        hd.type = "y";
+        hd.w = 2560;
+        hd.h = 1440;
+        hd.size = 160;
+        hd.location = new TLRPC.TL_fileLocationToBeDeprecated();
+        hd.location.volume_id = 102;
+        hd.location.local_id = 8;
+        photo.sizes.add(hd);
+        if (message.photoThumbs != null && message.photoThumbs != photo.sizes) message.photoThumbs.add(hd);
+        assertEquals(hd, NooagramCanonicalDownload.mediaPhoto(message));
+        assertEquals("102_8.jpg", NooagramCanonicalDownload.mediaFileName(message));
         photo.sizes.clear();
         if (message.photoThumbs != null) message.photoThumbs.clear();
         assertFalse(NooagramCanonicalDownload.isEligibleMedia(message, true, false));
@@ -630,6 +747,7 @@ public class NooagramCanonicalDownloadTest {
         private long nextId = 1;
         boolean failPublish;
         boolean returnNullForItemQuery;
+        File readOverride;
 
         FakeMediaProvider(File root) {
             this.root = root;
@@ -726,6 +844,7 @@ public class NooagramCanonicalDownloadTest {
                 throw new FileNotFoundException("No row");
             }
             File target = row.pending ? row.pendingFile : row.finalFile;
+            if (!mode.contains("w") && readOverride != null) target = readOverride;
             target.getParentFile().mkdirs();
             int flags = mode.contains("w")
                     ? ParcelFileDescriptor.MODE_CREATE | ParcelFileDescriptor.MODE_TRUNCATE
@@ -811,10 +930,16 @@ public class NooagramCanonicalDownloadTest {
         int mappedFlags;
         boolean failRemoval;
         boolean failSave;
+        boolean sourceReferenced;
         Runnable onSave;
 
         FakePathDatabase() {
             super(0);
+        }
+
+        @Override
+        public boolean hasAnotherRefOnFileAcrossAccounts(String path) {
+            return sourceReferenced;
         }
 
         @Override

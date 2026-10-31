@@ -9,6 +9,7 @@ import com.radolyn.ayugram.database.entities.DeletedMessageReaction;
 import com.radolyn.ayugram.messages.AyuMessagesController;
 import com.radolyn.ayugram.utils.AyuMessageUtils;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MediaDataController;
@@ -16,6 +17,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
 
 public abstract class AyuHistoryHook {
@@ -505,6 +508,130 @@ public abstract class AyuHistoryHook {
         } catch (Exception e) {
             FileLog.e("AyuHistoryHook.findDeletedReply", e);
             return null;
+        }
+    }
+
+    static long replySourceDialogId(TLRPC.Message message) {
+        // Network reply loading may prefill dialog_id with the owner's dialog.
+        if (message.peer_id != null) {
+            if (message.peer_id.channel_id != 0) return -message.peer_id.channel_id;
+            if (message.peer_id.chat_id != 0) return -message.peer_id.chat_id;
+        }
+        return MessageObject.getDialogId(message);
+    }
+
+    static final class ReplyCacheKey {
+        final int account;
+        final long userId;
+        final long dialogId;
+        final int messageId;
+
+        ReplyCacheKey(int account, long userId, long dialogId, int messageId) {
+            this.account = account;
+            this.userId = userId;
+            this.dialogId = dialogId;
+            this.messageId = messageId;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ReplyCacheKey)) return false;
+            ReplyCacheKey other = (ReplyCacheKey) o;
+            return account == other.account && userId == other.userId
+                    && dialogId == other.dialogId && messageId == other.messageId;
+        }
+
+        @Override
+        public int hashCode() {
+            return ((account * 31 + Long.hashCode(userId)) * 31 + Long.hashCode(dialogId)) * 31 + messageId;
+        }
+    }
+
+    /** Owned by one fragment; null values cache archive misses for its lifetime. */
+    public static final class ReplyCache {
+        private final Map<ReplyCacheKey, MessageObject> replies = new HashMap<>();
+        private final Set<ReplyCacheKey> pending = new HashSet<>();
+
+        private static boolean needsReply(MessageObject message) {
+            return message != null && message.messageOwner != null && message.getReplyMsgId() != 0
+                    && (message.replyMessageObject == null
+                    || message.replyMessageObject.messageOwner instanceof TLRPC.TL_messageEmpty);
+        }
+
+        private static ReplyCacheKey targetKey(int account, long userId, MessageObject message) {
+            long dialogId = MessageObject.getReplyToDialogId(message.messageOwner);
+            if (dialogId == 0) dialogId = message.getDialogId();
+            return new ReplyCacheKey(account, userId, dialogId, message.getReplyMsgId());
+        }
+
+        public void loadMissing(int account, long userId, List<MessageObject> messages,
+                                List<MessageObject> loaded, BooleanSupplier isAlive, Runnable onLoaded) {
+            if (!isAlive.getAsBoolean()) return;
+            for (MessageObject reply : loaded) {
+                if (reply == null || reply.messageOwner == null || reply.messageOwner instanceof TLRPC.TL_messageEmpty) continue;
+                replies.put(new ReplyCacheKey(account, userId, replySourceDialogId(reply.messageOwner), reply.getId()), reply);
+            }
+            Map<Long, ArrayList<Integer>> byDialog = new HashMap<>();
+            Set<ReplyCacheKey> requested = new HashSet<>();
+            for (MessageObject message : messages) {
+                if (!needsReply(message)) continue;
+                ReplyCacheKey key = targetKey(account, userId, message);
+                if (replies.containsKey(key) || !pending.add(key)) continue;
+                requested.add(key);
+                byDialog.computeIfAbsent(key.dialogId, k -> new ArrayList<>()).add(key.messageId);
+            }
+            if (requested.isEmpty()) {
+                onLoaded.run();
+                return;
+            }
+            Utilities.globalQueue.postRunnable(() -> {
+                Map<ReplyCacheKey, MessageObject> found = new HashMap<>();
+                for (Map.Entry<Long, ArrayList<Integer>> entry : byDialog.entrySet()) {
+                    try {
+                        List<DeletedMessageFull> archived = AyuMessagesController.getInstance()
+                                .getMessagesByIds(userId, entry.getKey(), entry.getValue());
+                        Map<ReplyCacheKey, MessageObject> dialogReplies = new HashMap<>();
+                        for (int id : entry.getValue()) {
+                            dialogReplies.put(new ReplyCacheKey(account, userId, entry.getKey(), id), null);
+                        }
+                        for (DeletedMessageFull full : archived) {
+                            if (!hasContent(full)) continue;
+                            TLRPC.TL_message target = map(full, account);
+                            ReplyCacheKey key = new ReplyCacheKey(account, userId, replySourceDialogId(target), target.id);
+                            if (requested.contains(key)) {
+                                dialogReplies.put(key, new MessageObject(account, target, false, false));
+                            }
+                        }
+                        found.putAll(dialogReplies);
+                    } catch (Exception e) {
+                        FileLog.e("AyuHistoryHook.ReplyCache.loadMissing", e);
+                    }
+                }
+                AndroidUtilities.runOnUIThread(() -> {
+                    pending.removeAll(requested);
+                    if (!isAlive.getAsBoolean()) return;
+                    for (Map.Entry<ReplyCacheKey, MessageObject> entry : found.entrySet()) {
+                        // A newer network result takes precedence over an archive lookup.
+                        if (!replies.containsKey(entry.getKey())) replies.put(entry.getKey(), entry.getValue());
+                    }
+                    onLoaded.run();
+                });
+            });
+        }
+
+        public ArrayList<MessageObject> apply(int account, long userId, List<MessageObject> messages) {
+            ArrayList<MessageObject> updated = new ArrayList<>();
+            for (MessageObject message : messages) {
+                if (!needsReply(message)) continue;
+                ReplyCacheKey key = targetKey(account, userId, message);
+                MessageObject reply = replies.get(key);
+                if (reply == null || reply.messageOwner == null || reply.getId() != key.messageId
+                        || replySourceDialogId(reply.messageOwner) != key.dialogId) continue;
+                message.replyMessageObject = reply;
+                updated.add(message);
+            }
+            return updated;
         }
     }
 

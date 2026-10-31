@@ -1,6 +1,7 @@
 package tw.nekomimi.nekogram.filters;
 
 import com.radolyn.ayugram.AyuConfig;
+import com.radolyn.ayugram.AyuOptions;
 
 import org.junit.After;
 import org.junit.Before;
@@ -17,6 +18,8 @@ import org.telegram.tgnet.TLRPC;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Arrays;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -28,6 +31,7 @@ public class AyuFilterNotificationTest {
 
     private boolean previousEnabled;
     private boolean previousMask;
+    private boolean previousIgnoreBlocked;
     private TLRPC.User previousUser;
     private int previousLoginTime;
     private Field currentUser;
@@ -37,6 +41,8 @@ public class AyuFilterNotificationTest {
         ApplicationLoader.applicationContext = RuntimeEnvironment.getApplication();
         previousEnabled = AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool();
         previousMask = AyuConfig.INSTANCE.getRegexFiltersMaskMessages().Bool();
+        previousIgnoreBlocked = AyuOptions.ignoreBlocked.Bool();
+        AyuOptions.ignoreBlocked.setConfigBool(false);
         currentUser = UserConfig.class.getDeclaredField("currentUser");
         currentUser.setAccessible(true);
         UserConfig config = UserConfig.getInstance(0);
@@ -72,9 +78,12 @@ public class AyuFilterNotificationTest {
     public void tearDown() throws Exception {
         AyuConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(previousEnabled);
         AyuConfig.INSTANCE.getRegexFiltersMaskMessages().setConfigBool(previousMask);
+        AyuOptions.ignoreBlocked.setConfigBool(previousIgnoreBlocked);
         setStatic("filterModels", null);
         setStatic("chatFilterEntries", null);
         setStatic("excludedSharedFilterIdsByDialog", null);
+        setStatic("customFilteredUsers", null);
+        setStatic("customFilteredUsersData", null);
         AyuFilterCache.clearAll();
         currentUser.set(UserConfig.getInstance(0), previousUser);
         UserConfig.getInstance(0).loginTime = previousLoginTime;
@@ -98,7 +107,7 @@ public class AyuFilterNotificationTest {
     }
 
     @Test
-    public void disabledFiltersDoNotSuppress() throws Exception {
+    public void disabledRegexFiltersDoNotSuppressUnblockedMessages() throws Exception {
         AyuConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(false);
         installFilters();
         assertFalse(AyuFilter.shouldSuppressNotification(message(1, "free vpn here", false)));
@@ -117,6 +126,70 @@ public class AyuFilterNotificationTest {
         assertTrue(AyuFilter.shouldSuppressNotification(message(7, "free vpn here", true)));
         // The real message with the same id must be evaluated on its own text.
         assertFalse(AyuFilter.isFiltered(message(7, "hello", false), null));
+    }
+
+    @Test
+    public void ignoredBlockedSenderIsSuppressedWithRegexDisabledInEitherMode() throws Exception {
+        AyuOptions.ignoreBlocked.setConfigBool(true);
+        AyuConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(false);
+        for (boolean mask : new boolean[]{false, true}) {
+            AyuConfig.INSTANCE.getRegexFiltersMaskMessages().setConfigBool(mask);
+            // Custom blocked users take the same ignoreBlocked path without native MessagesController init.
+            setStatic("customFilteredUsers", new HashSet<>(Arrays.asList(12L)));
+            setStatic("customFilteredUsersData", new HashMap<Long, AyuFilter.CustomFilteredUser>());
+            MessageObject blocked = message(8, "hello", false);
+            TLRPC.TL_peerUser sender = new TLRPC.TL_peerUser();
+            sender.user_id = 12L;
+            blocked.messageOwner.from_id = sender;
+            assertTrue(AyuFilter.shouldSuppressNotification(blocked));
+        }
+    }
+
+    @Test
+    public void pushMatchesBodyWithoutSenderAndChatNames() {
+        MessageObject push = message(8, "hello", true);
+        push.messageText = "VPN sender in VPN chat: hello";
+        push.caption = "VPN formatted preview";
+        assertFalse(AyuFilter.shouldSuppressNotification(push));
+        push.messageOwner.message = "VPN";
+        push.messageText = "sender: VPN";
+        assertTrue(AyuFilter.shouldSuppressNotification(push));
+    }
+
+    @Test
+    public void anchoredPushRuleMatchesBodyWithoutTheNotificationPrefix() throws Exception {
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getRegexFilters();
+        filters.get(0).regex = "^VPN$";
+        filters.get(0).buildPattern();
+        setStatic("filterModels", filters);
+        MessageObject push = message(9, "VPN", true);
+        push.messageText = "sender in chat: VPN";
+        assertTrue(AyuFilter.shouldSuppressNotification(push));
+    }
+
+    @Test
+    public void matchingAlbumMemberSuppressesBatchSiblingsInEitherOrder() {
+        MessageObject caption = message(10, "VPN", false);
+        MessageObject sibling = message(11, "", false);
+        MessageObject otherDialog = message(12, "", false);
+        caption.messageOwner.grouped_id = sibling.messageOwner.grouped_id = otherDialog.messageOwner.grouped_id = 99L;
+        otherDialog.messageOwner.dialog_id = -200L;
+        HashSet<MessageObject> suppressed = AyuFilter.getSuppressedNotifications(Arrays.asList(sibling, otherDialog, caption));
+        assertTrue(suppressed.contains(caption));
+        assertTrue(suppressed.contains(sibling));
+        assertFalse(suppressed.contains(otherDialog));
+        assertTrue(AyuFilter.getSuppressedNotifications(Arrays.asList(caption, sibling)).contains(sibling));
+        // Batch context must not cache a partial album result for later chat matching.
+        assertFalse(AyuFilter.isFiltered(sibling, null));
+    }
+
+    @Test
+    public void callersCanMutateCopiesWithoutChangingPublishedRules() {
+        ArrayList<AyuFilter.FilterModel> copy = AyuFilter.getRegexFilters();
+        copy.get(0).regex = "hello";
+        copy.get(0).enabled = false;
+        copy.clear();
+        assertTrue(AyuFilter.shouldSuppressNotification(message(20, "VPN", false)));
     }
 
     private static void setStatic(String name, Object value) throws Exception {

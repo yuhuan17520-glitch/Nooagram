@@ -14,6 +14,7 @@ import android.text.TextUtils;
 
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.database.AyuData;
+import com.radolyn.ayugram.database.ArchiveSaveGuard;
 import com.radolyn.ayugram.database.dao.DeletedMessageDao;
 import com.radolyn.ayugram.database.dao.EditedMessageDao;
 import com.radolyn.ayugram.database.entities.DeletedMessage;
@@ -45,6 +46,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -85,6 +87,13 @@ public class AyuMessagesController {
     private static final long MAINTENANCE_INTERVAL_MS = 24L * 60L * 60L * 1000L;
     private final DeletedDialogService deletedDialogService;
     private final ExecutorService executor;
+    private static final ArchiveSaveGuard saveGuard = new ArchiveSaveGuard();
+    private static final Object archiveCommitLock = new Object();
+    private static final Object attachmentTrimLock = new Object();
+    private static final Set<File> pendingTrimFiles = new HashSet<>();
+    private static boolean attachmentTrimScheduled;
+    private static boolean attachmentTrimRequested;
+    private static Runnable pendingTrimCallback;
 
     private AyuMessagesController() {
         initializeAttachmentsFolder();
@@ -253,8 +262,7 @@ public class AyuMessagesController {
             return;
         }
         try {
-            deletedMessageDao().clearMediaPath(mediaPath);
-            editedMessageDao().clearMediaPath(mediaPath);
+            deletedMessageDao().clearAttachmentReferences(mediaPath);
         } catch (Exception e) {
             FileLog.e("clearAttachmentPathReferences", e);
         }
@@ -392,33 +400,165 @@ public class AyuMessagesController {
         return trimAttachmentsFolderToLimit(null);
     }
 
-    public static synchronized long trimAttachmentsFolderToLimit(File keepFile) {
-        try {
-            initializeAttachmentsFolder();
-            if (attachmentStore == null) {
-                return 0L;
+    /** Existing callers ignore the return value; cleanup now runs as a coalesced background request. */
+    public static long trimAttachmentsFolderToLimit(File keepFile) {
+        if (keepFile != null) {
+            AyuAttachmentStore store = attachmentStoreSnapshot();
+            if (store != null) {
+                synchronized (archiveCommitLock) {
+                    try {
+                        store.remember(keepFile);
+                    } catch (IOException | SecurityException e) {
+                        FileLog.e("trimAttachmentsFolderToLimit", e);
+                    }
+                }
             }
+        }
+        queueAttachmentTrim(keepFile, null);
+        return 0L;
+    }
+
+    public static void requestAttachmentTrim(Runnable onComplete) {
+        queueAttachmentTrim(null, onComplete);
+    }
+
+    private static void queueAttachmentTrim(File keepFile, Runnable onComplete) {
+        synchronized (attachmentTrimLock) {
             if (keepFile != null) {
-                attachmentStore.remember(keepFile);
+                // Match successive synchronous trims: only the most recent completed save is exempt.
+                pendingTrimFiles.clear();
+                pendingTrimFiles.add(keepFile);
             }
-            long deletedSize = attachmentStore.trim(getConfiguredAttachmentSizeLimit(), keepFile,
-                    file -> clearAttachmentPathReferences(file.getAbsolutePath()));
+            if (onComplete != null) {
+                pendingTrimCallback = onComplete;
+            }
+            attachmentTrimRequested = true;
+            if (attachmentTrimScheduled) {
+                return;
+            }
+            attachmentTrimScheduled = true;
+        }
+        scheduleAttachmentTrim();
+    }
+
+    private static void scheduleAttachmentTrim() {
+        Utilities.globalQueue.postRunnable(() -> getInstance().executeAsync(
+                AyuMessagesController::runAttachmentTrim, "trimAttachmentsFolderToLimit"), 250);
+    }
+
+    private static synchronized AyuAttachmentStore attachmentStoreSnapshot() {
+        syncAttachmentsPathWithConfig();
+        return attachmentStore;
+    }
+
+    /** Copies are registered only after the merger has released the database write lock. */
+    public static void registerOwnedAttachments(File directory, List<File> files) {
+        if (directory == null || files.isEmpty()) {
+            return;
+        }
+        AyuAttachmentStore store;
+        try {
+            store = createAttachmentStore(directory.getParentFile());
+        } catch (IOException e) {
+            FileLog.e("registerOwnedAttachments", e);
+            return;
+        }
+        synchronized (archiveCommitLock) {
+            for (File file : files) {
+                try {
+                    store.remember(file);
+                } catch (IOException | SecurityException e) {
+                    FileLog.e("registerOwnedAttachments", e);
+                }
+            }
+        }
+        trimAttachmentsFolderToLimit();
+    }
+
+    private static void runAttachmentTrim() {
+        Set<File> keepFiles;
+        Runnable callback;
+        synchronized (attachmentTrimLock) {
+            keepFiles = new HashSet<>(pendingTrimFiles);
+            pendingTrimFiles.clear();
+            callback = pendingTrimCallback;
+            pendingTrimCallback = null;
+            attachmentTrimRequested = false;
+        }
+        try {
+            AyuAttachmentStore store = attachmentStoreSnapshot();
+            long deletedSize = 0L;
+            if (store != null) {
+                long limit = getConfiguredAttachmentSizeLimit();
+                if (limit != Long.MAX_VALUE) {
+                    deletedSize = store.trimUsing(limit, keepFiles,
+                            AyuMessagesController::releaseAttachmentReferences,
+                            AyuMessagesController::runAttachmentDeletion, file -> { });
+                }
+            }
             if (deletedSize > 0L) {
                 AyuData.loadSizes(null);
             }
-            return deletedSize;
+            if (callback != null) {
+                AndroidUtilities.runOnUIThread(callback);
+            }
         } catch (Exception e) {
             FileLog.e("trimAttachmentsFolderToLimit", e);
-            return 0L;
+        } finally {
+            boolean repeat;
+            synchronized (attachmentTrimLock) {
+                repeat = attachmentTrimRequested;
+                if (!repeat) {
+                    attachmentTrimScheduled = false;
+                }
+            }
+            if (repeat) {
+                scheduleAttachmentTrim();
+            }
         }
     }
 
+    private static boolean runAttachmentDeletion(File file, AyuAttachmentStore.FileDeletion unlink) {
+        synchronized (archiveCommitLock) {
+            try {
+                return deletedMessageDao().runAttachmentCleanup(() -> unlink.delete(file));
+            } catch (Exception e) {
+                FileLog.e("runAttachmentDeletion", e);
+                return false;
+            }
+        }
+    }
+
+    private static boolean releaseAttachmentReferences(File file) {
+        String path = file.getAbsolutePath();
+        deletedMessageDao().clearAttachmentReferences(path);
+        return !deletedMessageDao().hasAttachmentReference(path);
+    }
+
+    private static void reclaimAttachments(AyuAttachmentStore store, List<String> paths) {
+        if (store == null) {
+            return;
+        }
+        deletedMessageDao().reclaimAttachments(paths, path -> {
+            try {
+                store.deleteOwned(new File(path));
+            } catch (IOException | SecurityException e) {
+                FileLog.e("reclaimAttachments", e);
+            }
+        });
+    }
+
     public void onMessageEdited(AyuSavePreferences prefs, TLRPC.Message newMessage) {
+        onMessageEdited(prefs, newMessage, null);
+    }
+
+    public void onMessageEdited(AyuSavePreferences prefs, TLRPC.Message newMessage, Runnable completion) {
         // 与删除归档一样跑在控制器自有线程池上：附件缺失时 mapMedia 会同步等待补下载，
         // 若放在 globalQueue 上会与"下载完成回调 + 间谍设置统计"同队列，互相阻塞。
+        long generation = saveGuard.capture();
         executeAsync(() -> {
             try {
-                onMessageEditedInner(prefs, newMessage, false);
+                onMessageEditedInner(prefs, newMessage, false, generation, completion);
             } catch (Exception e) {
                 FileLog.e("onMessageEdited", e);
             }
@@ -426,69 +566,90 @@ public class AyuMessagesController {
     }
 
     public void onMessageEditedForce(AyuSavePreferences prefs) {
+        long generation = saveGuard.capture();
         executeAsync(() -> {
             try {
-                onMessageEditedInner(prefs, prefs.getMessage(), true);
+                onMessageEditedInner(prefs, prefs.getMessage(), true, generation);
             } catch (Exception e) {
                 FileLog.e("onMessageEditedForce", e);
             }
         }, "onMessageEditedForce");
     }
 
-    private void onMessageEditedInner(AyuSavePreferences prefs, TLRPC.Message newMessage, boolean force) {
-        var oldMessage = prefs.getMessage();
+    private void onMessageEditedInner(AyuSavePreferences prefs, TLRPC.Message newMessage, boolean force, long generation) {
+        onMessageEditedInner(prefs, newMessage, force, generation, null);
+    }
 
-        boolean sameMedia = isSameMedia(newMessage, force, oldMessage);
+    private void onMessageEditedInner(AyuSavePreferences prefs, TLRPC.Message newMessage, boolean force, long generation, Runnable completion) {
+        try {
+            if (!saveGuard.isValid(generation, prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId())) {
+                return;
+            }
+            var oldMessage = prefs.getMessage();
 
-        if (!shouldSaveEdit(oldMessage, newMessage, sameMedia)) {
-            return;
-        }
+            boolean sameMedia = isSameMedia(newMessage, force, oldMessage);
 
-        var revision = new EditedMessage();
-        AyuMessageUtils.map(prefs, revision);
-        AyuMessageUtils.mapMedia(prefs, revision, !sameMedia);
+            if (!shouldSaveEdit(oldMessage, newMessage, sameMedia)) {
+                return;
+            }
 
-        if (!sameMedia && !TextUtils.isEmpty(revision.mediaPath)) {
-            var lastRevision = withDaoRetry(
-                    "onMessageEditedInner#getLastRevision",
-                    () -> editedMessageDao().getLastRevision(prefs.getUserId(), prefs.getDialogId(), prefs.getMessageId())
-            );
+            var revision = new EditedMessage();
+            AyuMessageUtils.map(prefs, revision);
+            AyuMessageUtils.mapMedia(prefs, revision, !sameMedia);
 
-            if (lastRevision != null && !TextUtils.equals(revision.mediaPath, lastRevision.mediaPath)
-                    && lastRevision.mediaPath != null && !new File(lastRevision.mediaPath).isFile()
-                    && !isManagedAttachmentPath(lastRevision.mediaPath)) {
-                // update previous revisions to reflect media change
-                // like, there's no previous file, so replace it with one we copied before...
+            AyuAttachmentStore store = attachmentStoreSnapshot();
+            synchronized (archiveCommitLock) {
+                if (!saveGuard.isValid(generation, prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId())) {
+                    reclaimAttachments(store, Arrays.asList(revision.mediaPath, revision.hqThumbPath));
+                    return;
+                }
+                if (!sameMedia && !TextUtils.isEmpty(revision.mediaPath)) {
+                    var lastRevision = withDaoRetry(
+                            "onMessageEditedInner#getLastRevision",
+                            () -> editedMessageDao().getLastRevision(prefs.getUserId(), prefs.getDialogId(), prefs.getMessageId())
+                    );
+
+                    if (lastRevision != null && !TextUtils.equals(revision.mediaPath, lastRevision.mediaPath)
+                            && lastRevision.mediaPath != null && !new File(lastRevision.mediaPath).isFile()
+                            && !isManagedAttachmentPath(lastRevision.mediaPath)) {
+                        // update previous revisions to reflect media change
+                        // like, there's no previous file, so replace it with one we copied before...
+                        withDaoRetry(
+                                "onMessageEditedInner#updateAttachmentForRevisionsBetweenDates",
+                                () -> {
+                                    editedMessageDao().updateAttachmentForRevisionsBetweenDates(prefs.getUserId(), prefs.getDialogId(), prefs.getMessageId(), lastRevision.mediaPath, revision.mediaPath);
+                                    return null;
+                                }
+                        );
+                    }
+                }
+
                 withDaoRetry(
-                        "onMessageEditedInner#updateAttachmentForRevisionsBetweenDates",
+                        "onMessageEditedInner#insert",
                         () -> {
-                            editedMessageDao().updateAttachmentForRevisionsBetweenDates(prefs.getUserId(), prefs.getDialogId(), prefs.getMessageId(), lastRevision.mediaPath, revision.mediaPath);
+                            editedMessageDao().insert(revision);
                             return null;
                         }
                 );
             }
-        }
 
-        withDaoRetry(
-                "onMessageEditedInner#insert",
-                () -> {
-                    editedMessageDao().insert(revision);
-                    return null;
+            if (AyuConfig.INSTANCE.getSaveLocalLastSeen().Bool() && newMessage.from_id != null) {
+                long fromUserId = MessageObject.getPeerId(newMessage.from_id);
+                if (fromUserId > 0) {
+                    int ts = newMessage.edit_date != 0 ? newMessage.edit_date : newMessage.date;
+                    if (ts <= 0) {
+                        ts = ConnectionsManager.getInstance(prefs.getAccountId()).getCurrentTime();
+                    }
+                    LastSeenHelper.saveLastSeen(prefs.getAccountId(), fromUserId, ts);
                 }
-        );
+            }
 
-        if (AyuConfig.INSTANCE.getSaveLocalLastSeen().Bool() && newMessage.from_id != null) {
-            long fromUserId = MessageObject.getPeerId(newMessage.from_id);
-            if (fromUserId > 0) {
-                int ts = newMessage.edit_date != 0 ? newMessage.edit_date : newMessage.date;
-                if (ts <= 0) {
-                    ts = ConnectionsManager.getInstance(prefs.getAccountId()).getCurrentTime();
-                }
-                LastSeenHelper.saveLastSeen(prefs.getAccountId(), fromUserId, ts);
+            AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(prefs.getAccountId()).postNotificationName(AyuConstants.MESSAGE_EDITED_NOTIFICATION, prefs.getDialogId(), prefs.getMessageId()));
+        } finally {
+            if (completion != null) {
+                completion.run();
             }
         }
-
-        AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(prefs.getAccountId()).postNotificationName(AyuConstants.MESSAGE_EDITED_NOTIFICATION, prefs.getDialogId(), prefs.getMessageId()));
     }
 
     public static boolean shouldSaveEdit(TLRPC.Message oldMessage, TLRPC.Message newMessage, boolean sameMedia) {
@@ -584,9 +745,10 @@ public class AyuMessagesController {
         }
         // 保存链路一律在专用线程池执行：可能在存储队列上被触发，
         // 若在队列内同步跑，AyuSavePreferences 的用户查询会回头等队列，直接自锁死。
+        long generation = saveGuard.capture();
         executeAsync(() -> {
             try {
-                if (onMessageDeletedInner(prefs)) {
+                if (onMessageDeletedInner(prefs, generation)) {
                     ArrayList<Integer> ids = new ArrayList<>();
                     ids.add(prefs.getMessageId());
                     AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(prefs.getAccountId())
@@ -618,6 +780,7 @@ public class AyuMessagesController {
 
     /** 在存储队列捕获删除范围，随后在归档线程保存并回传结果。 */
     public void onHistoryFlushed(int account, long dialogId, int minId, int maxId, Consumer<AyuHistoryDeletion> callback) {
+        long generation = saveGuard.capture();
         long userId = UserConfig.getInstance(account).getClientUserId();
         if (userId == 0) return;
         int deleteDate = ConnectionsManager.getInstance(account).getCurrentTime();
@@ -644,7 +807,7 @@ public class AyuMessagesController {
                         message.dialog_id = dialogId;
                         message.date = cursor.intValue(2);
                         if (message.ttl == 0) message.ttl = cursor.intValue(3);
-                        if (!AyuState.isDeletePermitted(dialogId, id)) snapshot.add(message);
+                        if (!AyuState.isDeletePermitted(account, dialogId, id)) snapshot.add(message);
                     } catch (Exception e) {
                         FileLog.e("captureHistory", e);
                     } finally {
@@ -668,7 +831,7 @@ public class AyuMessagesController {
                 for (TLRPC.Message message : snapshot) {
                     try {
                         long topicId = AyuSavePreferences.resolveTopicId(account, message, dialogId);
-                        if (onMessageDeletedInner(new AyuSavePreferences(message, account, dialogId, topicId, message.id, deleteDate))) {
+                        if (onMessageDeletedInner(new AyuSavePreferences(message, account, dialogId, topicId, message.id, deleteDate), generation)) {
                             savedIds.add(message.id);
                         }
                     } catch (Throwable e) {
@@ -700,6 +863,7 @@ public class AyuMessagesController {
         long userId = UserConfig.getInstance(account).getClientUserId();
         if (userId == 0) return;
         int catchTime = ConnectionsManager.getInstance(account).getCurrentTime();
+        long generation = saveGuard.capture();
         executeAsync(() -> {
             if (UserConfig.getInstance(account).getClientUserId() != userId) return;
             androidx.collection.LongSparseArray<ArrayList<Integer>> savedIds = new androidx.collection.LongSparseArray<>();
@@ -710,7 +874,7 @@ public class AyuMessagesController {
                 long topicId = AyuSavePreferences.resolveTopicId(account, message, actualDialogId);
                 AyuSavePreferences prefs = new AyuSavePreferences(message, account, actualDialogId, topicId, message.id, catchTime);
                 try {
-                    if (onMessageDeletedInner(prefs)) {
+                    if (onMessageDeletedInner(prefs, generation)) {
                         ArrayList<Integer> ids = savedIds.get(actualDialogId);
                         if (ids == null) savedIds.put(actualDialogId, ids = new ArrayList<>());
                         ids.add(message.id);
@@ -731,7 +895,10 @@ public class AyuMessagesController {
         }, "saveCollectedMessages");
     }
 
-    private boolean onMessageDeletedInner(AyuSavePreferences prefs) {
+    private boolean onMessageDeletedInner(AyuSavePreferences prefs, long generation) {
+        if (!saveGuard.isValid(generation, prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId())) {
+            return false;
+        }
         if (prefs.getDialogId() == 0 || prefs.getUserId() == 0 || prefs.getUserId() != UserConfig.getInstance(prefs.getAccountId()).getClientUserId()
                 || !AyuSavePreferences.saveDeletedMessageFor(prefs.getAccountId(), prefs.getDialogId(), prefs.getFromUserId())) {
             return false;
@@ -746,13 +913,16 @@ public class AyuMessagesController {
             return false;
         }
 
-        Boolean exists = withDaoRetry(
-                "onMessageDeletedInner#exists",
-                () -> deletedMessageDao().exists(prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId(), prefs.getMessageId())
-        );
+        synchronized (archiveCommitLock) {
+            if (!saveGuard.isValid(generation, prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId())) return false;
+            Boolean exists = withDaoRetry(
+                    "onMessageDeletedInner#exists",
+                    () -> deletedMessageDao().exists(prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId(), prefs.getMessageId())
+            );
 
-        if (exists == null) return false;
-        if (exists) return true;
+            if (exists == null) return false;
+            if (exists) return true;
+        }
 
         var deletedMessage = new DeletedMessage();
         deletedMessage.userId = prefs.getUserId();
@@ -765,21 +935,29 @@ public class AyuMessagesController {
         AyuMessageUtils.map(prefs, deletedMessage);
         AyuMessageUtils.mapMedia(prefs, deletedMessage, true);
 
-        Long fakeMsgId = withDaoRetry(
-                "onMessageDeletedInner#insert",
-                () -> deletedMessageDao().insert(deletedMessage)
-        );
+        List<DeletedMessageReaction> reactions = processDeletedReactions(msg == null ? null : msg.reactions);
+        AyuAttachmentStore store = attachmentStoreSnapshot();
+        synchronized (archiveCommitLock) {
+            if (!saveGuard.isValid(generation, prefs.getUserId(), prefs.getDialogId(), prefs.getTopicId())) {
+                reclaimAttachments(store, Arrays.asList(deletedMessage.mediaPath, deletedMessage.hqThumbPath));
+                return false;
+            }
+            Long fakeMsgId = withDaoRetry(
+                    "onMessageDeletedInner#insert",
+                    () -> deletedMessageDao().insertIfAbsent(deletedMessage, reactions)
+            );
 
-        if (fakeMsgId == null) {
-            return false;
+            if (fakeMsgId == null || fakeMsgId == 0) {
+                return false;
+            }
+            if (fakeMsgId < 0) {
+                reclaimAttachments(store, Arrays.asList(deletedMessage.mediaPath, deletedMessage.hqThumbPath));
+                return true;
+            }
+
+            updateLastMessageCache(prefs, msg);
+            return true;
         }
-
-        if (msg != null && msg.reactions != null) {
-            processDeletedReactions(fakeMsgId, msg.reactions);
-        }
-
-        updateLastMessageCache(prefs, msg);
-        return true;
     }
 
     private void updateLastMessageCache(AyuSavePreferences prefs, TLRPC.Message msg) {
@@ -808,23 +986,26 @@ public class AyuMessagesController {
             MessageObject mo = new MessageObject(account, tl, false, false);
             if (!android.text.TextUtils.isEmpty(mo.messageText)) {
                 if (topicId != 0) {
-                    deletedDialogService.putLastTopicMessage(account, dialogId, topicId, mo);
+                    deletedDialogService.putLastTopicMessage(account, prefs.getUserId(), dialogId, topicId, mo);
                 }
-                deletedDialogService.putLastMessage(account, dialogId, mo);
+                deletedDialogService.putLastMessage(account, prefs.getUserId(), dialogId, mo);
             }
         } catch (Throwable e) {
             FileLog.e("updateLastMessageCache", e);
         }
     }
 
-    private void processDeletedReactions(long fakeMessageId, TLRPC.TL_messageReactions reactions) {
+    private List<DeletedMessageReaction> processDeletedReactions(TLRPC.TL_messageReactions reactions) {
+        List<DeletedMessageReaction> result = new ArrayList<>();
+        if (reactions == null) {
+            return result;
+        }
         for (var reaction : reactions.results) {
             if (reaction.reaction instanceof TLRPC.TL_reactionEmpty) {
                 continue;
             }
 
             var deletedReaction = new DeletedMessageReaction();
-            deletedReaction.deletedMessageId = fakeMessageId;
             deletedReaction.count = reaction.count;
             deletedReaction.selfSelected = reaction.chosen;
 
@@ -839,14 +1020,9 @@ public class AyuMessagesController {
                 continue;
             }
 
-            withDaoRetry(
-                    "processDeletedReactions#insertReaction",
-                    () -> {
-                        deletedMessageDao().insertReaction(deletedReaction);
-                        return null;
-                    }
-            );
+            result.add(deletedReaction);
         }
+        return result;
     }
 
     public boolean hasAnyRevisions(long userId, long dialogId, int messageId) {
@@ -971,22 +1147,11 @@ public class AyuMessagesController {
     }
 
     public void delete(long userId, long dialogId, int messageId) {
-        var msg = getMessage(userId, dialogId, messageId);
-        if (msg == null) {
-            return;
-        }
-
-        deletedMessageDao().delete(userId, dialogId, messageId);
-
-        if (!TextUtils.isEmpty(msg.message.mediaPath)) {
-            var p = new File(msg.message.mediaPath);
-            try {
-                if (p.exists() && !p.delete()) {
-                    p.deleteOnExit();
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
+        AyuAttachmentStore store = attachmentStoreSnapshot();
+        synchronized (archiveCommitLock) {
+            List<String> paths = deletedMessageDao().deleteArchiveMessages(userId, dialogId,
+                    Collections.singletonList(messageId), false);
+            reclaimAttachments(store, paths);
         }
         refreshLastMessagesAfterDelete(userId, dialogId);
     }
@@ -996,28 +1161,10 @@ public class AyuMessagesController {
             return;
         }
 
-        List<DeletedMessageFull> messages = deletedMessageDao().getMessagesByIds(userId, dialogId, messageIds);
-        List<String> mediaPaths = new ArrayList<>();
-        if (messages != null) {
-            for (DeletedMessageFull msg : messages) {
-                if (msg != null && msg.message != null && !TextUtils.isEmpty(msg.message.mediaPath)) {
-                    mediaPaths.add(msg.message.mediaPath);
-                }
-            }
-        }
-
-        deletedMessageDao().deleteMessages(userId, dialogId, messageIds);
-        editedMessageDao().deleteByDialogIdAndMessageIds(userId, dialogId, messageIds);
-
-        for (String mediaPath : mediaPaths) {
-            var p = new File(mediaPath);
-            try {
-                if (p.exists() && !p.delete()) {
-                    p.deleteOnExit();
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
+        AyuAttachmentStore store = attachmentStoreSnapshot();
+        synchronized (archiveCommitLock) {
+            List<String> paths = deletedMessageDao().deleteArchiveMessages(userId, dialogId, messageIds, true);
+            reclaimAttachments(store, paths);
         }
         refreshLastMessagesAfterDelete(userId, dialogId);
     }
@@ -1045,20 +1192,9 @@ public class AyuMessagesController {
     }
 
     public void deleteRevision(long fakeId) {
-        String mediaPath = editedMessageDao().getMediaPathByFakeId(fakeId);
-        int deleted = editedMessageDao().deleteByFakeId(fakeId);
-        if (deleted == 0) {
-            return;
-        }
-        if (!TextUtils.isEmpty(mediaPath)) {
-            File p = new File(mediaPath);
-            try {
-                if (p.exists() && !p.delete()) {
-                    p.deleteOnExit();
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
+        AyuAttachmentStore store = attachmentStoreSnapshot();
+        synchronized (archiveCommitLock) {
+            reclaimAttachments(store, deletedMessageDao().deleteArchiveRevision(fakeId));
         }
     }
 
@@ -1070,81 +1206,47 @@ public class AyuMessagesController {
      */
     public void deleteCurrent(int account, long dialogId, long mergeDialogId, long topicId, Runnable callback) {
         long currentUserId = UserConfig.getInstance(account).clientUserId;
-        List<DeletedMessageFull> messages = new ArrayList<>(deletedMessageDao().getMessagesByDialogTopic(currentUserId, dialogId, topicId));
-
-        if (mergeDialogId != 0) {
-            messages.addAll(deletedMessageDao().getMessagesByDialogTopic(currentUserId, mergeDialogId, topicId));
-        }
-
-        List<String> mediaPaths = new ArrayList<>();
-        List<Integer> clearedMessageIds = new ArrayList<>();
-        List<Integer> clearedMergeMessageIds = new ArrayList<>();
-        for (DeletedMessageFull msg : messages) {
-            if (msg == null || msg.message == null) {
-                continue;
-            }
-            if (msg.message.dialogId == mergeDialogId) {
-                clearedMergeMessageIds.add(msg.message.messageId);
-            } else {
-                clearedMessageIds.add(msg.message.messageId);
-            }
-            if (!TextUtils.isEmpty(msg.message.mediaPath)) {
-                mediaPaths.add(msg.message.mediaPath);
-            }
-        }
-
-        // Delete messages and their edit history from database
-        deletedMessageDao().deleteByDialogTopic(currentUserId, dialogId, topicId);
-        if (topicId == 0) {
-            editedMessageDao().delete(currentUserId, dialogId);
-        } else if (!clearedMessageIds.isEmpty()) {
-            editedMessageDao().deleteByDialogIdAndMessageIds(currentUserId, dialogId, clearedMessageIds);
-        }
-
-        if (mergeDialogId != 0) {
-            deletedMessageDao().deleteByDialogTopic(currentUserId, mergeDialogId, topicId);
-            if (topicId == 0) {
-                editedMessageDao().delete(currentUserId, mergeDialogId);
-            } else if (!clearedMergeMessageIds.isEmpty()) {
-                editedMessageDao().deleteByDialogIdAndMessageIds(currentUserId, mergeDialogId, clearedMergeMessageIds);
-            }
-        }
-
-        if (topicId == 0) {
-            // 只有整会话清理才该连带丢掉会话快照；单话题清理不该把整个会话的快照删掉
-            deleteDialogRecord(account, currentUserId, dialogId);
-            if (mergeDialogId != 0) {
-                deleteDialogRecord(account, currentUserId, mergeDialogId);
-            }
-        }
-
-        // Clean up media files
-        for (String mediaPath : mediaPaths) {
-            File mediaFile = new File(mediaPath);
-            try {
-                if (mediaFile.exists() && !mediaFile.delete()) {
-                    mediaFile.deleteOnExit();
+        executeAsync(() -> {
+            AyuAttachmentStore store = attachmentStoreSnapshot();
+            synchronized (archiveCommitLock) {
+                saveGuard.invalidate(currentUserId, dialogId, topicId);
+                if (mergeDialogId != 0) {
+                    saveGuard.invalidate(currentUserId, mergeDialogId, topicId);
                 }
-            } catch (Exception e) {
-                FileLog.e(e);
-            }
-        }
+                // Delete messages and their edit history from database
+                List<String> paths = deletedMessageDao().deleteArchiveDialog(currentUserId, dialogId, mergeDialogId, topicId);
+                // Clean up media files
+                reclaimAttachments(store, paths);
+                if (topicId == 0) {
+                    // 只有整会话清理才该连带丢掉会话快照；单话题清理不该把整个会话的快照删掉
+                    deleteDialogRecord(account, currentUserId, dialogId);
+                    if (mergeDialogId != 0) {
+                        deleteDialogRecord(account, currentUserId, mergeDialogId);
+                    }
+                }
 
-        // 归档记录没了，会话预览里残留的"已删除最后一条消息"必须一起失效并重算；
-        // 只清某个话题时不能把整个会话的预览一起丢掉
-        if (topicId == 0) {
-            deletedDialogService.removeLastMessages(account, dialogId, mergeDialogId);
-        } else {
-            deletedDialogService.removeTopicMessages(account, dialogId);
-            if (mergeDialogId != 0) {
-                deletedDialogService.removeTopicMessages(account, mergeDialogId);
+                // 归档记录没了，会话预览里残留的"已删除最后一条消息"必须一起失效并重算；
+                // 只清某个话题时不能把整个会话的预览一起丢掉
+                if (UserConfig.getInstance(account).clientUserId == currentUserId) {
+                    if (topicId == 0) {
+                        deletedDialogService.removeLastMessages(account, dialogId, mergeDialogId);
+                    } else {
+                        deletedDialogService.removeTopicMessages(account, dialogId);
+                        if (mergeDialogId != 0) {
+                            deletedDialogService.removeTopicMessages(account, mergeDialogId);
+                        }
+                    }
+                }
             }
-        }
-        executeAsync(() -> deletedDialogService.reloadLastMessages(account), "refreshLastMessages");
-
-        if (callback != null) {
-            callback.run();
-        }
+            executeAsync(() -> {
+                if (UserConfig.getInstance(account).clientUserId == currentUserId) {
+                    deletedDialogService.reloadLastMessages(account);
+                }
+            }, "refreshLastMessages");
+            if (callback != null) {
+                callback.run();
+            }
+        }, "deleteCurrent");
     }
 
     public boolean isAyuDeletedMessageId(long userId, long dialogId, int messageId) {
@@ -1176,17 +1278,24 @@ public class AyuMessagesController {
         instance = null;
     }
 
-    public static synchronized void clearDatabase() {
-        AyuData.clean();
-        AyuData.create();
+    public static void clearDatabase() {
+        synchronized (archiveCommitLock) {
+            saveGuard.invalidateAll();
+            AyuData.clean();
+            AyuData.create();
+        }
         refreshAfterDatabaseChange();
     }
 
-    public static synchronized void clearAttachments() {
-        syncAttachmentsPathWithConfig();
+    public static void clearAttachments() {
+        AyuAttachmentStore store = attachmentStoreSnapshot();
         try {
-            if (attachmentStore != null) {
-                attachmentStore.clear(file -> clearAttachmentPathReferences(file.getAbsolutePath()));
+            synchronized (archiveCommitLock) {
+                saveGuard.invalidateAll();
+                if (store != null) {
+                    store.clearUsing(AyuMessagesController::releaseAttachmentReferences,
+                            AyuMessagesController::runAttachmentDeletion, file -> { });
+                }
             }
         } catch (Exception e) {
             FileLog.e("clearAttachments", e);
@@ -1256,6 +1365,7 @@ public class AyuMessagesController {
 
                 trimAttachmentsFolderToLimit();
                 reconcileAttachmentReferences();
+                deletedMessageDao().deleteOrphanReactions();
                 AyuData.loadSizes(null);
             } catch (Exception e) {
                 FileLog.e("scheduleAttachmentsMaintenance", e);

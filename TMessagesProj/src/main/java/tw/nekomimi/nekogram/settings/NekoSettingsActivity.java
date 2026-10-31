@@ -506,6 +506,26 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
             }
         }
 
+        String sharedFilters = null;
+        String chatFilters = null;
+        String filterExclusions = null;
+        List<PreferenceUpdate> filterUpdates = staged.get("nkmrcfg");
+        if (filterUpdates != null) {
+            for (PreferenceUpdate update : filterUpdates) {
+                if ("RegexFiltersData".equals(update.key) || "RegexChatFiltersData".equals(update.key)
+                        || "RegexFiltersExcludedEntriesData".equals(update.key)) {
+                    if (!(update.value instanceof String)) {
+                        throw new JSONException("Filter backup must be a JSON string: " + update.key);
+                    }
+                    if ("RegexFiltersData".equals(update.key)) sharedFilters = (String) update.value;
+                    else if ("RegexChatFiltersData".equals(update.key)) chatFilters = (String) update.value;
+                    else filterExclusions = (String) update.value;
+                }
+            }
+        }
+        // Validate filter JSON before committing any preference file.
+        com.radolyn.ayugram.database.FilterPrefsMigrator.parseLegacy(sharedFilters, chatFilters, filterExclusions);
+
         // Validation is complete before the first commit. SharedPreferences has no
         // cross-file transaction, so a storage failure can still leave earlier files committed.
         for (Map.Entry<String, List<PreferenceUpdate>> entry : staged.entrySet()) {
@@ -518,7 +538,11 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
                 throw new JSONException("Failed to commit preference set " + entry.getKey());
             }
         }
+        tw.nekomimi.nekogram.filters.AyuFilter.restoreFilterPreferences(sharedFilters, chatFilters, filterExclusions);
         NkmrConfig.compact();
+        com.radolyn.ayugram.AyuConfig.INSTANCE.loadConfig(true);
+        tw.nekomimi.nekogram.filters.AyuFilter.onPreferencesChanged(null);
+        tw.nekomimi.nekogram.filters.AyuFilter.preloadAsync(null);
     }
 
     private static final class PreferenceUpdate {

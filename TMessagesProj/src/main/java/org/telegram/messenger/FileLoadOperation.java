@@ -223,6 +223,7 @@ public class FileLoadOperation {
     private TLRPC.InputWebFileLocation webLocation;
     private WebFile webFile;
     private volatile int state = stateIdle;
+    volatile boolean cancelledByFileLoader;
     private volatile boolean paused;
     private long downloadedBytes;
     public long totalBytesCount;
@@ -584,7 +585,7 @@ public class FileLoadOperation {
         try {
             NooagramCanonicalDownload.retryPendingForDocument(
                     ApplicationLoader.applicationContext, delegate.getFileDatabase(),
-                    currentAccount, pathSaveData);
+                    currentAccount, pathSaveData, () -> canonicalTransferCancelled);
         } catch (Exception e) {
             FileLog.e(e);
             Utilities.stageQueue.postRunnable(() ->

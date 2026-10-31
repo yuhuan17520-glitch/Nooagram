@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.UserConfig;
+
+import tw.nekomimi.nekogram.helpers.CloudSettingsHelper;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,24 +23,29 @@ public class AyuGhostPreferences {
     public static final String ghostTypingExceptionPrefix = "ghostModeTypingException_";
 
     private static final String PREFS_FILE = "ayughostexclusionsconfig";
-    private static final ConcurrentHashMap<Long, Integer> readExceptions = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<Long, Integer> typingExceptions = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Integer> readExceptions = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Integer> typingExceptions = new ConcurrentHashMap<>();
     private static SharedPreferences preferences;
 
-    private static SharedPreferences getPrefs() {
+    private static synchronized SharedPreferences getPrefs() {
         if (preferences == null) {
             preferences = ApplicationLoader.applicationContext.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
+            preferences.registerOnSharedPreferenceChangeListener(CloudSettingsHelper.listener);
         }
         return preferences;
     }
 
     public static void setReadException(long dialogId, int type) {
-        long key = Math.abs(dialogId);
+        setReadException(UserConfig.selectedAccount, dialogId, type);
+    }
+
+    public static void setReadException(int account, long dialogId, int type) {
+        String key = key(account, dialogId);
         int value = normalizeType(type);
         readExceptions.put(key, value);
         SharedPreferences.Editor editor = getPrefs().edit();
         if (value == TYPE_DEFAULT) {
-            editor.remove(ghostReadExceptionPrefix + key);
+            editor.putInt(ghostReadExceptionPrefix + key, TYPE_DEFAULT);
         } else {
             editor.putInt(ghostReadExceptionPrefix + key, value);
         }
@@ -47,17 +55,25 @@ public class AyuGhostPreferences {
     }
 
     public static int getReadException(long dialogId) {
-        long key = Math.abs(dialogId);
-        return readExceptions.computeIfAbsent(key, AyuGhostPreferences::loadReadException);
+        return getReadException(UserConfig.selectedAccount, dialogId);
+    }
+
+    public static int getReadException(int account, long dialogId) {
+        String key = key(account, dialogId);
+        return readExceptions.computeIfAbsent(key, ignored -> loadReadException(account, dialogId));
     }
 
     public static void setTypingException(long dialogId, int type) {
-        long key = Math.abs(dialogId);
+        setTypingException(UserConfig.selectedAccount, dialogId, type);
+    }
+
+    public static void setTypingException(int account, long dialogId, int type) {
+        String key = key(account, dialogId);
         int value = normalizeType(type);
         typingExceptions.put(key, value);
         SharedPreferences.Editor editor = getPrefs().edit();
         if (value == TYPE_DEFAULT) {
-            editor.remove(ghostTypingExceptionPrefix + key);
+            editor.putInt(ghostTypingExceptionPrefix + key, TYPE_DEFAULT);
         } else {
             editor.putInt(ghostTypingExceptionPrefix + key, value);
         }
@@ -67,8 +83,12 @@ public class AyuGhostPreferences {
     }
 
     public static int getTypingException(long dialogId) {
-        long key = Math.abs(dialogId);
-        return typingExceptions.computeIfAbsent(key, AyuGhostPreferences::loadTypingException);
+        return getTypingException(UserConfig.selectedAccount, dialogId);
+    }
+
+    public static int getTypingException(int account, long dialogId) {
+        String key = key(account, dialogId);
+        return typingExceptions.computeIfAbsent(key, ignored -> loadTypingException(account, dialogId));
     }
 
     public static void setGhostModeReadExclusion(long chatId, boolean value) {
@@ -95,36 +115,46 @@ public class AyuGhostPreferences {
         return type == TYPE_FORCE_BLOCK;
     }
 
-    private static int loadReadException(long key) {
+    private static int loadReadException(int account, long dialogId) {
         SharedPreferences prefs = getPrefs();
+        String key = key(account, dialogId);
         if (prefs.contains(ghostReadExceptionPrefix + key)) {
             return normalizeType(prefs.getInt(ghostReadExceptionPrefix + key, TYPE_DEFAULT));
         }
+        long legacyKey = Math.abs(dialogId);
+        if (prefs.contains(ghostReadExceptionPrefix + legacyKey)) {
+            return normalizeType(prefs.getInt(ghostReadExceptionPrefix + legacyKey, TYPE_DEFAULT));
+        }
         if (prefs.getBoolean(ghostReadExclusionPrefix + key, false)
-                || AyuOptions.getPreferences().getBoolean(ghostReadExclusionPrefix + key, false)) {
-            prefs.edit().putInt(ghostReadExceptionPrefix + key, TYPE_FORCE_ALLOW)
-                    .remove(ghostReadExclusionPrefix + key)
-                    .apply();
-            AyuOptions.getPreferences().edit().remove(ghostReadExclusionPrefix + key).apply();
+                || AyuOptions.getPreferences().getBoolean(ghostReadExclusionPrefix + key, false)
+                || prefs.getBoolean(ghostReadExclusionPrefix + legacyKey, false)
+                || AyuOptions.getPreferences().getBoolean(ghostReadExclusionPrefix + legacyKey, false)) {
             return TYPE_FORCE_ALLOW;
         }
         return TYPE_DEFAULT;
     }
 
-    private static int loadTypingException(long key) {
+    private static int loadTypingException(int account, long dialogId) {
         SharedPreferences prefs = getPrefs();
+        String key = key(account, dialogId);
         if (prefs.contains(ghostTypingExceptionPrefix + key)) {
             return normalizeType(prefs.getInt(ghostTypingExceptionPrefix + key, TYPE_DEFAULT));
         }
+        long legacyKey = Math.abs(dialogId);
+        if (prefs.contains(ghostTypingExceptionPrefix + legacyKey)) {
+            return normalizeType(prefs.getInt(ghostTypingExceptionPrefix + legacyKey, TYPE_DEFAULT));
+        }
         if (prefs.getBoolean(ghostTypingExclusionPrefix + key, false)
-                || AyuOptions.getPreferences().getBoolean(ghostTypingExclusionPrefix + key, false)) {
-            prefs.edit().putInt(ghostTypingExceptionPrefix + key, TYPE_FORCE_ALLOW)
-                    .remove(ghostTypingExclusionPrefix + key)
-                    .apply();
-            AyuOptions.getPreferences().edit().remove(ghostTypingExclusionPrefix + key).apply();
+                || AyuOptions.getPreferences().getBoolean(ghostTypingExclusionPrefix + key, false)
+                || prefs.getBoolean(ghostTypingExclusionPrefix + legacyKey, false)
+                || AyuOptions.getPreferences().getBoolean(ghostTypingExclusionPrefix + legacyKey, false)) {
             return TYPE_FORCE_ALLOW;
         }
         return TYPE_DEFAULT;
+    }
+
+    private static String key(int account, long dialogId) {
+        return account + "_" + dialogId;
     }
 
     private static int normalizeType(int type) {

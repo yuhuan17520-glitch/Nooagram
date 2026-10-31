@@ -24,9 +24,14 @@ import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.Stories.StoriesController;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
+
 public class AyuGhostUtils {
 
     private static final int OFFLINE_DELAY_MS = 1000;
+    private static final Map<TLObject, Long> REQUEST_DIALOG_IDS = Collections.synchronizedMap(new WeakHashMap<>());
 
     public static Long getDialogId(TLRPC.InputPeer peer) {
         long dialogId;
@@ -49,7 +54,14 @@ public class AyuGhostUtils {
         if (peer == null) {
             return null;
         }
-        return (long) DialogObject.getEncryptedChatId(peer.chat_id);
+        return DialogObject.makeEncryptedDialogId(peer.chat_id);
+    }
+
+    /** Attach the dialog context to requests whose TL schema has no peer field. */
+    public static void attachDialogId(TLObject request, long dialogId) {
+        if (request != null) {
+            REQUEST_DIALOG_IDS.put(request, dialogId);
+        }
     }
 
     public static ConnectionsManager getConnectionsManager() {
@@ -173,8 +185,8 @@ public class AyuGhostUtils {
         }
 
         Long dialogId = extractDialogId(object);
-        int readType = dialogId != null ? AyuGhostPreferences.getReadException(dialogId) : AyuGhostPreferences.TYPE_DEFAULT;
-        int typingType = dialogId != null ? AyuGhostPreferences.getTypingException(dialogId) : AyuGhostPreferences.TYPE_DEFAULT;
+        int readType = dialogId != null ? AyuGhostPreferences.getReadException(account, dialogId) : AyuGhostPreferences.TYPE_DEFAULT;
+        int typingType = dialogId != null ? AyuGhostPreferences.getTypingException(account, dialogId) : AyuGhostPreferences.TYPE_DEFAULT;
 
         if (object instanceof TLRPC.TL_messages_setTyping || object instanceof TLRPC.TL_messages_setEncryptedTyping) {
             boolean block;
@@ -197,6 +209,10 @@ public class AyuGhostUtils {
                 block = AyuGhostPreferences.shouldBlockWhenGlobalEnabled(readType);
             }
             if (block) {
+                if (object instanceof TLRPC.TL_messages_getMessagesViews views) {
+                    views.increment = false;
+                    return InterceptResult.Proceed(onCompleteOrig);
+                }
                 FileLog.d("GhostMode: Blocking read status request and sending fake response.");
                 sendFakeReadResponse(onCompleteOrig);
                 return InterceptResult.Blocked(onCompleteOrig);
@@ -263,7 +279,7 @@ public class AyuGhostUtils {
             return false;
         }
         TLRPC.InputPeer peer = extractPeerFromSendObject(object);
-        if (peer != null && AyuGhostPreferences.getTypingException(getDialogId(peer)) == AyuGhostPreferences.TYPE_FORCE_ALLOW) {
+        if (peer != null && AyuGhostPreferences.getTypingException(account, getDialogId(peer)) == AyuGhostPreferences.TYPE_FORCE_ALLOW) {
             return false;
         }
         FileLog.d("GhostMode: Wrapping callback for offline-after-send via AyuWorker.");
@@ -306,6 +322,10 @@ public class AyuGhostUtils {
     }
 
     private static Long extractDialogId(TLObject object) {
+        Long attachedDialogId = REQUEST_DIALOG_IDS.get(object);
+        if (attachedDialogId != null) {
+            return attachedDialogId;
+        }
         if (object instanceof TLRPC.TL_messages_setTyping obj) {
             return getDialogId(obj.peer);
         } else if (object instanceof TLRPC.TL_messages_setEncryptedTyping obj) {
@@ -397,7 +417,7 @@ public class AyuGhostUtils {
                 object instanceof TLRPC.TL_channels_readMessageContents ||
                 object instanceof TLRPC.TL_channels_readHistory ||
                 object instanceof TLRPC.TL_messages_readSavedHistory ||
-                object instanceof TLRPC.TL_messages_markDialogUnread ||
+                (object instanceof TLRPC.TL_messages_markDialogUnread obj && !obj.unread) ||
                 object instanceof TLRPC.TL_messages_getMessagesViews obj && obj.increment;
     }
 

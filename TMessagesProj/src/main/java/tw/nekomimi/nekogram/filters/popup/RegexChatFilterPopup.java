@@ -42,16 +42,11 @@ public class RegexChatFilterPopup {
                 getString(enabled ? R.string.Disable : R.string.Enable),
                 false, fragment.getResourceProvider());
         toggleBtn.setOnClickListener(view -> {
-            ArrayList<AyuFilter.ChatFilterEntry> entries = AyuFilter.getChatFilterEntries();
-            for (AyuFilter.ChatFilterEntry entry : entries) {
-                if (entry.dialogId == dialogId && entry.filters != null && filterIdx >= 0 && filterIdx < entry.filters.size()) {
-                    AyuFilter.FilterModel model = entry.filters.get(filterIdx);
-                    model.enabled = !model.enabled;
-                    AyuFilter.saveChatFilterEntries(entries);
-                    break;
-                }
+            if (filterIdx >= 0 && filterIdx < filters.size()) {
+                AyuFilter.setFilterEnabledAsync(filters.get(filterIdx).id, !enabled, () -> {
+                    if (!fragment.isFinished && fragment.getParentActivity() != null) fragment.onResume();
+                });
             }
-            fragment.onResume();
             popupWindow.dismiss();
         });
 
@@ -61,8 +56,11 @@ public class RegexChatFilterPopup {
 
         var deleteBtn = ActionBarMenuItem.addItem(layout, R.drawable.msg_delete, getString(R.string.Delete), false, fragment.getResourceProvider());
         deleteBtn.setOnClickListener(view -> {
-            AyuFilter.removeChatFilter(dialogId, filterIdx);
-            fragment.onResume();
+            if (filterIdx >= 0 && filterIdx < filters.size()) {
+                AyuFilter.removeRuleAsync(filters.get(filterIdx).id, () -> {
+                    if (!fragment.isFinished && fragment.getParentActivity() != null) fragment.onResume();
+                });
+            }
             popupWindow.dismiss();
         });
         RegexPopupUtils.applyDeleteItemColor(deleteBtn);

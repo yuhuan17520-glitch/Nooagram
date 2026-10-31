@@ -1708,7 +1708,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
             } else if (scheduled) {
                 mode = ChatActivity.MODE_SCHEDULED;
             }
-            for (int id : messageIds) AyuState.permitDeleteMessage(dialogId, id);
+            for (int id : messageIds) AyuState.permitDeleteMessage(currentAccount, dialogId, id);
             getMessagesController().deleteMessages(messageIds, null, null, dialogId, topicId, false, mode);
         }
     }
@@ -10286,7 +10286,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         AndroidUtilities.runOnUIThread(() -> {
             SendMessagesHelper instance = accountInstance.getSendMessagesHelper();
             ArrayList<DelayedMessage> arrayList = instance.delayedMessages.get("group_" + groupId);
-            if (arrayList != null && !arrayList.isEmpty()) {
+            if (arrayList != null && !arrayList.isEmpty()
+                    && arrayList.get(0).messageObjects != null
+                    && !arrayList.get(0).messageObjects.isEmpty()) {
 
                 DelayedMessage message = arrayList.get(0);
 
@@ -10302,6 +10304,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 instance.sendReadyToSendGroup(message, true, true);
             }
         });
+    }
+
+    public void finishDelayedGroup(long groupId, int scheduleDate) {
+        finishGroup(getAccountInstance(), groupId, scheduleDate);
     }
 
     @UiThread

@@ -14,6 +14,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 把外部 ayu-data 数据库合并进当前库。
@@ -45,7 +48,15 @@ public class AyuDatabaseMerger {
         if (sourceFile == null || !sourceFile.exists()) {
             return 0;
         }
-        return AyuData.withClosedDatabase(() -> mergeInto(AyuData.getDatabaseFileInternal(), sourceFile, callback));
+        File targetDirectory = AyuMessagesController.getWritableAttachmentsDirectory();
+        List<File> copiedFiles = new ArrayList<>();
+        Map<String, String> importedPaths = new HashMap<>();
+        try {
+            return AyuData.withClosedDatabase(() -> mergeInto(AyuData.getDatabaseFileInternal(), sourceFile,
+                    callback, targetDirectory, copiedFiles, importedPaths));
+        } finally {
+            AyuMessagesController.registerOwnedAttachments(targetDirectory, copiedFiles);
+        }
     }
 
     /**
@@ -112,12 +123,13 @@ public class AyuDatabaseMerger {
         }
     }
 
-    private static int mergeInto(File targetFile, File sourceFile, ProgressCallback callback) {
+    private static int mergeInto(File targetFile, File sourceFile, ProgressCallback callback,
+                                 File targetDirectory, List<File> copiedFiles, Map<String, String> importedPaths) {
         SQLiteDatabase database = SQLiteDatabase.openDatabase(targetFile.getAbsolutePath(), null, 0);
         try {
             database.execSQL("ATTACH DATABASE " + DatabaseUtils.sqlEscapeString(sourceFile.getAbsolutePath()) + " AS " + SOURCE);
             try {
-                return mergeAttached(database, callback);
+                return mergeAttached(database, callback, targetDirectory, copiedFiles, importedPaths);
             } finally {
                 try {
                     database.execSQL("DETACH DATABASE " + SOURCE);
@@ -130,7 +142,8 @@ public class AyuDatabaseMerger {
         }
     }
 
-    private static int mergeAttached(SQLiteDatabase database, ProgressCallback callback) {
+    private static int mergeAttached(SQLiteDatabase database, ProgressCallback callback,
+                                     File targetDirectory, List<File> copiedFiles, Map<String, String> importedPaths) {
         int deletedCount = hasTable(database, DELETED_MESSAGE) ? count(database, SOURCE, DELETED_MESSAGE) : 0;
         int editedCount = hasTable(database, EDITED_MESSAGE) ? count(database, SOURCE, EDITED_MESSAGE) : 0;
         int dialogCount = hasTable(database, DELETED_DIALOG) ? count(database, SOURCE, DELETED_DIALOG) : 0;
@@ -159,16 +172,18 @@ public class AyuDatabaseMerger {
         } finally {
             database.endTransaction();
         }
-        importAttachments(database);
+        importAttachments(database, targetDirectory, copiedFiles, importedPaths);
         return merged;
     }
 
-    private static void importAttachments(SQLiteDatabase database) {
-        importAttachmentsFromTable(database, DELETED_MESSAGE);
-        importAttachmentsFromTable(database, EDITED_MESSAGE);
+    private static void importAttachments(SQLiteDatabase database, File targetDirectory,
+                                          List<File> copiedFiles, Map<String, String> importedPaths) {
+        importAttachmentsFromTable(database, DELETED_MESSAGE, targetDirectory, copiedFiles, importedPaths);
+        importAttachmentsFromTable(database, EDITED_MESSAGE, targetDirectory, copiedFiles, importedPaths);
     }
 
-    private static void importAttachmentsFromTable(SQLiteDatabase database, String table) {
+    private static void importAttachmentsFromTable(SQLiteDatabase database, String table, File targetDirectory,
+                                                   List<File> copiedFiles, Map<String, String> importedPaths) {
         if (!hasTable(database, table)) {
             return;
         }
@@ -188,8 +203,8 @@ public class AyuDatabaseMerger {
                 long dialogId = cursor.getLong(dialogIdIndex);
                 int messageId = cursor.getInt(messageIdIndex);
                 int entityCreateDate = cursor.getInt(createDateIndex);
-                String mediaPath = copyAttachment(cursor.getString(mediaPathIndex));
-                String thumbPath = copyAttachment(cursor.getString(thumbPathIndex));
+                String mediaPath = copyAttachment(cursor.getString(mediaPathIndex), targetDirectory, copiedFiles, importedPaths);
+                String thumbPath = copyAttachment(cursor.getString(thumbPathIndex), targetDirectory, copiedFiles, importedPaths);
                 if (mediaPath == null && thumbPath == null) {
                     continue;
                 }
@@ -203,24 +218,40 @@ public class AyuDatabaseMerger {
         }
     }
 
-    private static String copyAttachment(String sourcePath) {
+    private static String copyAttachment(String sourcePath, File targetDir, List<File> copiedFiles,
+                                         Map<String, String> importedPaths) {
         if (sourcePath == null || sourcePath.isEmpty()) {
             return null;
+        }
+        if (importedPaths.containsKey(sourcePath)) {
+            return importedPaths.get(sourcePath);
         }
         File source = new File(sourcePath);
         if (!source.isFile() || source.length() == 0L) {
             return null;
         }
-        File targetDir = AyuMessagesController.getWritableAttachmentsDirectory();
         if (targetDir == null) {
             return null;
         }
         File target = new File(targetDir, source.getName());
         try {
-            if (!target.exists() || target.length() != source.length()) {
-                copyFile(source, target);
+            File canonicalDirectory = targetDir.getCanonicalFile();
+            if (source.getCanonicalFile().equals(target.getCanonicalFile())) {
+                return source.getAbsolutePath();
             }
-            return target.isFile() && target.length() > 0L ? target.getAbsolutePath() : null;
+            if (target.exists()) {
+                target = new File(targetDir, UUID.randomUUID() + "-" + source.getName());
+            }
+            if (!canonicalDirectory.equals(target.getCanonicalFile().getParentFile())) {
+                return null;
+            }
+            copyFile(source, target);
+            if (target.isFile() && target.length() > 0L) {
+                copiedFiles.add(target);
+                importedPaths.put(sourcePath, target.getAbsolutePath());
+                return target.getAbsolutePath();
+            }
+            return null;
         } catch (IOException e) {
             FileLog.e("Failed to import Ayu attachment " + sourcePath, e);
             return null;

@@ -413,10 +413,18 @@ public class SharedLinkCell extends FrameLayout {
                         }
                         for (TLRPC.MessageEntity e : entities) {
                             int ss = e.offset, se = e.offset + e.length;
-                            if (NekoConfig.showSpoilersDirectly.Bool() && e instanceof TLRPC.TL_messageEntitySpoiler && start <= se && end >= ss) {
+                            if (NekoConfig.showSpoilersDirectly.Bool() && e instanceof TLRPC.TL_messageEntitySpoiler && start < se && end > ss) {
+                                // TextUrl labels have no positional mapping to their target URL.
+                                int spanStart = entity instanceof TLRPC.TL_messageEntityTextUrl ? 0 : Math.max(start, ss) - start + offset;
+                                int spanEnd = entity instanceof TLRPC.TL_messageEntityTextUrl ? sb.length() : Math.min(end, se) - start + offset;
+                                spanStart = Math.max(0, Math.min(spanStart, sb.length()));
+                                spanEnd = Math.max(0, Math.min(spanEnd, sb.length()));
+                                if (spanStart >= spanEnd) {
+                                    continue;
+                                }
                                 TextStyleSpan.TextStyleRun run = new TextStyleSpan.TextStyleRun();
                                 run.flags |= TextStyleSpan.FLAG_STYLE_SPOILER;
-                                sb.setSpan(new TextStyleSpan(run), Math.max(start, ss), Math.min(end, se) + offset, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                sb.setSpan(new TextStyleSpan(run), spanStart, spanEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
                             }
                         }
                         links.add(sb);

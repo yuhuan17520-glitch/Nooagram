@@ -12,16 +12,17 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.tgnet.TLRPC;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 
 /** Exports completed manual media downloads without moving files used by playback/image loaders. */
 public final class NooagramMediaDownload {
     private static final DispatchQueue queue = new DispatchQueue("nooagramMediaDownloads");
-    private static final HashMap<String, ArrayList<Pending>> pending = new HashMap<>();
+    private static final LinkedHashMap<String, ArrayList<Pending>> pending = new LinkedHashMap<>();
 
     private record Pending(String key, MessageObject message, NooagramCanonicalDownload.Claim claim,
                            String destination, String subfolder) {}
@@ -38,7 +39,9 @@ public final class NooagramMediaDownload {
         if (claim == null) return;
         if (NooagramCanonicalDownload.isEligibleDocument(message, true)
                 && NooagramDownloadDestination.usesCanonicalDocuments()) return;
-        String fileName = NooagramCanonicalDownload.mediaFileName(message);
+        TLRPC.PhotoSize photo = message.getDocument() == null ? NooagramCanonicalDownload.mediaPhoto(message) : null;
+        String fileName = photo == null ? NooagramCanonicalDownload.mediaFileName(message)
+                : FileLoader.getAttachFileName(photo);
         // Thumbnail and preloaded video operations never count as a manual full-size download.
         if (loadedFileName != null && !fileName.equals(loadedFileName)) return;
         String transferKey = message.currentAccount + ":" + fileName;
@@ -47,12 +50,18 @@ public final class NooagramMediaDownload {
         String exportKey = transferKey + ":" + message.getDialogId() + ":" + message.getId() + ":" + destination + ":" + subfolder;
         Pending request = new Pending(exportKey, message, claim, destination, subfolder);
         queue.postRunnable(() -> {
-            File source = FileLoader.getInstance(message.currentAccount).getPathToMessage(message.messageOwner);
+            FileLoader loader = FileLoader.getInstance(message.currentAccount);
+            File source = photo != null
+                    ? loader.getPathToAttach(photo)
+                    : loader.getPathToMessage(message.messageOwner);
             if (source != null && source.isFile() && !FileLoader.getInstance(message.currentAccount).isLoadingFile(fileName)) {
                 export(request, source);
             } else {
                 ArrayList<Pending> requests = pending.computeIfAbsent(transferKey, key -> new ArrayList<>());
                 if (requests.stream().noneMatch(item -> item.key.equals(exportKey))) requests.add(request);
+                if (requests.size() > 16) requests.remove(0);
+                // Bound retained messages even if a completion callback never arrives.
+                while (pending.size() > 128) pending.remove(pending.keySet().iterator().next());
             }
         });
     }

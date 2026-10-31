@@ -25,6 +25,13 @@ public final class AyuMessageHelper extends BaseController {
         if (text == null || messageObject == null || messageObject.messageOwner == null) {
             return;
         }
+        if (messageObject.isFcmMessage()) {
+            // messageText includes sender/chat names; the push body is stored separately.
+            if (hasFilterText(messageObject.messageOwner.message)) {
+                text.append(messageObject.messageOwner.message).append("\n");
+            }
+            return;
+        }
         CharSequence messageText = messageObject.messageText;
         if (hasFilterText(messageText)
             && !TextUtils.equals(messageText, LocaleController.getString(R.string.AttachVideo))

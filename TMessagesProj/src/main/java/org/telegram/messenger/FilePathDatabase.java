@@ -752,27 +752,64 @@ public class FilePathDatabase {
 
     public boolean hasAnotherRefOnFile(String path) {
         CountDownLatch syncLatch = new CountDownLatch(1);
-        boolean[] res = new boolean[]{false};
-        postRunnable(() -> {
-            ensureDatabaseCreated();
+        boolean[] res = new boolean[]{true};
+        Runnable query = () -> {
             try {
-                SQLiteCursor cursor = database.queryFinalized("SELECT document_id FROM paths WHERE path = '" + path + "'");
-                if (cursor.next()) {
-                    res[0] = true;
+                ensureDatabaseCreated();
+                if (database == null || path == null) {
+                    return;
+                }
+                SQLiteCursor cursor = database.queryFinalized(
+                        "SELECT document_id FROM paths WHERE path = ?", path);
+                try {
+                    res[0] = cursor.next();
+                } finally {
+                    cursor.dispose();
                 }
             } catch (Exception e) {
                 FileLog.e(e);
             } finally {
                 syncLatch.countDown();
             }
-        });
+        };
+        if (dispatchQueue != null && dispatchQueue.getHandler() != null
+                && Thread.currentThread() == dispatchQueue.getHandler().getLooper().getThread()) {
+            query.run();
+        } else {
+            postRunnable(query);
+        }
 
         try {
             syncLatch.await();
         } catch (InterruptedException e) {
-            FileLog.e(e);
+            Thread.currentThread().interrupt();
+            return true;
         }
         return res[0];
+    }
+
+    /**
+     * Shared media files can be referenced by more than one account database. Fail closed when
+     * the account set or one of the databases cannot be inspected.
+     */
+    public boolean hasAnotherRefOnFileAcrossAccounts(String path) {
+        try {
+            if (path == null || SharedConfig.activeAccounts == null
+                    || !SharedConfig.activeAccounts.contains(currentAccount)) {
+                return true;
+            }
+            for (int account : SharedConfig.activeAccounts) {
+                FilePathDatabase accountDatabase = account == currentAccount ? this
+                        : FileLoader.getInstance(account).getFileDatabase();
+                if (accountDatabase.hasAnotherRefOnFile(path)) {
+                    return true;
+                }
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return true;
+        }
+        return false;
     }
 
     public void saveFileDialogId(File file, FileMeta fileMeta) {

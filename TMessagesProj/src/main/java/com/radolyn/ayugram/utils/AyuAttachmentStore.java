@@ -15,10 +15,22 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /** Ownership records live in private app storage, never in the selected directory. */
 public final class AyuAttachmentStore {
+    public interface FileDeletion {
+        boolean delete(File file) throws IOException;
+    }
+
+    public interface DeletionGuard {
+        boolean delete(File file, FileDeletion unlink) throws IOException;
+    }
+
     private final File directory;
     private final File canonicalDirectory;
     private final File records;
@@ -87,17 +99,46 @@ public final class AyuAttachmentStore {
     }
 
     public long trim(long limit, File keepFile, Consumer<File> onDeleted) throws IOException {
+        return trimKeeping(limit, keepFile == null ? Collections.emptySet() : Collections.singleton(keepFile),
+                file -> true, onDeleted);
+    }
+
+    public long trimKeeping(long limit, Set<File> keepFiles, Predicate<File> canDelete, Consumer<File> onDeleted) throws IOException {
+        return trimUsing(limit, keepFiles, canDelete, (file, unlink) -> unlink.delete(file), onDeleted);
+    }
+
+    public long trimUsing(long limit, Set<File> keepFiles, Predicate<File> canDelete,
+                          DeletionGuard guard, Consumer<File> onDeleted) throws IOException {
         if (limit == Long.MAX_VALUE) {
             return 0L;
         }
-        return clean(Math.max(0L, limit), keepFile, false, onDeleted);
+        return clean(Math.max(0L, limit), keepFiles, false, canDelete, guard, onDeleted);
     }
 
     public long clear(Consumer<File> onDeleted) throws IOException {
-        return clean(0L, null, true, onDeleted);
+        return clear(file -> true, onDeleted);
     }
 
-    private long clean(long limit, File keepFile, boolean clearAll, Consumer<File> onDeleted) throws IOException {
+    public long clear(Predicate<File> canDelete, Consumer<File> onDeleted) throws IOException {
+        return clearUsing(canDelete, (file, unlink) -> unlink.delete(file), onDeleted);
+    }
+
+    public long clearUsing(Predicate<File> canDelete, DeletionGuard guard, Consumer<File> onDeleted) throws IOException {
+        return clean(0L, Collections.emptySet(), true, canDelete, guard, onDeleted);
+    }
+
+    /** The caller checks database references in the same transaction as this unlink. */
+    public boolean deleteOwned(File file) throws IOException {
+        BasicFileAttributes current = attributes(file);
+        if (current != null && matchesRecord(file, current) && file.delete()) {
+            recordFor(file).delete();
+            return true;
+        }
+        return false;
+    }
+
+    private long clean(long limit, Set<File> keepFiles, boolean clearAll, Predicate<File> canDelete,
+                       DeletionGuard guard, Consumer<File> onDeleted) throws IOException {
         if (!isSafeDirectory()) {
             return 0L;
         }
@@ -120,21 +161,26 @@ public final class AyuAttachmentStore {
         if (!clearAll) {
             ownedFiles.sort(Comparator.comparingLong(file -> file.modified));
         }
-        File keepPath = keepFile == null ? null : resolveRealPath(keepFile);
+        Set<File> keepPaths = new HashSet<>();
+        for (File keepFile : keepFiles) {
+            keepPaths.add(resolveRealPath(keepFile));
+        }
         long deletedSize = 0L;
         for (SavedFile saved : ownedFiles) {
             if (!clearAll && currentSize <= limit) {
                 break;
             }
-            if (keepPath != null && keepPath.equals(resolveRealPath(saved.file))) {
+            if (keepPaths.contains(resolveRealPath(saved.file))) {
                 continue;
             }
             // Recheck ownership and canonical containment immediately before each unlink.
-            BasicFileAttributes current = attributes(saved.file);
-            if (current != null && saved.matches(current) && matchesRecord(saved.file, current) && saved.file.delete()) {
+            if (guard.delete(saved.file, file -> {
+                BasicFileAttributes current = attributes(file);
+                return current != null && saved.matches(current) && matchesRecord(file, current)
+                        && canDelete.test(file) && deleteOwned(file);
+            })) {
                 currentSize -= saved.size;
                 deletedSize = saturatedAdd(deletedSize, saved.size);
-                recordFor(saved.file).delete();
                 onDeleted.accept(saved.file);
             }
         }

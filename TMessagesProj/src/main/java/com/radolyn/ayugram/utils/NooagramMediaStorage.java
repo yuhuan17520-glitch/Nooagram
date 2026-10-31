@@ -3,6 +3,9 @@ package com.radolyn.ayugram.utils;
 import org.telegram.messenger.FileLoader;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Typed internal media directories, independent of the optional public export destination. */
 public final class NooagramMediaStorage {
@@ -46,6 +49,64 @@ public final class NooagramMediaStorage {
         if (mimeType.startsWith("audio/")) return FileLoader.MEDIA_DIR_AUDIO;
         if (mimeType.startsWith("video/")) return FileLoader.MEDIA_DIR_VIDEO;
         return type;
+    }
+
+    /** Managed cache locations, including old directories; this never moves files. */
+    public static List<File> cleanupDirectories(File... directories) {
+        ArrayList<File> paths = new ArrayList<>();
+        for (File directory : directories) {
+            if (directory == null) continue;
+            paths.add(directory);
+            String oldName = legacyName(directory);
+            if (oldName == null) continue;
+            File mediaRoot = directory.getParentFile();
+            paths.add(new File(mediaRoot.getParentFile(), oldName));
+            if ("documents".equals(oldName)) {
+                // The 1.3.6 document directory was the root itself. Include only loose files,
+                // so clearing documents cannot recursively clear the other typed directories.
+                File[] looseFiles = mediaRoot.listFiles(File::isFile);
+                if (looseFiles != null) {
+                    for (File file : looseFiles) {
+                        if (!".nomedia".equals(file.getName())) paths.add(file);
+                    }
+                }
+            }
+        }
+        return deduplicatePaths(paths);
+    }
+
+    /** Removes aliases and children already covered by a recursive parent scan. */
+    public static List<File> deduplicatePaths(List<File> paths) {
+        ArrayList<File> result = new ArrayList<>();
+        ArrayList<String> canonicalPaths = new ArrayList<>();
+        for (File path : paths) {
+            if (path == null) continue;
+            String candidate;
+            try {
+                candidate = path.getCanonicalPath();
+            } catch (IOException e) {
+                candidate = path.getAbsolutePath();
+            }
+            boolean covered = false;
+            for (String existing : canonicalPaths) {
+                if (candidate.equals(existing) || candidate.startsWith(existing + File.separator)) {
+                    covered = true;
+                    break;
+                }
+            }
+            if (covered) continue;
+            String parent = candidate + File.separator;
+            for (int i = canonicalPaths.size() - 1; i >= 0; i--) {
+                if (canonicalPaths.get(i).startsWith(parent)) {
+                    canonicalPaths.remove(i);
+                    result.remove(i);
+                }
+            }
+            // Keep the original spelling used by FilePathDatabase metadata lookups.
+            result.add(path);
+            canonicalPaths.add(candidate);
+        }
+        return result;
     }
 
     public static File resolve(File directory, String name) {

@@ -19,6 +19,7 @@ import org.telegram.tgnet.TLRPC;
 
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -54,19 +55,68 @@ final class NooagramDialogPreviewFilter {
     private static final Map<GroupKey, GroupLoad> GROUP_LOADS = new LinkedHashMap<>();
     private static final Account[] ACCOUNTS = new Account[UserConfig.MAX_ACCOUNT_COUNT];
     private static long nextGeneration;
+    private static boolean rulesPreloadPending;
+    private static final ArrayList<WeakReference<DialogCell>> RULE_WAITERS = new ArrayList<>();
 
     private NooagramDialogPreviewFilter() {}
+
+    static void preloadRules(DialogCell cell) {
+        boolean found = false;
+        Iterator<WeakReference<DialogCell>> iterator = RULE_WAITERS.iterator();
+        while (iterator.hasNext()) {
+            DialogCell other = iterator.next().get();
+            if (other == null) {
+                iterator.remove();
+            } else if (other == cell) {
+                found = true;
+            }
+        }
+        if (!found) {
+            RULE_WAITERS.add(new WeakReference<>(cell));
+        }
+        startRulesPreload();
+    }
+
+    private static void startRulesPreload() {
+        if (rulesPreloadPending) {
+            return;
+        }
+        rulesPreloadPending = true;
+        AyuFilter.preloadAsync(() -> {
+            rulesPreloadPending = false;
+            if (!AyuFilter.isLoaded()) {
+                startRulesPreload();
+                return;
+            }
+            ArrayList<WeakReference<DialogCell>> waiting = new ArrayList<>(RULE_WAITERS);
+            RULE_WAITERS.clear();
+            for (WeakReference<DialogCell> reference : waiting) {
+                DialogCell cell = reference.get();
+                if (cell != null) {
+                    cell.onFilterRulesLoaded();
+                }
+            }
+        });
+    }
 
     static boolean isHidden(int account, long dialogId, MessageObject message) {
         return getVisibility(account, dialogId, message) == HIDDEN;
     }
 
     static int getVisibility(int account, long dialogId, MessageObject message) {
+        return getVisibility(account, dialogId, message,
+                message != null ? groupContext(account, dialogId, message.getGroupId()) : null);
+    }
+
+    private static int getVisibility(int account, long dialogId, MessageObject message, GroupContext group) {
         if (message == null || message.messageOwner == null) {
             return VISIBLE;
         }
         if (message.messageOwner.hide) {
             return HIDDEN;
+        }
+        if ((AyuFilter.shouldHideFilteredMessages() || AyuFilter.shouldMaskFilteredMessages()) && !AyuFilter.isLoaded()) {
+            return PENDING;
         }
         // A chat's temporary "show filtered" flag must not bypass dialog filtering.
         boolean skipFiltering = message.skipAyuFiltering;
@@ -82,7 +132,6 @@ final class NooagramDialogPreviewFilter {
             if (groupId == 0) {
                 return AyuFilter.isFiltered(message, null) ? HIDDEN : VISIBLE;
             }
-            GroupContext group = groupContext(account, dialogId, groupId);
             if (group == null || !group.complete) {
                 return PENDING;
             }
@@ -439,7 +488,9 @@ final class NooagramDialogPreviewFilter {
         }
         NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
         State state = STATES.get(key);
-        if (state == null || !state.search.matches(source.getId(), source.messageOwner.date, source.messageOwner.edit_date)) {
+        // A state from older rules drops all its callbacks (sessionCurrent), so it must be replaced, not reused.
+        if (state == null || state.rulesVersion != AyuFilter.getRulesVersion()
+                || !state.search.matches(source.getId(), source.messageOwner.date, source.messageOwner.edit_date)) {
             if (state != null) {
                 state.dispose();
             }
@@ -504,7 +555,8 @@ final class NooagramDialogPreviewFilter {
     }
 
     private static boolean current(State state, long token) {
-        return state.sessionCurrent() && STATES.get(state.key) == state && state.search.accepts(token);
+        return state.sessionCurrent() && STATES.get(state.key) == state
+                && state.search.accepts(token, state.rulesVersion, AyuFilter.getRulesVersion());
     }
 
     private static void loadLocal(State state, long token, int pageIndex, int beforeDate, int beforeId) {
@@ -551,6 +603,7 @@ final class NooagramDialogPreviewFilter {
                     cursor.dispose();
                 }
             }
+            evaluatePage(state, page);
             AndroidUtilities.runOnUIThread(() -> {
                 if (!current(state, token)) {
                     return;
@@ -559,15 +612,8 @@ final class NooagramDialogPreviewFilter {
                     finish(state, token, null, true);
                     return;
                 }
-                publishGroupContexts(state, page);
-                MessageObject result;
-                try {
-                    result = findCandidate(state, page);
-                } catch (Exception error) {
-                    Log.e("NooagramPreview", "Cannot evaluate preview history", error);
-                    finish(state, token, null, true);
-                    return;
-                }
+                publishPage(state, page);
+                MessageObject result = page.candidate;
                 if (result != null) {
                     finish(state, token, result, false);
                 } else if (page.rows == NooagramPreviewSearch.PAGE_SIZE && pageIndex + 1 < NooagramPreviewSearch.MAX_LOCAL_PAGES) {
@@ -587,18 +633,59 @@ final class NooagramDialogPreviewFilter {
     }
 
     private static MessageObject findCandidate(State state, Page page) {
-        MessagesController controller = MessagesController.getInstance(state.key.account);
-        controller.putUsers(page.users, true);
-        controller.putChats(page.chats, true);
         page.messages.sort((left, right) -> {
             int date = Integer.compare(right.date, left.date);
             return date != 0 ? date : Integer.compare(right.id, left.id);
         });
-        ArrayList<MessageObject> candidates = new ArrayList<>();
         for (TLRPC.Message raw : page.messages) {
-            candidates.add(new MessageObject(state.key.account, raw, false, false));
+            MessageObject candidate = new MessageObject(state.key.account, raw, page.userMap, page.chatMap, false, false);
+            if (!validMessage(state.key.account, state.key.dialogId, candidate)
+                    || candidate.getId() == state.search.sourceId) {
+                continue;
+            }
+            GroupKey key = new GroupKey(state.key, candidate.getGroupId());
+            GroupContext group;
+            synchronized (GROUP_CONTEXTS) {
+                group = GROUP_CONTEXTS.get(key);
+            }
+            if (group == null || !group.complete) {
+                group = page.groups.get(candidate.getGroupId());
+            }
+            int visibility = getVisibility(state.key.account, state.key.dialogId, candidate, group);
+            if (visibility == PENDING) {
+                page.pendingGroups.add(candidate);
+            } else if (visibility == VISIBLE) {
+                return candidate;
+            }
         }
-        return NooagramPreviewSearch.latestEligible(candidates, candidate -> eligible(state, candidate));
+        return null;
+    }
+
+    // Called on the storage queue. UI callbacks only publish this evaluated result.
+    private static void evaluatePage(State state, Page page) {
+        if (page.failed || !state.sessionCurrent()) {
+            return;
+        }
+        try {
+            for (TLRPC.User user : page.users) {
+                page.userMap.put(user.id, user);
+            }
+            for (TLRPC.Chat chat : page.chats) {
+                page.chatMap.put(chat.id, chat);
+            }
+            for (Map.Entry<Long, ArrayList<TLRPC.Message>> entry : page.groupMembers.entrySet()) {
+                MessageObject.GroupedMessages group = new MessageObject.GroupedMessages();
+                group.groupId = entry.getKey();
+                for (TLRPC.Message raw : entry.getValue()) {
+                    group.messages.add(new MessageObject(state.key.account, raw, page.userMap, page.chatMap, false, false));
+                }
+                page.groups.put(entry.getKey(), new GroupContext(group, false));
+            }
+            page.candidate = findCandidate(state, page);
+        } catch (Exception error) {
+            page.failed = true;
+            Log.e("NooagramPreview", "Cannot evaluate preview history", error);
+        }
     }
 
     private static void loadGroupMembers(MessagesStorage storage, State state, Page page,
@@ -638,14 +725,15 @@ final class NooagramDialogPreviewFilter {
         }
     }
 
-    private static void publishGroupContexts(State state, Page page) {
-        for (Map.Entry<Long, ArrayList<TLRPC.Message>> entry : page.groupMembers.entrySet()) {
-            MessageObject.GroupedMessages group = new MessageObject.GroupedMessages();
-            group.groupId = entry.getKey();
-            for (TLRPC.Message message : entry.getValue()) {
-                group.messages.add(new MessageObject(state.key.account, message, false, false));
-            }
-            putGroupContext(new GroupKey(state.key, entry.getKey()), group, false);
+    private static void publishPage(State state, Page page) {
+        MessagesController controller = MessagesController.getInstance(state.key.account);
+        controller.putUsers(page.users, true);
+        controller.putChats(page.chats, true);
+        for (Map.Entry<Long, GroupContext> entry : page.groups.entrySet()) {
+            putGroupContext(new GroupKey(state.key, entry.getKey()), entry.getValue().messages, false);
+        }
+        for (MessageObject pending : page.pendingGroups) {
+            ensureGroupContext(state, pending);
         }
     }
 
@@ -658,6 +746,7 @@ final class NooagramDialogPreviewFilter {
                 return;
             }
             Page page = readStoredHistory(storage, state, messages, false);
+            evaluatePage(state, page);
             AndroidUtilities.runOnUIThread(() -> {
                 if (!current(state, token)) {
                     return;
@@ -666,15 +755,8 @@ final class NooagramDialogPreviewFilter {
                     finish(state, token, null, true);
                     return;
                 }
-                publishGroupContexts(state, page);
-                MessageObject result;
-                try {
-                    result = findCandidate(state, page);
-                } catch (Exception error) {
-                    Log.e("NooagramPreview", "Cannot recheck preview replacement", error);
-                    finish(state, token, null, true);
-                    return;
-                }
+                publishPage(state, page);
+                MessageObject result = page.candidate;
                 if (result == null) {
                     forget(state.key, state.replacement.getId());
                 }
@@ -802,6 +884,7 @@ final class NooagramDialogPreviewFilter {
                     Page stored = readStoredHistory(storage, state, messages.messages, true);
                     stored.users = messages.users;
                     stored.chats = messages.chats;
+                    evaluatePage(state, stored);
                     AndroidUtilities.runOnUIThread(() -> {
                         if (!current(state, token)) {
                             return;
@@ -810,15 +893,8 @@ final class NooagramDialogPreviewFilter {
                             finish(state, token, null, true);
                             return;
                         }
-                        publishGroupContexts(state, stored);
-                        MessageObject result;
-                        try {
-                            result = findCandidate(state, stored);
-                        } catch (Exception error) {
-                            Log.e("NooagramPreview", "Cannot evaluate stored preview history", error);
-                            finish(state, token, null, true);
-                            return;
-                        }
+                        publishPage(state, stored);
+                        MessageObject result = stored.candidate;
                         state.search.historyStored(token, count, oldestId);
                         if (result != null) {
                             finish(state, token, result, false);
@@ -1074,6 +1150,7 @@ final class NooagramDialogPreviewFilter {
         final NooagramPreviewSearch search;
         final MessageObject source;
         final int loginTime;
+        final long rulesVersion;
         final ArrayList<WeakReference<DialogCell>> cells = new ArrayList<>();
         volatile boolean disposed;
         MessageObject replacement;
@@ -1085,13 +1162,15 @@ final class NooagramDialogPreviewFilter {
         State(NooagramPreviewSearch.Key key, int loginTime, MessageObject source) {
             this.key = key;
             this.loginTime = loginTime;
+            rulesVersion = AyuFilter.getRulesVersion();
             this.source = source;
             search = new NooagramPreviewSearch(source.getId(), source.messageOwner.date, source.messageOwner.edit_date);
         }
 
         boolean sessionCurrent() {
             UserConfig config = UserConfig.getInstance(key.account);
-            return !disposed && config.getClientUserId() == key.userId && config.loginTime == loginTime;
+            return !disposed && config.getClientUserId() == key.userId && config.loginTime == loginTime
+                    && rulesVersion == AyuFilter.getRulesVersion();
         }
 
         void watch(DialogCell cell) {
@@ -1149,6 +1228,11 @@ final class NooagramDialogPreviewFilter {
     private static final class Page {
         final ArrayList<TLRPC.Message> messages = new ArrayList<>();
         final Map<Long, ArrayList<TLRPC.Message>> groupMembers = new LinkedHashMap<>();
+        final Map<Long, GroupContext> groups = new LinkedHashMap<>();
+        final ArrayList<MessageObject> pendingGroups = new ArrayList<>();
+        final HashMap<Long, TLRPC.User> userMap = new HashMap<>();
+        final HashMap<Long, TLRPC.Chat> chatMap = new HashMap<>();
+        MessageObject candidate;
         ArrayList<TLRPC.User> users = new ArrayList<>();
         ArrayList<TLRPC.Chat> chats = new ArrayList<>();
         int rows;

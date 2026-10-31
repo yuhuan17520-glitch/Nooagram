@@ -11,6 +11,7 @@ import androidx.core.util.Pair;
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.AyuUtils;
 import com.radolyn.ayugram.controllers.AyuAttachments;
+import com.radolyn.ayugram.controllers.AyuGhostController;
 import com.radolyn.ayugram.database.entities.AyuMessageBase;
 import com.radolyn.ayugram.messages.AyuMessagesController;
 import com.radolyn.ayugram.messages.AyuSavePreferences;
@@ -382,7 +383,7 @@ public abstract class AyuMessageUtils {
         if (messageObject == null || messageObject.messageOwner == null) {
             return false;
         }
-        if (!AyuOptions.useScheduledMessages.Bool()) {
+        if (!AyuGhostController.getInstance(messageObject.currentAccount).isUseScheduledMessages()) {
             return false;
         }
         if (!messageObject.messageOwner.from_scheduled) {

@@ -54,6 +54,7 @@ public class RegexFilterEditActivity extends BaseFragment {
     private boolean caseInsensitive;
     private boolean reversed;
     private boolean addToSharedFilters;
+    private boolean saving;
 
     private EditTextBoldCursor editField;
     private OutlineTextContainerView editFieldContainer;
@@ -108,7 +109,8 @@ public class RegexFilterEditActivity extends BaseFragment {
         this.filterIdx = -1;
         this.targetDialogId = dialogId;
         this.chatFilterIdx = chatFilterIdx;
-        this.filterModel = AyuFilter.getChatFiltersForDialog(dialogId).size() > chatFilterIdx && chatFilterIdx >= 0 ? AyuFilter.getChatFiltersForDialog(dialogId).get(chatFilterIdx) : null;
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getChatFiltersForDialog(dialogId);
+        this.filterModel = filters.size() > chatFilterIdx && chatFilterIdx >= 0 ? filters.get(chatFilterIdx) : null;
         this.enabled = this.filterModel == null || this.filterModel.enabled;
         this.caseInsensitive = this.filterModel == null || this.filterModel.caseInsensitive;
         this.reversed = this.filterModel != null && this.filterModel.reversed;
@@ -259,6 +261,7 @@ public class RegexFilterEditActivity extends BaseFragment {
     }
 
     private void save() {
+        if (saving) return;
         String text = editField == null || editField.getText() == null ? "" : editField.getText().toString().trim();
         if (TextUtils.isEmpty(text)) {
             showError(getString(R.string.RegexFiltersAddError));
@@ -276,59 +279,22 @@ public class RegexFilterEditActivity extends BaseFragment {
             return;
         }
 
-        persistFilter(text);
-        finishFragment();
-    }
-
-    private void persistFilter(String text) {
-        if (chatFilterIdx != -1 && targetDialogId != 0L) {
-            ArrayList<AyuFilter.ChatFilterEntry> entries = new ArrayList<>(AyuFilter.getChatFilterEntries());
-            for (AyuFilter.ChatFilterEntry entry : entries) {
-                if (entry.dialogId == targetDialogId && entry.filters != null && chatFilterIdx >= 0 && chatFilterIdx < entry.filters.size()) {
-                    AyuFilter.FilterModel model = entry.filters.get(chatFilterIdx);
-                    applyToModel(model, text);
-                    AyuFilter.saveChatFilterEntries(entries);
-                    return;
-                }
-            }
-            return;
-        }
-
-        if (filterIdx != -1) {
-            ArrayList<AyuFilter.FilterModel> filters = new ArrayList<>(AyuFilter.getRegexFilters());
-            if (filterIdx >= 0 && filterIdx < filters.size()) {
-                applyToModel(filters.get(filterIdx), text);
-                AyuFilter.saveFilter(filters);
-            }
-            return;
-        }
-
         AyuFilter.FilterModel model = new AyuFilter.FilterModel();
+        if (filterModel != null) model.id = filterModel.id;
         applyToModel(model, text);
-        if (targetDialogId != 0L && !(canSelectSharedTarget && addToSharedFilters)) {
-            ArrayList<AyuFilter.ChatFilterEntry> entries = new ArrayList<>(AyuFilter.getChatFilterEntries());
-            AyuFilter.ChatFilterEntry target = null;
-            for (AyuFilter.ChatFilterEntry entry : entries) {
-                if (entry.dialogId == targetDialogId) {
-                    target = entry;
-                    break;
-                }
-            }
-            if (target == null) {
-                target = new AyuFilter.ChatFilterEntry();
-                target.dialogId = targetDialogId;
-                entries.add(target);
-            }
-            if (target.filters == null) {
-                target.filters = new ArrayList<>();
-            }
-            target.filters.add(0, model);
-            AyuFilter.saveChatFilterEntries(entries);
-        } else {
-            ArrayList<AyuFilter.FilterModel> filters = new ArrayList<>(AyuFilter.getRegexFilters());
-            filters.add(0, model);
-            AyuFilter.saveFilter(filters);
-        }
+        boolean existing = filterIdx != -1 || chatFilterIdx != -1;
+        Long dialogId = targetDialogId != 0L && (existing || !(canSelectSharedTarget && addToSharedFilters))
+                ? targetDialogId : null;
+        saving = true;
+        doneButton.setEnabled(false);
+        AyuFilter.saveRuleAsync(model, dialogId, existing, () -> {
+            if (!isFinished && !isFinishing() && getParentActivity() != null) finishFragment();
+        }, () -> {
+            if (isFinished || isFinishing() || getParentActivity() == null) return;
+            saving = false;
+            doneButton.setEnabled(true);
+            showError(getString(R.string.RegexFiltersAddError));
+        });
     }
 
     private void applyToModel(AyuFilter.FilterModel model, String text) {

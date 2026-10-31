@@ -202,7 +202,12 @@ public final class NooagramDownloadDestination {
         try (FileInputStream input = new FileInputStream(source)) {
             byte[] buffer = new byte[65536];
             int count;
-            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            while (true) {
+                if (Thread.currentThread().isInterrupted()) throw new IOException("Media export cancelled");
+                count = input.read(buffer);
+                if (count == -1) break;
+                output.write(buffer, 0, count);
+            }
             output.flush();
         }
     }

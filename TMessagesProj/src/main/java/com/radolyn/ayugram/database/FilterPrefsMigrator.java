@@ -73,14 +73,37 @@ public final class FilterPrefsMigrator {
         }
     }
 
-    static RegexFilterDao.Snapshot parseLegacy(String sharedJson, String chatJson, String exclusionsJson) {
+    public static RegexFilterDao.Snapshot parseLegacy(String sharedJson, String chatJson, String exclusionsJson) {
         Gson gson = new Gson();
         ArrayList<RegexFilter> filters = new ArrayList<>();
         ArrayList<RegexFilterGlobalExclusion> exclusionRows = new ArrayList<>();
         ArrayList<LegacyFilterModel> shared = readList(gson, sharedJson, new TypeToken<ArrayList<LegacyFilterModel>>(){}.getType());
         if (shared != null) {
             for (LegacyFilterModel model : shared) {
-                if (model != null && model.regex != null) filters.add(legacyRow(model, null));
+                if (model == null || model.regex == null) continue;
+                RegexFilter global = legacyRow(model, null);
+                filters.add(global);
+                if (model.enabledGroups == null && model.disabledGroups == null) continue;
+                if (global.enabled) {
+                    if (model.disabledGroups != null) {
+                        for (Long dialogId : model.disabledGroups) {
+                            if (dialogId == null || dialogId == 0L) continue;
+                            RegexFilterGlobalExclusion exclusion = new RegexFilterGlobalExclusion();
+                            exclusion.dialogId = dialogId;
+                            exclusion.filterId = global.id;
+                            exclusionRows.add(exclusion);
+                        }
+                    }
+                } else if (model.enabledGroups != null) {
+                    for (Long dialogId : model.enabledGroups) {
+                        if (dialogId == null || dialogId == 0L) continue;
+                        RegexFilter chat = legacyRow(model, dialogId);
+                        // A legacy shared ID can occur in several chat scopes; Room IDs are global.
+                        chat.id = UUID.nameUUIDFromBytes((global.id + ":chat:" + dialogId)
+                                .getBytes(StandardCharsets.UTF_8)).toString();
+                        filters.add(chat);
+                    }
+                }
             }
         }
         ArrayList<LegacyChatFilterEntry> chats = readList(gson, chatJson, new TypeToken<ArrayList<LegacyChatFilterEntry>>(){}.getType());

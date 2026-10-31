@@ -15,8 +15,11 @@ import java.util.ArrayList;
 import java.util.Map;
 
 import com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity;
+import com.radolyn.ayugram.settings.GhostModeActivity;
+import com.radolyn.ayugram.settings.NekoAyuSpySettingsActivity;
 import com.radolyn.ayugram.settings.NooagramDownloadSettingsActivity;
 import tw.nekomimi.nekogram.ChatHistoryActivity;
+import tw.nekomimi.nekogram.filters.RegexFiltersSettingActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity;
 import tw.nekomimi.nekogram.settings.NekoChatSettingsActivity;
@@ -70,6 +73,15 @@ public class SettingsHelper {
                     break;
                 case "downloads":
                     fragment = ayu_fragment = new NooagramDownloadSettingsActivity();
+                    break;
+                case "ghostmode":
+                    fragment = ayu_fragment = new GhostModeActivity();
+                    break;
+                case "ayuspy":
+                    fragment = ayu_fragment = new NekoAyuSpySettingsActivity();
+                    break;
+                case "regexfilters":
+                    fragment = ayu_fragment = new RegexFiltersSettingActivity();
                     break;
                 case "chat":
                 case "chats":

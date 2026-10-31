@@ -23,7 +23,9 @@ public class AyuState {
     private static final AyuStateVariable automaticallyScheduled = new AyuStateVariable();
     private static final AyuStateVariable allowDeleteDialogs = new AyuStateVariable();
     private static final Object deletePermittedLock = new Object();
-    private static final LongSparseArray<ArrayList<Integer>> deletePermitted = new LongSparseArray<>();
+    // Keyed by account slot first: two accounts in the same chat must not share delete permits.
+    @SuppressWarnings("unchecked")
+    private static final LongSparseArray<ArrayList<Integer>>[] deletePermitted = new LongSparseArray[UserConfig.MAX_ACCOUNT_COUNT];
 
     public static void setHideSelection(boolean val, int resetAfter) {
         hideSelection.val = val;
@@ -56,12 +58,28 @@ public class AyuState {
         return allowDeleteDialogs.process();
     }
 
-    public static void permitDeleteMessage(long dialogId, int messageId) {
+    private static LongSparseArray<ArrayList<Integer>> deletePermittedFor(int account, boolean create) {
+        if (account < 0 || account >= deletePermitted.length) {
+            return null;
+        }
+        var map = deletePermitted[account];
+        if (map == null && create) {
+            map = new LongSparseArray<>();
+            deletePermitted[account] = map;
+        }
+        return map;
+    }
+
+    public static void permitDeleteMessage(int account, long dialogId, int messageId) {
         synchronized (deletePermittedLock) {
-            var list = deletePermitted.get(dialogId);
+            var map = deletePermittedFor(account, true);
+            if (map == null) {
+                return;
+            }
+            var list = map.get(dialogId);
             if (list == null) {
                 list = new ArrayList<>();
-                deletePermitted.put(dialogId, list);
+                map.put(dialogId, list);
             }
 
             if (!list.contains(messageId)) {
@@ -70,9 +88,10 @@ public class AyuState {
         }
     }
 
-    public static boolean isDeletePermitted(long dialogId, int messageId) {
+    public static boolean isDeletePermitted(int account, long dialogId, int messageId) {
         synchronized (deletePermittedLock) {
-            var list = deletePermitted.get(dialogId);
+            var map = deletePermittedFor(account, false);
+            var list = map == null ? null : map.get(dialogId);
             if (list == null) {
                 return false;
             }
@@ -81,16 +100,26 @@ public class AyuState {
         }
     }
 
-    public static void messageDeleted(long dialogId, int messageId) {
+    public static void messageDeleted(int account, long dialogId, int messageId) {
         synchronized (deletePermittedLock) {
-            var list = deletePermitted.get(dialogId);
+            var map = deletePermittedFor(account, false);
+            var list = map == null ? null : map.get(dialogId);
             if (list == null) {
                 return;
             }
 
             list.remove((Object) messageId);
             if (list.isEmpty()) {
-                deletePermitted.delete(dialogId);
+                map.delete(dialogId);
+            }
+        }
+    }
+
+    /** Drops all pending delete permits of an account slot (logout). */
+    public static void clearDeletePermits(int account) {
+        synchronized (deletePermittedLock) {
+            if (account >= 0 && account < deletePermitted.length) {
+                deletePermitted[account] = null;
             }
         }
     }

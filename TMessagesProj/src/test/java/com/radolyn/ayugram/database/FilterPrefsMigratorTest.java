@@ -51,4 +51,31 @@ public class FilterPrefsMigratorTest {
     public void invalidLaterJsonFailsBeforeAnyTransactionCanStart() {
         FilterPrefsMigrator.parseLegacy("[{\"regex\":\"valid\"}]", "[]", "{broken");
     }
+
+    @Test
+    public void sharedLegacyRuleKeepsDisabledChatAsAnExclusion() {
+        RegexFilterDao.Snapshot snapshot = FilterPrefsMigrator.parseLegacy(
+                "[{\"id\":\"global\",\"regex\":\"spam\",\"enabledGroups\":[0],\"disabledGroups\":[-123]}]", null, null);
+        assertTrue(snapshot.filters.get(0).enabled);
+        assertEquals(1, snapshot.exclusions.size());
+        assertEquals(-123L, snapshot.exclusions.get(0).dialogId);
+        assertEquals("global", snapshot.exclusions.get(0).filterId);
+    }
+
+    @Test
+    public void chatOnlyLegacyRuleProducesStableDistinctChatRules() {
+        String json = "[{\"id\":\"chat-only\",\"regex\":\"spam\",\"enabledGroups\":[-123,-456],\"caseInsensitive\":true,\"reversed\":true}]";
+        RegexFilterDao.Snapshot snapshot = FilterPrefsMigrator.parseLegacy(json, null, null);
+        RegexFilterDao.Snapshot retry = FilterPrefsMigrator.parseLegacy(json, null, null);
+        assertFalse(snapshot.filters.get(0).enabled);
+        assertEquals(3, snapshot.filters.size());
+        assertTrue(snapshot.filters.get(1).enabled);
+        assertTrue(snapshot.filters.get(2).enabled);
+        assertTrue(snapshot.filters.get(1).caseInsensitive);
+        assertTrue(snapshot.filters.get(1).reversed);
+        assertEquals(Long.valueOf(-123L), snapshot.filters.get(1).dialogId);
+        assertNotEquals(snapshot.filters.get(0).id, snapshot.filters.get(1).id);
+        assertNotEquals(snapshot.filters.get(1).id, snapshot.filters.get(2).id);
+        assertEquals(snapshot.filters.get(1).id, retry.filters.get(1).id);
+    }
 }

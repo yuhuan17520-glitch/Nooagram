@@ -56,12 +56,10 @@ public class RegexFilterPopup {
                 getString(enabled ? R.string.Disable : R.string.Enable),
                 false, resourcesProvider);
         toggleBtn.setOnClickListener(view -> {
-            ArrayList<AyuFilter.FilterModel> list = AyuFilter.getRegexFilters();
-            if (filterIdx >= 0 && filterIdx < list.size()) {
-                AyuFilter.FilterModel model = list.get(filterIdx);
-                model.enabled = !model.enabled;
-                AyuFilter.saveFilter(list);
-                fragment.onResume();
+            if (filterIdx >= 0 && filterIdx < filters.size()) {
+                AyuFilter.setFilterEnabledAsync(filters.get(filterIdx).id, !enabled, () -> {
+                    if (!fragment.isFinished && fragment.getParentActivity() != null) fragment.onResume();
+                });
             }
             popupWindow.dismiss();
         });
@@ -72,10 +70,10 @@ public class RegexFilterPopup {
 
         var deleteBtn = ActionBarMenuItem.addItem(layout, R.drawable.msg_delete, getString(R.string.Delete), false, resourcesProvider);
         deleteBtn.setOnClickListener(view -> {
-            var currentFilters = AyuFilter.getRegexFilters();
-            if (filterIdx >= 0 && filterIdx < currentFilters.size()) {
-                AyuFilter.removeFilter(filterIdx);
-                fragment.onResume();
+            if (filterIdx >= 0 && filterIdx < filters.size()) {
+                AyuFilter.removeRuleAsync(filters.get(filterIdx).id, () -> {
+                    if (!fragment.isFinished && fragment.getParentActivity() != null) fragment.onResume();
+                });
                 popupWindow.dismiss();
             }
         });

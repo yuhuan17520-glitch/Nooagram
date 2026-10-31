@@ -6,6 +6,7 @@ import androidx.room.Insert;
 import androidx.room.OnConflictStrategy;
 import androidx.room.Query;
 import androidx.room.Transaction;
+import androidx.room.Update;
 
 import com.radolyn.ayugram.database.entities.RegexFilter;
 import com.radolyn.ayugram.database.entities.RegexFilterGlobalExclusion;
@@ -39,6 +40,28 @@ public interface RegexFilterDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insert(RegexFilter filter);
+
+    @Update
+    void update(RegexFilter filter);
+
+    @Transaction
+    default boolean saveRule(RegexFilter filter, boolean existing) {
+        if (existing) {
+            RegexFilter current = getById(filter.id);
+            if (current == null || !Objects.equals(current.dialogId, filter.dialogId)) return false;
+            update(filter);
+        } else {
+            insert(filter);
+        }
+        return true;
+    }
+
+    @Transaction
+    default boolean deleteRule(String id) {
+        delete(id);
+        deleteExclusionsByFilterId(id);
+        return true;
+    }
 
     @Query("DELETE FROM RegexFilter WHERE id = :id")
     void delete(String id);
@@ -101,6 +124,25 @@ public interface RegexFilterDao {
             insert(filters.get(i));
         }
         return true;
+    }
+
+    @Transaction
+    default boolean restoreProvidedFilters(Snapshot restored, boolean shared, boolean chats, boolean exclusions) {
+        replaceSnapshot(restore(getSnapshot(), restored, shared, chats, exclusions));
+        return true;
+    }
+
+    static Snapshot restore(Snapshot current, Snapshot restored, boolean shared, boolean chats, boolean exclusions) {
+        ArrayList<RegexFilter> filters = new ArrayList<>();
+        for (RegexFilter row : current.filters) {
+            if (row.dialogId == null ? !shared : !chats) filters.add(row);
+        }
+        filters.addAll(restored.filters);
+        List<RegexFilterGlobalExclusion> exclusionRows = exclusions ? restored.exclusions
+                : new ArrayList<>(current.exclusions);
+        if (!exclusions) exclusionRows.addAll(restored.exclusions);
+        Snapshot empty = new Snapshot(new ArrayList<>(), new ArrayList<>());
+        return merge(empty, filters, exclusionRows, true);
     }
 
     @Transaction

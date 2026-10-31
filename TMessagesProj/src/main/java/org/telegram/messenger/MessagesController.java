@@ -9590,7 +9590,7 @@ public class MessagesController extends BaseController implements NotificationCe
             final ArrayList<Integer> permittedForAyuDeletion = new ArrayList<>();
             final ArrayList<Integer> toSaveIds = new ArrayList<>();
             for (var msgId : messagesCopy) {
-                if (AyuState.isDeletePermitted(dialogIdFinal, msgId)) {
+                if (AyuState.isDeletePermitted(currentAccount, dialogIdFinal, msgId)) {
                     permittedForAyuDeletion.add(msgId);
                 } else {
                     toSaveIds.add(msgId);
@@ -14843,6 +14843,7 @@ public class MessagesController extends BaseController implements NotificationCe
             } else {
                 TLRPC.TL_messages_readMessageContents req = new TLRPC.TL_messages_readMessageContents();
                 req.id.add(messageObject.getId());
+                com.radolyn.ayugram.utils.AyuGhostUtils.attachDialogId(req, dialogId);
                 getConnectionsManager().sendRequest(req, (response, error) -> {
                     if (error == null) {
                         TLRPC.TL_messages_affectedMessages res = (TLRPC.TL_messages_affectedMessages) response;
@@ -16594,6 +16595,8 @@ public class MessagesController extends BaseController implements NotificationCe
         tw.nekomimi.nekogram.helpers.NooagramPinnedHider.onAccountLogout(currentAccount);
         com.radolyn.ayugram.AyuWorker.clearOnline(currentAccount);
         com.radolyn.ayugram.AyuForward.stopAccount(currentAccount);
+        com.radolyn.ayugram.utils.AyuState.clearDeletePermits(currentAccount);
+        AyuMessagesController.getInstance().getDeletedDialogService().clearAccount(currentAccount);
         getUserConfig().clearConfig();
         SharedPrefsHelper.cleanupAccount(currentAccount);
 
@@ -23797,7 +23800,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         ArrayList<Integer> toSaveIds = new ArrayList<>();
                         for (int i = 0, N = dbMessages.size(); i < N; i++) {
                             Integer msgId = dbMessages.get(i);
-                            if (!AyuState.isDeletePermitted(dialogId, msgId)) {
+                            if (!AyuState.isDeletePermitted(currentAccount, dialogId, msgId)) {
                                 toSaveIds.add(msgId);
                             }
                         }

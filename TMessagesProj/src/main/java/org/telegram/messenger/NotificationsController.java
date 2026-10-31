@@ -1239,6 +1239,16 @@ public class NotificationsController extends BaseController implements Notificat
         ArrayList<MessageObject> popupArrayAdd = new ArrayList<>(0);
         notificationsQueue.postRunnable(() -> {
             boolean updated = false;
+            ArrayList<MessageObject> filterBatch = new ArrayList<>(pushMessages);
+            for (int a = 0; a < editedMessages.size(); a++) {
+                for (MessageObject replacement : editedMessages.valueAt(a)) {
+                    filterBatch.removeIf(old -> old.getDialogId() == replacement.getDialogId()
+                            && old.getId() == replacement.getId());
+                    AyuFilter.onMessageEdited(replacement.getId(), replacement.getDialogId());
+                    filterBatch.add(replacement);
+                }
+            }
+            HashSet<MessageObject> suppressed = AyuFilter.getSuppressedNotifications(filterBatch);
             for (int a = 0, N = editedMessages.size(); a < N; a++) {
                 long dialogId = editedMessages.keyAt(a);
                 ArrayList<MessageObject> messages = editedMessages.valueAt(a);
@@ -1262,6 +1272,10 @@ public class NotificationsController extends BaseController implements Notificat
                     }
                     if (oldMessage != null) {
                         updated = true;
+                        if (suppressed.contains(messageObject)) {
+                            removeFilteredPushMessage(oldMessage);
+                            continue;
+                        }
                         sparseArray.put(messageObject.getId(), messageObject);
                         int idx = pushMessages.indexOf(oldMessage);
                         if (idx >= 0) {
@@ -1272,6 +1286,13 @@ public class NotificationsController extends BaseController implements Notificat
                             delayedPushMessages.set(idx, messageObject);
                         }
                     }
+                }
+            }
+            // An edited caption can suppress the other, unchanged album members too.
+            for (MessageObject message : new ArrayList<>(pushMessages)) {
+                if (suppressed.contains(message)) {
+                    removeFilteredPushMessage(message);
+                    updated = true;
                 }
             }
             if (updated) {
@@ -1326,8 +1347,21 @@ public class NotificationsController extends BaseController implements Notificat
 
             LongSparseArray<Boolean> settingsCache = new LongSparseArray<>();
             SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
+            HashSet<MessageObject> suppressedIncoming = AyuFilter.getSuppressedNotifications(messageObjects);
+            boolean removedFiltered = false;
+            for (MessageObject incoming : suppressedIncoming) {
+                for (MessageObject old : new ArrayList<>(pushMessages)) {
+                    if (old.getDialogId() == incoming.getDialogId()
+                            && (old.getId() == incoming.getId() || incoming.getGroupId() != 0
+                            && old.getGroupId() == incoming.getGroupId())) {
+                        removeFilteredPushMessage(old);
+                        removedFiltered = true;
+                    }
+                }
+            }
             ArrayList<MessageObject> deliverableMessages = getVisiblePushMessages(preferences, messageObjects);
             if (deliverableMessages.isEmpty()) {
+                if (removedFiltered) showOrUpdateNotification(false);
                 if (countDownLatch != null) {
                     countDownLatch.countDown();
                 }
@@ -1795,6 +1829,16 @@ public class NotificationsController extends BaseController implements Notificat
             SharedPreferences preferences = getAccountInstance().getNotificationsSettings();
             LongSparseArray<Boolean> settingsCache = new LongSparseArray<>();
 
+            ArrayList<MessageObject> loadedMessages = new ArrayList<>();
+            if (messages != null) {
+                for (TLRPC.Message message : messages) {
+                    loadedMessages.add(message == null ? null : new MessageObject(currentAccount, message, false, false));
+                }
+            }
+            ArrayList<MessageObject> filterBatch = new ArrayList<>(loadedMessages);
+            if (push != null) filterBatch.addAll(push);
+            HashSet<MessageObject> suppressedLoaded = AyuFilter.getSuppressedNotifications(filterBatch);
+
             if (messages != null) {
                 for (int a = 0; a < messages.size(); a++) {
                     TLRPC.Message message = messages.get(a);
@@ -1816,9 +1860,9 @@ public class NotificationsController extends BaseController implements Notificat
                     if (sparseArray != null && sparseArray.indexOfKey(message.id) >= 0) {
                         continue;
                     }
-                    MessageObject messageObject = new MessageObject(currentAccount, message, false, false);
+                    MessageObject messageObject = loadedMessages.get(a);
                     if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)
-                            || AyuFilter.shouldSuppressNotification(messageObject)) {
+                            || suppressedLoaded.contains(messageObject)) {
                         continue;
                     }
                     if (isPersonalMessage(messageObject)) {
@@ -1892,7 +1936,7 @@ public class NotificationsController extends BaseController implements Notificat
                 for (int a = 0; a < push.size(); a++) {
                     MessageObject messageObject = push.get(a);
                     if (isMessageDismissed(preferences, messageObject.getDialogId(), messageObject)
-                            || AyuFilter.shouldSuppressNotification(messageObject)) {
+                            || suppressedLoaded.contains(messageObject)) {
                         continue;
                     }
                     int mid = messageObject.getId();
@@ -4402,14 +4446,31 @@ public class NotificationsController extends BaseController implements Notificat
     static ArrayList<MessageObject> getVisiblePushMessages(SharedPreferences preferences, ArrayList<MessageObject> messages) {
         // Summary rendering must use each message's dialog; dialog 0 is reserved for global dismissal.
         ArrayList<MessageObject> visibleMessages = new ArrayList<>();
+        HashSet<MessageObject> suppressed = AyuFilter.getSuppressedNotifications(messages);
         for (int i = 0; messages != null && i < messages.size(); i++) {
             MessageObject message = messages.get(i);
             if (message != null && message.messageOwner != null
+                    && !suppressed.contains(message)
                     && !isMessageDismissed(preferences, message.getDialogId(), message)) {
                 visibleMessages.add(message);
             }
         }
         return visibleMessages;
+    }
+
+    private void removeFilteredPushMessage(MessageObject message) {
+        pushMessages.remove(message);
+        delayedPushMessages.remove(message);
+        SparseArray<MessageObject> byId = pushMessagesDict.get(getPushMessagesDictKey(message));
+        if (byId != null) byId.remove(message.getId());
+        if (message.messageOwner != null && message.messageOwner.random_id != 0) {
+            fcmRandomMessagesDict.remove(message.messageOwner.random_id);
+        }
+        if (isPersonalMessage(message)) personalCount--;
+        AndroidUtilities.runOnUIThread(() -> {
+            popupMessages.remove(message);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.pushMessagesUpdated);
+        });
     }
 
     static int getPushDialogCount(ArrayList<MessageObject> messages) {
@@ -5170,8 +5231,9 @@ public class NotificationsController extends BaseController implements Notificat
             sortedDialogs.add(new DialogKey(0, 0, true));
         }
         LongSparseArray<ArrayList<MessageObject>> messagesByDialogs = new LongSparseArray<>();
-        for (int a = 0; a < pushMessages.size(); a++) {
-            MessageObject messageObject = pushMessages.get(a);
+        ArrayList<MessageObject> visiblePushMessages = getVisiblePushMessages(preferences, pushMessages);
+        for (int a = 0; a < visiblePushMessages.size(); a++) {
+            MessageObject messageObject = visiblePushMessages.get(a);
             long dialog_id = messageObject.getDialogId();
             long topicId = MessageObject.getTopicId(currentAccount, messageObject.messageOwner, getMessagesController().isForum(messageObject));
             if (isMessageDismissed(preferences, dialog_id, messageObject)) {

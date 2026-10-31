@@ -41,6 +41,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.Normalizer;
@@ -50,11 +51,15 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 
+import tw.nekomimi.nekogram.utils.EnvUtil;
+
 /**
  * Publishes an explicitly downloaded ordinary document as the single canonical public file.
  */
 public final class NooagramCanonicalDownload {
     private static final int MAX_FILE_NAME_CODE_POINTS = 180;
+    private static final int MAX_FILE_NAME_BYTES = 255;
+    private static final int FILE_NAME_SUFFIX_BYTES = 7; // " (9999)"
     private static final int COPY_BUFFER_SIZE = 64 * 1024;
     private static final String JOURNAL_PREFERENCES = "nooagram_canonical_recovery";
     private static final String PHASE_PREPARED = "prepared";
@@ -181,11 +186,13 @@ public final class NooagramCanonicalDownload {
 
     private static final class OwnedLegacyTarget {
         final File file;
+        final StructStat identity;
         FileDescriptor descriptor;
 
-        OwnedLegacyTarget(File file, FileDescriptor descriptor) {
+        OwnedLegacyTarget(File file, FileDescriptor descriptor, StructStat identity) {
             this.file = file;
             this.descriptor = descriptor;
+            this.identity = identity;
         }
     }
 
@@ -270,7 +277,7 @@ public final class NooagramCanonicalDownload {
                 && MessageObject.getMedia(message.messageOwner).photo != null) {
             sizes = MessageObject.getMedia(message.messageOwner).photo.sizes;
         }
-        return FileLoader.getClosestPhotoSizeWithSize(sizes, AndroidUtilities.getPhotoSize());
+        return FileLoader.getClosestPhotoSizeWithSize(sizes, AndroidUtilities.getPhotoSize(true));
     }
 
     static String mediaFileName(MessageObject message) {
@@ -308,8 +315,8 @@ public final class NooagramCanonicalDownload {
         }
         JournalEntry journal = null;
         if (pathData != null && database != null) {
-            retryPendingForDocument(context, database, account, pathData);
-            journal = createJournal(account, pathData, sourceFile, claim);
+            retryPendingForDocument(context, database, account, pathData, cancelled);
+            journal = createJournal(account, pathData, sourceFile, claim, cancelled);
             if (!saveJournal(context, journal)) {
                 throw new IOException("Could not persist canonical recovery journal");
             }
@@ -413,8 +420,9 @@ public final class NooagramCanonicalDownload {
             if (cancelled != null && cancelled.getAsBoolean()) {
                 throw new IOException("Canonical download cancelled");
             }
-            if (!sourceFile.equals(publication.file) && sourceFile.exists()) {
-                if (!matchesSourceIdentity(sourceFile, journal)
+            if (!sourceFile.equals(publication.file) && sourceFile.exists()
+                    && !database.hasAnotherRefOnFileAcrossAccounts(sourceFile.getAbsolutePath())) {
+                if (!matchesSourceIdentity(sourceFile, journal, cancelled)
                         || !sourceFile.delete()) {
                     throw new IOException("Canonical source cleanup failed");
                 }
@@ -426,7 +434,7 @@ public final class NooagramCanonicalDownload {
             if (!saveJournal(context, journal)) {
                 throw new IOException("Could not persist canonical cleanup journal", e);
             }
-            recoverJournalEntry(context, database, journal);
+            recoverJournalEntry(context, database, journal, cancelled);
             if (e instanceof IOException) {
                 throw (IOException) e;
             }
@@ -453,6 +461,13 @@ public final class NooagramCanonicalDownload {
     public static void retryPendingForDocument(
             Context context, FilePathDatabase database, int account,
             FilePathDatabase.PathData pathData) throws IOException {
+        retryPendingForDocument(context, database, account, pathData, null);
+    }
+
+    public static void retryPendingForDocument(
+            Context context, FilePathDatabase database, int account,
+            FilePathDatabase.PathData pathData, BooleanSupplier cancelled) throws IOException {
+        checkCancelled(cancelled);
         String key = journalKey(account, pathData.id, pathData.dc, pathData.type);
         String raw = journalPreferences(context).getString(key, null);
         if (TextUtils.isEmpty(raw)) {
@@ -462,7 +477,7 @@ public final class NooagramCanonicalDownload {
         if (entry == null) {
             throw new IOException("Canonical recovery journal is invalid");
         }
-        if (!recoverJournalEntry(context, database, entry)) {
+        if (!recoverJournalEntry(context, database, entry, cancelled)) {
             throw new IOException("Canonical recovery is still pending");
         }
         if (loadJournal(context, key) != null) {
@@ -471,7 +486,8 @@ public final class NooagramCanonicalDownload {
     }
 
     private static JournalEntry createJournal(
-            int account, FilePathDatabase.PathData pathData, File sourceFile, Claim claim)
+            int account, FilePathDatabase.PathData pathData, File sourceFile, Claim claim,
+            BooleanSupplier cancelled)
             throws IOException {
         JournalEntry entry = new JournalEntry();
         entry.key = journalKey(account, pathData.id, pathData.dc, pathData.type);
@@ -486,7 +502,7 @@ public final class NooagramCanonicalDownload {
         entry.mimeType = claim.mimeType;
         entry.pendingToken = "nooagram-" + UUID.randomUUID();
         entry.sourceLength = sourceFile.length();
-        entry.sourceDigest = toHex(digestFile(sourceFile));
+        entry.sourceDigest = toHex(digestFile(sourceFile, cancelled));
         return entry;
     }
 
@@ -552,6 +568,11 @@ public final class NooagramCanonicalDownload {
 
     private static boolean recoverJournalEntry(
             Context context, FilePathDatabase database, JournalEntry entry) {
+        return recoverJournalEntry(context, database, entry, null);
+    }
+
+    private static boolean recoverJournalEntry(
+            Context context, FilePathDatabase database, JournalEntry entry, BooleanSupplier cancelled) {
         if (entry == null) {
             return true;
         }
@@ -588,7 +609,7 @@ public final class NooagramCanonicalDownload {
         }
 
         if (TextUtils.isEmpty(entry.targetPath)) {
-            return recoverWithoutKnownTargetPath(context, database, entry);
+            return recoverWithoutKnownTargetPath(context, database, entry, cancelled);
         }
         FilePathDatabase.CanonicalPathStatus mapping = database.getCanonicalMappingStatus(
                 entry.documentId, entry.dcId, entry.type, entry.targetPath);
@@ -607,7 +628,7 @@ public final class NooagramCanonicalDownload {
             }
             if (mapping == FilePathDatabase.CanonicalPathStatus.CANONICAL
                     || mapping == FilePathDatabase.CanonicalPathStatus.ABSENT) {
-                return finishRecoveryOwnership(context, database, entry);
+                return finishRecoveryOwnership(context, database, entry, cancelled);
             }
             clearJournal(context, entry.key);
             return true;
@@ -615,13 +636,25 @@ public final class NooagramCanonicalDownload {
 
         if (!entry.cleanupRequested
                 && mapping == FilePathDatabase.CanonicalPathStatus.CANONICAL) {
-            if (!verifyRecoveredPublication(context, entry, probe)) {
+            if (!verifyRecoveredPublication(context, entry, probe, cancelled)) {
+                if (!new File(entry.sourcePath).exists() && !Thread.currentThread().isInterrupted()
+                        && (cancelled == null || !cancelled.getAsBoolean())) {
+                    FilePathDatabase.CanonicalPathStatus removed = database.removeCanonicalPathIfMatchesStatus(
+                            entry.documentId, entry.dcId, entry.type, entry.targetPath);
+                    if (removed == FilePathDatabase.CanonicalPathStatus.REMOVED
+                            || removed == FilePathDatabase.CanonicalPathStatus.ABSENT) {
+                        // Keep unverifiable public bytes, but let a fresh download try again.
+                        clearJournal(context, entry.key);
+                        return true;
+                    }
+                }
                 return false;
             }
             File source = new File(entry.sourcePath);
-            if (!source.equals(new File(entry.targetPath)) && source.exists()) {
+            if (!source.equals(new File(entry.targetPath)) && source.exists()
+                    && !database.hasAnotherRefOnFileAcrossAccounts(source.getAbsolutePath())) {
                 if (!isPrivateSourceFile(context, source)
-                        || !matchesSourceIdentity(source, entry)
+                        || !matchesSourceIdentity(source, entry, cancelled)
                         || !source.delete()) {
                     return false;
                 }
@@ -661,18 +694,18 @@ public final class NooagramCanonicalDownload {
         if (!deleteRecordedTarget(context, entry)) {
             return false;
         }
-        return finishRecoveryOwnership(context, database, entry);
+        return finishRecoveryOwnership(context, database, entry, cancelled);
     }
 
     private static boolean recoverWithoutKnownTargetPath(
-            Context context, FilePathDatabase database, JournalEntry entry) {
+            Context context, FilePathDatabase database, JournalEntry entry, BooleanSupplier cancelled) {
         FilePathDatabase.CanonicalPathStatus current =
                 database.getCurrentMappingStatus(entry.documentId, entry.dcId, entry.type);
         if (current == FilePathDatabase.CanonicalPathStatus.ERROR) {
             return false;
         }
         if (current == FilePathDatabase.CanonicalPathStatus.ABSENT) {
-            return finishRecoveryOwnership(context, database, entry);
+            return finishRecoveryOwnership(context, database, entry, cancelled);
         }
 
         String mappedPath = database.getPath(
@@ -684,11 +717,12 @@ public final class NooagramCanonicalDownload {
         boolean canonical = database.isCanonicalDownload(
                 entry.documentId, entry.dcId, entry.type, mappedPath);
         if (canonical) {
-            if (mappedFile.isFile() && matchesSourceIdentity(mappedFile, entry)) {
+            if (mappedFile.isFile() && matchesSourceIdentity(mappedFile, entry, cancelled)) {
                 File source = new File(entry.sourcePath);
-                if (!source.equals(mappedFile) && source.exists()) {
+                if (!source.equals(mappedFile) && source.exists()
+                        && !database.hasAnotherRefOnFileAcrossAccounts(source.getAbsolutePath())) {
                     if (!isPrivateSourceFile(context, source)
-                            || !matchesSourceIdentity(source, entry)
+                            || !matchesSourceIdentity(source, entry, cancelled)
                             || !source.delete()) {
                         return false;
                     }
@@ -703,7 +737,7 @@ public final class NooagramCanonicalDownload {
                     && removed != FilePathDatabase.CanonicalPathStatus.ABSENT) {
                 return false;
             }
-            return finishRecoveryOwnership(context, database, entry);
+            return finishRecoveryOwnership(context, database, entry, cancelled);
         }
 
         // A different valid mapping owns this document; never overwrite it.
@@ -712,7 +746,7 @@ public final class NooagramCanonicalDownload {
     }
 
     private static boolean finishRecoveryOwnership(
-            Context context, FilePathDatabase database, JournalEntry entry) {
+            Context context, FilePathDatabase database, JournalEntry entry, BooleanSupplier cancelled) {
         FilePathDatabase.CanonicalPathStatus status =
                 database.getCurrentMappingStatus(entry.documentId, entry.dcId, entry.type);
         if (status == FilePathDatabase.CanonicalPathStatus.ERROR) {
@@ -723,8 +757,12 @@ public final class NooagramCanonicalDownload {
             return true;
         }
         File source = new File(entry.sourcePath);
-        if (!source.isFile() || !isPrivateSourceFile(context, source)
-                || !matchesSourceIdentity(source, entry)) {
+        if (!source.isFile()) {
+            clearJournal(context, entry.key);
+            return true;
+        }
+        if (!isPrivateSourceFile(context, source)
+                || !matchesSourceIdentity(source, entry, cancelled)) {
             return false;
         }
         if (!database.restorePathIfAbsentBlocking(
@@ -776,13 +814,13 @@ public final class NooagramCanonicalDownload {
     }
 
     private static boolean verifyRecoveredPublication(
-            Context context, JournalEntry entry, TargetProbe probe) {
+            Context context, JournalEntry entry, TargetProbe probe, BooleanSupplier cancelled) {
         if (probe == null || probe.state != TargetProbe.EXISTS
                 || probe.size != entry.sourceLength || TextUtils.isEmpty(entry.sourceDigest)) {
             return false;
         }
         File rawFile = new File(entry.targetPath);
-        byte[] rawDigest = digestFileQuietly(rawFile);
+        byte[] rawDigest = digestFileQuietly(rawFile, cancelled);
         if (!rawFile.isFile() || rawFile.length() != entry.sourceLength
                 || rawDigest == null || !entry.sourceDigest.equals(toHex(rawDigest))) {
             return false;
@@ -799,7 +837,7 @@ public final class NooagramCanonicalDownload {
                 return false;
             }
             MessageDigest digest = newDigest();
-            long length = readIntoDigest(input, digest, null);
+            long length = readIntoDigest(input, digest, cancelled);
             return length == entry.sourceLength
                     && entry.sourceDigest.equals(toHex(digest.digest()));
         } catch (IOException | RuntimeException e) {
@@ -808,16 +846,16 @@ public final class NooagramCanonicalDownload {
         }
     }
 
-    private static boolean matchesSourceIdentity(File source, JournalEntry entry) {
-        byte[] digest = digestFileQuietly(source);
+    private static boolean matchesSourceIdentity(File source, JournalEntry entry, BooleanSupplier cancelled) {
+        byte[] digest = digestFileQuietly(source, cancelled);
         return source.length() == entry.sourceLength
                 && !TextUtils.isEmpty(entry.sourceDigest)
                 && digest != null && entry.sourceDigest.equals(toHex(digest));
     }
 
-    private static byte[] digestFileQuietly(File file) {
+    private static byte[] digestFileQuietly(File file, BooleanSupplier cancelled) {
         try {
-            return digestFile(file);
+            return digestFile(file, cancelled);
         } catch (IOException e) {
             FileLog.e(e);
             return null;
@@ -947,10 +985,15 @@ public final class NooagramCanonicalDownload {
                     return true;
                 }
             }
+            return isUnderRoot(sourceFile, EnvUtil.getTelegramPath());
         } catch (IOException e) {
             FileLog.e(e);
         }
         return false;
+    }
+
+    static boolean isUnderRoot(File file, File root) throws IOException {
+        return root != null && file.getCanonicalPath().startsWith(root.getCanonicalPath() + File.separator);
     }
 
     private static Publication publishToMediaStore(Context context, File sourceFile, Claim claim,
@@ -984,6 +1027,7 @@ public final class NooagramCanonicalDownload {
         boolean published = false;
         try {
             byte[] sourceDigest = copyToMediaStore(resolver, sourceFile, uri, cancelled);
+            verifyCopiedSource(journal, sourceDigest);
             if (cancelled != null && cancelled.getAsBoolean()) {
                 throw new IOException("Canonical download cancelled");
             }
@@ -996,7 +1040,7 @@ public final class NooagramCanonicalDownload {
                 throw new IOException("Canonical download cancelled");
             }
             File canonicalFile = queryPublishedFile(resolver, uri, sourceFile.length());
-            verifyPublishedBytes(resolver, uri, canonicalFile, sourceDigest, sourceFile.length());
+            verifyPublishedBytes(resolver, uri, canonicalFile, sourceDigest, sourceFile.length(), cancelled);
             published = true;
             if (journal != null) {
                 journal.targetPath = canonicalFile.getAbsolutePath();
@@ -1070,16 +1114,43 @@ public final class NooagramCanonicalDownload {
     }
 
     private static void verifyPublishedBytes(ContentResolver resolver, Uri uri, File canonicalFile,
-                                             byte[] expectedDigest, long expectedLength) throws IOException {
-        if (!MessageDigest.isEqual(expectedDigest, digestFile(canonicalFile))) {
+                                             byte[] expectedDigest, long expectedLength,
+                                             BooleanSupplier cancelled) throws IOException {
+        StructStat original = null;
+        try {
+            original = Os.stat(canonicalFile.getAbsolutePath());
+        } catch (ErrnoException e) {
+            // Unknown raw-file identity requires provider content verification below.
+        }
+        if (!MessageDigest.isEqual(expectedDigest, digestFile(canonicalFile, cancelled))) {
             throw new IOException("Published raw file content verification failed");
+        }
+        // A provider descriptor for the same inode is already covered by the raw-file digest.
+        // Providers that expose different bytes still require their own full verification.
+        try (ParcelFileDescriptor descriptor = resolver.openFileDescriptor(uri, "r")) {
+            if (descriptor != null) {
+                try {
+                    StructStat raw = Os.stat(canonicalFile.getAbsolutePath());
+                    StructStat provided = Os.fstat(descriptor.getFileDescriptor());
+                    if (original != null && original.st_ino != 0
+                            && original.st_dev == raw.st_dev && original.st_ino == raw.st_ino
+                            && original.st_size == raw.st_size && original.st_mtime == raw.st_mtime
+                            && original.st_ctime == raw.st_ctime && raw.st_dev == provided.st_dev
+                            && raw.st_ino == provided.st_ino && raw.st_size == provided.st_size) {
+                        checkCancelled(cancelled);
+                        return;
+                    }
+                } catch (ErrnoException e) {
+                    // Unknown descriptor identity falls back to content verification.
+                }
+            }
         }
         try (InputStream input = resolver.openInputStream(uri)) {
             if (input == null) {
                 throw new IOException("MediaStore returned no verification stream");
             }
             MessageDigest digest = newDigest();
-            long count = readIntoDigest(input, digest, null);
+            long count = readIntoDigest(input, digest, cancelled);
             if (count != expectedLength || !MessageDigest.isEqual(expectedDigest, digest.digest())) {
                 throw new IOException("Published provider content verification failed");
             }
@@ -1123,8 +1194,10 @@ public final class NooagramCanonicalDownload {
             } finally {
                 legacyTarget.descriptor = null;
             }
+            byte[] sourceDigest = digest.digest();
+            verifyCopiedSource(journal, sourceDigest);
             if (destination.length() != sourceFile.length()
-                    || !MessageDigest.isEqual(digest.digest(), digestFile(destination))) {
+                    || !MessageDigest.isEqual(sourceDigest, digestFile(destination, cancelled))) {
                 throw new IOException("Legacy public file verification failed");
             }
             if (journal != null) {
@@ -1148,8 +1221,7 @@ public final class NooagramCanonicalDownload {
                     cleanupIntentDurable = saveJournal(context, journal);
                 }
                 if (cleanupIntentDurable) {
-                    if (destination != null && journal != null
-                            && isOwnedLegacyTarget(journal, destination)) {
+                    if (destination != null && isOwnedLegacyTarget(legacyTarget)) {
                         destination.delete();
                     }
                     if (!directoryExisted && directory.isDirectory()) {
@@ -1222,8 +1294,8 @@ public final class NooagramCanonicalDownload {
                 throw new IOException("Could not create legacy download target", e);
             }
             try {
+                StructStat stat = Os.fstat(descriptor);
                 if (journal != null) {
-                    StructStat stat = Os.fstat(descriptor);
                     journal.targetPath = candidate.getAbsolutePath();
                     journal.targetDev = stat.st_dev;
                     journal.targetIno = stat.st_ino;
@@ -1234,7 +1306,7 @@ public final class NooagramCanonicalDownload {
                         throw new IOException("Could not persist legacy target ownership");
                     }
                 }
-                return new OwnedLegacyTarget(candidate, descriptor);
+                return new OwnedLegacyTarget(candidate, descriptor, stat);
             } catch (Exception e) {
                 closeDescriptor(descriptor);
                 if (e instanceof IOException) {
@@ -1253,6 +1325,23 @@ public final class NooagramCanonicalDownload {
         }
     }
 
+    private static boolean isOwnedLegacyTarget(OwnedLegacyTarget target) {
+        if (target == null) return false;
+        try {
+            StructStat stat = Os.lstat(target.file.getAbsolutePath());
+            return OsConstants.S_ISREG(stat.st_mode) && stat.st_dev == target.identity.st_dev
+                    && stat.st_ino == target.identity.st_ino;
+        } catch (ErrnoException e) {
+            return false;
+        }
+    }
+
+    private static void verifyCopiedSource(JournalEntry journal, byte[] digest) throws IOException {
+        if (journal != null && !journal.sourceDigest.equals(toHex(digest))) {
+            throw new IOException("Canonical source changed during publication");
+        }
+    }
+
     private static void closeDescriptor(FileDescriptor descriptor) {
         if (descriptor == null) {
             return;
@@ -1267,8 +1356,7 @@ public final class NooagramCanonicalDownload {
     static String safeFileName(String originalName, long documentId) {
         String name = originalName == null ? "" : Normalizer.normalize(originalName, Normalizer.Form.NFKC);
         StringBuilder safe = new StringBuilder();
-        int codePoints = 0;
-        for (int offset = 0; offset < name.length() && codePoints < MAX_FILE_NAME_CODE_POINTS; codePoints++) {
+        for (int offset = 0; offset < name.length();) {
             int codePoint = name.codePointAt(offset);
             offset += Character.charCount(codePoint);
             int type = Character.getType(codePoint);
@@ -1289,18 +1377,43 @@ public final class NooagramCanonicalDownload {
         while (end > start && (safe.charAt(end - 1) <= ' ' || safe.charAt(end - 1) == '.')) {
             end--;
         }
-        return start == end ? "document_" + documentId : safe.substring(start, end);
+        return limitFileName(start == end ? "document_" + documentId : safe.substring(start, end),
+                MAX_FILE_NAME_BYTES - FILE_NAME_SUFFIX_BYTES, MAX_FILE_NAME_CODE_POINTS);
     }
 
     static String numberedFileName(String fileName, int index) {
+        String suffix = index <= 0 ? "" : " (" + index + ")";
+        fileName = limitFileName(fileName, MAX_FILE_NAME_BYTES - suffix.length(), Integer.MAX_VALUE);
         if (index <= 0) {
             return fileName;
         }
         int dot = fileName.lastIndexOf('.');
-        String suffix = " (" + index + ")";
         return dot <= 0
                 ? fileName + suffix
                 : fileName.substring(0, dot) + suffix + fileName.substring(dot);
+    }
+
+    private static String limitFileName(String name, int byteBudget, int pointBudget) {
+        int dot = name.lastIndexOf('.');
+        String extension = dot > 0 ? name.substring(dot) : "";
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        int firstPoint = stem.isEmpty() ? 0 : stem.codePointAt(0);
+        int stemBytes = firstPoint <= 0x7f ? 1 : firstPoint <= 0x7ff ? 2 : firstPoint <= 0xffff ? 3 : 4;
+        extension = utf8Prefix(extension, byteBudget - stemBytes, pointBudget - 1);
+        return utf8Prefix(stem, byteBudget - extension.getBytes(StandardCharsets.UTF_8).length,
+                pointBudget - extension.codePointCount(0, extension.length())) + extension;
+    }
+
+    private static String utf8Prefix(String value, int byteBudget, int pointBudget) {
+        int end = 0;
+        for (int count = 0; end < value.length() && count < pointBudget; count++) {
+            int point = value.codePointAt(end);
+            int bytes = point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+            if (bytes > byteBudget) break;
+            byteBudget -= bytes;
+            end += Character.charCount(point);
+        }
+        return value.substring(0, end);
     }
 
     static String relativeDownloadPath(String folderName) {
@@ -1311,11 +1424,8 @@ public final class NooagramCanonicalDownload {
             if (TextUtils.isEmpty(segment) || ".".equals(segment) || "..".equals(segment)) {
                 continue;
             }
-            String safe = safeFileName(segment, 0);
-            if (!TextUtils.isEmpty(safe)) {
-                result.append('/').append(safe);
-                hasSegment = true;
-            }
+            result.append('/').append(segment);
+            hasSegment = true;
         }
         if (!hasSegment) {
             result.append('/').append(tw.nekomimi.nekogram.NekoConfig.DEFAULT_CUSTOM_SAVE_PATH);
@@ -1343,40 +1453,46 @@ public final class NooagramCanonicalDownload {
         return "application/octet-stream";
     }
 
-    private static void copyChecked(InputStream input, OutputStream output, MessageDigest digest,
+    static void copyChecked(InputStream input, OutputStream output, MessageDigest digest,
                                     BooleanSupplier cancelled) throws IOException {
         byte[] buffer = new byte[COPY_BUFFER_SIZE];
         int read;
-        while ((read = input.read(buffer)) != -1) {
-            if (cancelled != null && cancelled.getAsBoolean()) {
-                throw new IOException("Canonical download cancelled");
-            }
+        while (true) {
+            checkCancelled(cancelled);
+            read = input.read(buffer);
+            if (read == -1) break;
             digest.update(buffer, 0, read);
             output.write(buffer, 0, read);
         }
     }
 
-    private static byte[] digestFile(File file) throws IOException {
+    private static byte[] digestFile(File file, BooleanSupplier cancelled) throws IOException {
         MessageDigest digest = newDigest();
         try (InputStream input = new FileInputStream(file)) {
-            readIntoDigest(input, digest, null);
+            readIntoDigest(input, digest, cancelled);
         }
         return digest.digest();
     }
 
-    private static long readIntoDigest(InputStream input, MessageDigest digest,
+    static long readIntoDigest(InputStream input, MessageDigest digest,
                                        BooleanSupplier cancelled) throws IOException {
         byte[] buffer = new byte[COPY_BUFFER_SIZE];
         long count = 0;
         int read;
-        while ((read = input.read(buffer)) != -1) {
-            if (cancelled != null && cancelled.getAsBoolean()) {
-                throw new IOException("Canonical download cancelled");
-            }
+        while (true) {
+            checkCancelled(cancelled);
+            read = input.read(buffer);
+            if (read == -1) break;
             digest.update(buffer, 0, read);
             count += read;
         }
         return count;
+    }
+
+    private static void checkCancelled(BooleanSupplier cancelled) throws IOException {
+        if (Thread.currentThread().isInterrupted() || cancelled != null && cancelled.getAsBoolean()) {
+            throw new IOException("Canonical download cancelled");
+        }
     }
 
     private static MessageDigest newDigest() {

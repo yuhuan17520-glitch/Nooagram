@@ -467,7 +467,7 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
         AlertDialog progressDialog = new AlertDialog(context, AlertDialog.ALERT_TYPE_SPINNER);
         progressDialog.setCanCancel(false);
         progressDialog.show();
-        Utilities.globalQueue.postRunnable(() -> {
+        AyuMessagesController.getInstance().executeAsync(() -> {
             boolean success = false;
             int mergedCount = 0;
             File tempFile = null;
@@ -488,15 +488,22 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
             int finalMergedCount = mergedCount;
             AndroidUtilities.runOnUIThread(() -> {
                 progressDialog.dismiss();
+                if (isFinishing() || getParentActivity() == null || getParentActivity().isFinishing()) {
+                    return;
+                }
                 if (finalSuccess) {
-                    AyuData.loadSizes(this::refreshAyuDataSize);
+                    AyuData.loadSizes(() -> {
+                        if (!isFinishing() && getParentActivity() != null && !getParentActivity().isFinishing()) {
+                            refreshAyuDataSize();
+                        }
+                    });
                     BulletinFactory.of(this).createSimpleBulletin(R.raw.done,
                             LocaleController.formatString(R.string.ImportMergeResult, finalMergedCount)).show();
                 } else {
                     BulletinFactory.of(this).createErrorBulletin(getString(R.string.ImportMessageDatabaseFailed)).show();
                 }
             });
-        });
+        }, "runDatabaseMerge");
     }
 
     /**
@@ -1040,8 +1047,16 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
                         return;
                     }
                     AyuConfig.INSTANCE.getAttachmentFolderSizeLimitPreset().setConfigInt(attachmentLimitPresetIndices[index]);
-                    AyuMessagesController.trimAttachmentsFolderToLimit();
-                    AyuData.loadSizes(NekoAyuSpySettingsActivity.this::refreshAyuDataSize);
+                    AyuMessagesController.requestAttachmentTrim(() -> {
+                        if (isFinishing() || getParentActivity() == null || getParentActivity().isFinishing()) {
+                            return;
+                        }
+                        AyuData.loadSizes(() -> {
+                            if (!isFinishing() && getParentActivity() != null && !getParentActivity().isFinishing()) {
+                                refreshAyuDataSize();
+                            }
+                        });
+                    });
                 });
                 return slideChooseView;
             }

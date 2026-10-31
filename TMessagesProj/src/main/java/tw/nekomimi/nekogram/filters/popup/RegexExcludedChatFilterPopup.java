@@ -5,6 +5,8 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.view.View;
 
 import org.telegram.messenger.R;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 
@@ -29,8 +31,12 @@ public class RegexExcludedChatFilterPopup {
 
         var deleteBtn = ActionBarMenuItem.addItem(layout, R.drawable.msg_delete, getString(R.string.Delete), false, fragment.getResourceProvider());
         deleteBtn.setOnClickListener(view -> {
-            AyuFilter.setSharedFilterExcluded(dialogId, filterModel.id, false);
-            fragment.onResume();
+            Utilities.globalQueue.postRunnable(() -> {
+                AyuFilter.setSharedFilterExcluded(dialogId, filterModel.id, false);
+                AndroidUtilities.runOnUIThread(() -> AyuFilter.preloadAsync(() -> {
+                    if (!fragment.isFinished && fragment.getParentActivity() != null) fragment.onResume();
+                }));
+            });
             popupWindow.dismiss();
         });
         RegexPopupUtils.applyDeleteItemColor(deleteBtn);

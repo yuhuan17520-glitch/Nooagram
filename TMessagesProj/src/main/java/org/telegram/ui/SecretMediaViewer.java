@@ -1524,12 +1524,11 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
                     File encryptedFile = file != null ? new File(file.getAbsolutePath() + ".enc") : null;
                     if (encryptedFile != null && encryptedFile.exists()) {
                         // save deleted: try to decrypt and save to attachments path for persistence
-                        File decryptedFile = AyuMessageUtils.decryptAndSaveMedia(file.getName(), encryptedFile, messageObject);
-                        if (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 0) {
-                            file = decryptedFile;
-                        } else {
-                            file = encryptedFile;
-                        }
+                        // The copy is only for the archive; keep playing the encrypted file to avoid a player restart.
+                        String fileName = file.getName();
+                        org.telegram.messenger.Utilities.globalQueue.postRunnable(() ->
+                                AyuMessageUtils.decryptAndSaveMedia(fileName, encryptedFile, messageObject));
+                        file = encryptedFile;
                     } else if (file == null || !file.exists() || file.length() <= 0) {
                         String filePath = AyuMessageHelper.getPathToMessage(messageObject);
                         if (!TextUtils.isEmpty(filePath)) {
@@ -1550,10 +1549,18 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
             File photoFile = FileLoader.getInstance(currentAccount).getPathToAttach(sizeFull, true);
             File encryptedPhotoFile = new File(photoFile.getAbsolutePath() + ".enc");
             if (encryptedPhotoFile.exists()) {
-                File decryptedFile = AyuMessageUtils.decryptAndSaveMedia(photoFile.getName(), encryptedPhotoFile, messageObject);
-                if (decryptedFile != null && decryptedFile.exists() && decryptedFile.length() > 0) {
-                    centerImage.setImage(decryptedFile.getAbsolutePath(), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, "jpg", 0);
-                }
+                String fileName = photoFile.getName();
+                long mediaOpenTime = openTime;
+                int mediaAccount = currentAccount;
+                org.telegram.messenger.Utilities.globalQueue.postRunnable(() -> {
+                    File decryptedFile = AyuMessageUtils.decryptAndSaveMedia(fileName, encryptedPhotoFile, messageObject);
+                    if (decryptedFile == null || !decryptedFile.exists() || decryptedFile.length() <= 0) return;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (!isVisible || closeTime != 0 || openTime != mediaOpenTime
+                                || currentAccount != mediaAccount || currentMessageObject != messageObject) return;
+                        centerImage.setImage(decryptedFile.getAbsolutePath(), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, "jpg", 0);
+                    });
+                });
             } else {
                 String filePath = AyuMessageHelper.getPathToMessage(messageObject);
                 if (!TextUtils.isEmpty(filePath)) {

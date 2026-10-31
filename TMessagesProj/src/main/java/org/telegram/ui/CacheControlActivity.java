@@ -8,6 +8,8 @@
 
 package org.telegram.ui;
 
+import com.radolyn.ayugram.utils.NooagramMediaStorage;
+
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.formatString;
 
@@ -287,18 +289,14 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             canceled = false;
             long cacheSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), 5);
             long cacheTempSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), 4);
-            long photoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE), 0);
-            photoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE_PUBLIC), 0);
-            long videoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO), 0);
-            videoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO_PUBLIC), 0);
-            long documentsSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), 1);
-            documentsSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), 1);
-            long musicSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), 2);
-            musicSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), 2);
+            long photoSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_IMAGE, FileLoader.MEDIA_DIR_IMAGE_PUBLIC);
+            long videoSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_VIDEO, FileLoader.MEDIA_DIR_VIDEO_PUBLIC);
+            long documentsSize = getMediaDirectorySize(1, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
+            long musicSize = getMediaDirectorySize(2, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
             long stickersCacheSize = getDirectorySize(new File(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), "acache"), 0);
             stickersCacheSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), 3);
-            long audioSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_AUDIO), 0);
-            long storiesSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_STORIES), 0);
+            long audioSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_AUDIO);
+            long storiesSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_STORIES);
             long logsSize = getDirectorySize(AndroidUtilities.getLogsDir(), 1);
             if (!BuildVars.DEBUG_VERSION && logsSize < 1024 * 1024 * 256) {
                 logsSize = 0;
@@ -378,13 +376,11 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                 return;
             }
 
-            photoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE), 0);
-            photoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE_PUBLIC), 0);
+            photoSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_IMAGE, FileLoader.MEDIA_DIR_IMAGE_PUBLIC);
             if (canceled) {
                 return;
             }
-            videoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO), 0);
-            videoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO_PUBLIC), 0);
+            videoSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_VIDEO, FileLoader.MEDIA_DIR_VIDEO_PUBLIC);
             if (canceled) {
                 return;
             }
@@ -395,13 +391,11 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             if (canceled) {
                 return;
             }
-            documentsSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), 1);
-            documentsSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), 1);
+            documentsSize = getMediaDirectorySize(1, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
             if (canceled) {
                 return;
             }
-            musicSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), 2);
-            musicSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), 2);
+            musicSize = getMediaDirectorySize(2, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
             if (canceled) {
                 return;
             }
@@ -419,8 +413,8 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                 return;
             }
             stickersCacheSize += cacheCustomEmojiSize;
-            audioSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_AUDIO), 0);
-            storiesSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_STORIES), 0);
+            audioSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_AUDIO);
+            storiesSize = getMediaDirectorySize(0, FileLoader.MEDIA_DIR_STORIES);
             if (canceled) {
                 return;
             }
@@ -493,19 +487,16 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             getFileLoader().getFileDatabase().ensureDatabaseCreated();
             CacheModel cacheModel = new CacheModel(false);
             LongSparseArray<DialogFileEntities> dilogsFilesEntities = new LongSparseArray<>();
-
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), TYPE_OTHER, dilogsFilesEntities, cacheModel);
-
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE), TYPE_PHOTOS, dilogsFilesEntities, cacheModel);
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE_PUBLIC), TYPE_PHOTOS, dilogsFilesEntities, cacheModel);
-
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO), TYPE_VIDEOS, dilogsFilesEntities, cacheModel);
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO_PUBLIC), TYPE_VIDEOS, dilogsFilesEntities, cacheModel);
-
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_AUDIO), TYPE_VOICE, dilogsFilesEntities, cacheModel);
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_STORIES), TYPE_OTHER, dilogsFilesEntities, cacheModel);
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), TYPE_DOCUMENTS, dilogsFilesEntities, cacheModel);
-            fillDialogsEntitiesRecursive(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), TYPE_DOCUMENTS, dilogsFilesEntities, cacheModel);
+            java.util.HashSet<String> scannedPaths = new java.util.HashSet<>();
+            fillMediaEntities(TYPE_PHOTOS, dilogsFilesEntities, cacheModel, scannedPaths,
+                    FileLoader.MEDIA_DIR_IMAGE, FileLoader.MEDIA_DIR_IMAGE_PUBLIC);
+            fillMediaEntities(TYPE_VIDEOS, dilogsFilesEntities, cacheModel, scannedPaths,
+                    FileLoader.MEDIA_DIR_VIDEO, FileLoader.MEDIA_DIR_VIDEO_PUBLIC);
+            fillMediaEntities(TYPE_VOICE, dilogsFilesEntities, cacheModel, scannedPaths, FileLoader.MEDIA_DIR_AUDIO);
+            fillMediaEntities(TYPE_OTHER, dilogsFilesEntities, cacheModel, scannedPaths, FileLoader.MEDIA_DIR_STORIES);
+            fillMediaEntities(TYPE_DOCUMENTS, dilogsFilesEntities, cacheModel, scannedPaths,
+                    FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
+            fillMediaEntities(TYPE_OTHER, dilogsFilesEntities, cacheModel, scannedPaths, FileLoader.MEDIA_DIR_CACHE);
 
             // ----- Nagram Hook start -----
             if (targetDialogId != -1) {
@@ -617,10 +608,23 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
     }
 
     public void fillDialogsEntitiesRecursive(final File fromFolder, int type, LongSparseArray<DialogFileEntities> dilogsFilesEntities, CacheModel cacheModel) {
+        fillDialogsEntitiesRecursive(fromFolder, type, dilogsFilesEntities, cacheModel, new java.util.HashSet<>());
+    }
+
+    private void fillMediaEntities(int type, LongSparseArray<DialogFileEntities> entities,
+                                   CacheModel model, java.util.Set<String> scannedPaths, int... mediaTypes) {
+        for (File path : mediaDirectories(mediaTypes)) {
+            fillDialogsEntitiesRecursive(path, type, entities, model, scannedPaths);
+        }
+    }
+
+    private void fillDialogsEntitiesRecursive(final File fromFolder, int type,
+                                              LongSparseArray<DialogFileEntities> dilogsFilesEntities,
+                                              CacheModel cacheModel, java.util.Set<String> scannedPaths) {
         if (fromFolder == null) {
             return;
         }
-        File[] files = fromFolder.listFiles();
+        File[] files = fromFolder.isFile() ? new File[]{fromFolder} : fromFolder.listFiles();
         if (files == null) {
             return;
         }
@@ -629,8 +633,15 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                 return;
             }
             if (fileEntry.isDirectory()) {
-                fillDialogsEntitiesRecursive(fileEntry, type, dilogsFilesEntities, cacheModel);
+                fillDialogsEntitiesRecursive(fileEntry, type, dilogsFilesEntities, cacheModel, scannedPaths);
             } else {
+                String path;
+                try {
+                    path = fileEntry.getCanonicalPath();
+                } catch (java.io.IOException e) {
+                    path = fileEntry.getAbsolutePath();
+                }
+                if (!scannedPaths.add(path)) continue;
                 if (fileEntry.getName().equals(".nomedia")) {
                     continue;
                 }
@@ -871,6 +882,46 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
         return size;
     }
 
+    private static java.util.List<File> mediaDirectories(int... types) {
+        File[] directories = new File[types.length];
+        for (int i = 0; i < types.length; i++) directories[i] = FileLoader.checkDirectory(types[i]);
+        return NooagramMediaStorage.cleanupDirectories(directories);
+    }
+
+    private static boolean matchesDocumentType(File file, int type) {
+        String name = file.getName().toLowerCase(java.util.Locale.ROOT);
+        boolean music = name.endsWith(".mp3") || name.endsWith(".m4a");
+        return type != 1 && type != 2 || (type == 2) == music;
+    }
+
+    private static long getMediaDirectorySize(int documentsMusicType, int... types) {
+        long size = 0;
+        for (File path : mediaDirectories(types)) {
+            if (canceled) break;
+            if (path.isDirectory()) {
+                size += Utilities.getDirSize(path.getAbsolutePath(), documentsMusicType, true);
+            } else if (path.isFile() && matchesDocumentType(path, documentsMusicType)) {
+                size += path.length();
+            }
+        }
+        return size;
+    }
+
+    private static void cleanMediaDirectories(int type, int documentsMusicType, Utilities.Callback<Float> onProgress) {
+        int[] types = type == FileLoader.MEDIA_DIR_DOCUMENT
+                ? new int[]{type, FileLoader.MEDIA_DIR_FILES}
+                : type == FileLoader.MEDIA_DIR_IMAGE ? new int[]{type, FileLoader.MEDIA_DIR_IMAGE_PUBLIC}
+                : type == FileLoader.MEDIA_DIR_VIDEO ? new int[]{type, FileLoader.MEDIA_DIR_VIDEO_PUBLIC}
+                : new int[]{type};
+        for (File path : mediaDirectories(types)) {
+            if (path.isFile()) {
+                if (matchesDocumentType(path, documentsMusicType)) path.delete();
+            } else {
+                cleanDirJava(path.getAbsolutePath(), documentsMusicType, null, onProgress);
+            }
+        }
+    }
+
     private void cleanupFolders(Utilities.Callback2<Float, Boolean> onProgress, Runnable onDone) {
         if (cacheModel != null) {
             cacheModel.clearSelection();
@@ -1065,7 +1116,8 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
             } else if (type == 100) {
                 file = new File(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), "acache");
             } else {
-                file = FileLoader.checkDirectory(type);
+                cleanMediaDirectories(type, documentsMusicType, updateProgress);
+                file = null;
             }
             if (file != null) {
                 cleanDirJava(file.getAbsolutePath(), documentsMusicType, null, updateProgress);
@@ -1082,25 +1134,10 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                 next.run();
             }
             if (type == FileLoader.MEDIA_DIR_IMAGE || type == FileLoader.MEDIA_DIR_VIDEO) {
-                int publicDirectoryType;
-                if (type == FileLoader.MEDIA_DIR_IMAGE) {
-                    publicDirectoryType = FileLoader.MEDIA_DIR_IMAGE_PUBLIC;
-                } else {
-                    publicDirectoryType = FileLoader.MEDIA_DIR_VIDEO_PUBLIC;
-                }
-                file = FileLoader.checkDirectory(publicDirectoryType);
-
-                if (file != null) {
-                    cleanDirJava(file.getAbsolutePath(), documentsMusicType, null, updateProgress);
-                }
                 clearDirI[0]++;
                 next.run();
             }
             if (type == FileLoader.MEDIA_DIR_DOCUMENT) {
-                file = FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES);
-                if (file != null) {
-                    cleanDirJava(file.getAbsolutePath(), documentsMusicType, null, updateProgress);
-                }
                 clearDirI[0]++;
                 next.run();
             }
@@ -1122,24 +1159,20 @@ public class CacheControlActivity extends BaseFragment implements NotificationCe
                     } catch (Exception ignored) {
                     }
             } else if (type == FileLoader.MEDIA_DIR_AUDIO) {
-                audioSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_AUDIO), documentsMusicType);
+                audioSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_AUDIO);
             } else if (type == FileLoader.MEDIA_DIR_STORIES) {
-                storiesSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_STORIES), documentsMusicType);
+                storiesSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_STORIES);
             } else if (type == FileLoader.MEDIA_DIR_DOCUMENT) {
                 if (documentsMusicType == 1) {
-                    documentsSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), documentsMusicType);
-                    documentsSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), documentsMusicType);
+                    documentsSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
                 } else {
-                    musicSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_DOCUMENT), documentsMusicType);
-                    musicSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_FILES), documentsMusicType);
+                    musicSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_DOCUMENT, FileLoader.MEDIA_DIR_FILES);
                 }
             } else if (type == FileLoader.MEDIA_DIR_IMAGE) {
                 imagesCleared = true;
-                photoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE), documentsMusicType);
-                photoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_IMAGE_PUBLIC), documentsMusicType);
+                photoSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_IMAGE, FileLoader.MEDIA_DIR_IMAGE_PUBLIC);
             } else if (type == FileLoader.MEDIA_DIR_VIDEO) {
-                videoSize = getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO), documentsMusicType);
-                videoSize += getDirectorySize(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_VIDEO_PUBLIC), documentsMusicType);
+                videoSize = getMediaDirectorySize(documentsMusicType, FileLoader.MEDIA_DIR_VIDEO, FileLoader.MEDIA_DIR_VIDEO_PUBLIC);
             } else if (type == 100) {
                 imagesCleared = true;
                 stickersCacheSize = getDirectorySize(new File(FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE), "acache"), documentsMusicType);

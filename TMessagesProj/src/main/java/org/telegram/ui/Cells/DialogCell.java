@@ -367,6 +367,12 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         if (preview.messageOwner instanceof TLRPC.TL_messageService || preview.messageOwner instanceof TLRPC.TL_messageEmpty) {
             return;
         }
+        if (!AyuFilter.isLoaded()) {
+            if (AyuFilter.shouldHideFilteredMessages() || AyuFilter.shouldMaskFilteredMessages()) {
+                NooagramDialogPreviewFilter.preloadRules(this);
+                return;
+            }
+        }
         if ((message == null || preview.messageOwner.date > lastMessageDate)
                 && !AyuFilter.shouldHideFilteredMessage(preview, null)) {
             groupMessages = null;
@@ -1001,6 +1007,37 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             filteredPreviewPlaceholder = new MessageObject(currentAccount, placeholder, false, false);
         }
         return filteredPreviewPlaceholder;
+    }
+
+    private boolean shouldMaskAyuMessage(MessageObject target) {
+        if (!AyuFilter.isLoaded()) {
+            if (AyuFilter.shouldHideFilteredMessages() || AyuFilter.shouldMaskFilteredMessages()) {
+                NooagramDialogPreviewFilter.preloadRules(this);
+                return true;
+            }
+            return false;
+        }
+        return AyuFilter.shouldMaskMessage(target, null);
+    }
+
+    private boolean isAyuFiltered(MessageObject target, MessageObject caption) {
+        if (!AyuFilter.isLoaded()) {
+            if (AyuFilter.shouldHideFilteredMessages() || AyuFilter.shouldMaskFilteredMessages()) {
+                NooagramDialogPreviewFilter.preloadRules(this);
+                return true;
+            }
+            return false;
+        }
+        return AyuFilter.isFiltered(target, null)
+                || caption != null && AyuFilter.isFiltered(caption, null);
+    }
+
+    void onFilterRulesLoaded() {
+        // Any waiting path (pending album, hide or mask) rendered a placeholder; update() re-reads current state.
+        if (currentDialogId == 0) {
+            return;
+        }
+        refreshFilteredPreview();
     }
 
     void refreshFilteredPreview() {
@@ -2021,7 +2058,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                             if (message != null) {
                                                 message.spoilLoginCode();
                                             }
-                                            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
+                                            if (!NekoConfig.showSpoilersDirectly.Bool() || shouldMaskAyuMessage(message))
                                                 MediaDataController.addTextStyleRuns(message, message.caption, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                                             MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, msgBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());
                                         }
@@ -2112,7 +2149,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                             if (message != null) {
                                                 message.spoilLoginCode();
                                             }
-                                            if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
+                                            if (!NekoConfig.showSpoilersDirectly.Bool() || shouldMaskAyuMessage(message))
                                                 MediaDataController.addTextStyleRuns(message, stringBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                                             if (message != null && message.messageOwner != null) {
                                                 MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, stringBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());
@@ -3431,7 +3468,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                 message = replacement;
                                 groupMessages = null;
                             } else if (previewVisibility == NooagramDialogPreviewFilter.PENDING) {
+                                if (!AyuFilter.isLoaded()) {
+                                    NooagramDialogPreviewFilter.preloadRules(this);
+                                }
                                 NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
+                                message = getFilteredPreviewPlaceholder(message, dialog);
+                                groupMessages = null;
+                                filteredPreview = true;
                             } else {
                                 NooagramDialogPreviewFilter.rememberVisible(currentAccount, dialog.id, message);
                             }
@@ -3901,7 +3944,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         if (message != null) {
             MessageObject captionMessage = getCaptionMessage();
             // --- AyuGram hook
-            boolean isFiltered = AyuFilter.isFiltered(message, null) || (captionMessage != null && AyuFilter.isFiltered(captionMessage, null));
+            boolean isFiltered = isAyuFiltered(message, captionMessage);
             // --- NaGram hook
             isFiltered = isFiltered || (message.messageOwner != null && message.messageOwner.hide);
             isFiltered = isFiltered || (NekoConfig.ignoreBlocked.Bool() && MessagesController.getInstance(currentAccount).blockePeers.indexOfKey(message.getFromChatId()) >= 0);
@@ -6297,7 +6340,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 if (message != null) {
                     message.spoilLoginCode();
                 }
-                if (!NekoConfig.showSpoilersDirectly.Bool() || AyuFilter.shouldMaskMessage(message, null))
+                if (!NekoConfig.showSpoilersDirectly.Bool() || shouldMaskAyuMessage(message))
                     MediaDataController.addTextStyleRuns(message, mess, msgBuilder, TextStyleSpan.FLAG_STYLE_SPOILER | TextStyleSpan.FLAG_STYLE_STRIKE);
                 if (message != null && message.messageOwner != null) {
                     MediaDataController.addAnimatedEmojiSpans(message.messageOwner.entities, msgBuilder, currentMessagePaint == null ? null : currentMessagePaint.getFontMetricsInt());

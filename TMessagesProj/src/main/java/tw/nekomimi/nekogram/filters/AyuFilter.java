@@ -7,6 +7,7 @@ import android.text.TextUtils;
 import com.google.gson.Gson;
 import com.google.gson.annotations.Expose;
 import com.radolyn.ayugram.database.AyuData;
+import com.radolyn.ayugram.database.FilterPrefsMigrator;
 import com.radolyn.ayugram.database.dao.RegexFilterDao;
 import com.radolyn.ayugram.database.entities.RegexFilter;
 import com.radolyn.ayugram.database.entities.RegexFilterGlobalExclusion;
@@ -20,6 +21,7 @@ import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -37,8 +40,12 @@ import com.radolyn.ayugram.AyuConfig;
 
 public class AyuFilter {
     private static final Object cacheLock = new Object();
-    private static volatile ArrayList<FilterModel> filterModels;
-    private static volatile ArrayList<ChatFilterEntry> chatFilterEntries;
+    private static long cacheVersion;
+    // Bumped only when rules/exclusions change; message edits bump cacheVersion alone.
+    private static long rulesVersion;
+    private static volatile List<FilterModel> filterModels;
+    private static volatile List<ChatRules> chatFilterEntries;
+    private static volatile Set<Long> excludedDialogs;
     private static volatile HashMap<Long, HashSet<String>> excludedSharedFilterIdsByDialog;
     private static volatile HashSet<Long> blockedChannels;
     private static volatile HashSet<Long> customFilteredUsers;
@@ -46,14 +53,83 @@ public class AyuFilter {
 
 
     public static ArrayList<FilterModel> getRegexFilters() {
-        if (filterModels == null) {
+        return copyFilters(getSharedSnapshot());
+    }
+
+    private static List<FilterModel> getSharedSnapshot() {
+        List<FilterModel> snapshot = filterModels;
+        if (snapshot == null) {
             synchronized (cacheLock) {
-                if (filterModels == null) {
-                    filterModels = loadSharedFilters();
+                snapshot = filterModels;
+                if (snapshot == null) {
+                    filterModels = snapshot = Collections.unmodifiableList(copyFilters(loadSharedFilters()));
                 }
             }
         }
-        return filterModels;
+        return snapshot;
+    }
+
+    private static ArrayList<FilterModel> copyFilters(List<FilterModel> source) {
+        ArrayList<FilterModel> copy = new ArrayList<>(source.size());
+        for (FilterModel model : source) {
+            if (model == null) continue;
+            FilterModel item = new FilterModel();
+            item.id = model.id;
+            item.regex = model.regex;
+            item.enabled = model.enabled;
+            item.caseInsensitive = model.caseInsensitive;
+            item.reversed = model.reversed;
+            item.pattern = model.pattern;
+            copy.add(item);
+        }
+        return copy;
+    }
+
+    private static ArrayList<ChatFilterEntry> copyChatEntries(List<ChatRules> source) {
+        ArrayList<ChatFilterEntry> copy = new ArrayList<>(source.size());
+        for (ChatRules entry : source) {
+            ChatFilterEntry item = new ChatFilterEntry();
+            item.dialogId = entry.dialogId;
+            item.filters = entry.filters == null ? new ArrayList<>() : copyFilters(entry.filters);
+            copy.add(item);
+        }
+        return copy;
+    }
+
+    private static final class ChatRules {
+        final long dialogId;
+        final List<FilterModel> filters;
+
+        ChatRules(ChatFilterEntry entry) {
+            dialogId = entry.dialogId;
+            filters = Collections.unmodifiableList(entry.filters == null ? new ArrayList<>() : copyFilters(entry.filters));
+        }
+    }
+
+    /** Non-blocking readiness check for UI callers. Does not load rules or query Room. */
+    public static boolean isLoaded() {
+        return filterModels != null && chatFilterEntries != null
+                && excludedSharedFilterIdsByDialog != null && excludedDialogs != null;
+    }
+
+    /** Read-only version check; never waits for rule loading. */
+    public static long getRulesVersion() {
+        synchronized (cacheLock) {
+            return rulesVersion;
+        }
+    }
+
+    /** Loads/compiles on globalQueue, then calls onLoaded on the UI thread. Recheck isLoaded there. */
+    public static void preloadAsync(Runnable onLoaded) {
+        Utilities.globalQueue.postRunnable(() -> {
+            synchronized (cacheLock) {
+                getSharedSnapshot();
+                getChatSnapshot();
+                getExcludedSharedFilterIdsByDialog();
+                getExcludedDialogs();
+            }
+            if (onLoaded != null) AndroidUtilities.runOnUIThread(onLoaded);
+        });
     }
 
     private static ArrayList<FilterModel> loadSharedFilters() {
@@ -179,6 +255,61 @@ public class AyuFilter {
         saveFilter(list);
     }
 
+    public static void saveRuleAsync(FilterModel model, Long dialogId, boolean existing,
+                                     Runnable onSaved, Runnable onError) {
+        FilterModel copy = copyFilters(Collections.singletonList(model)).get(0);
+        Utilities.globalQueue.postRunnable(() -> {
+            try {
+                copy.ensureId();
+                copy.buildPattern();
+                RegexFilterDao dao = AyuData.getRegexFilterDao();
+                if (copy.pattern == null || dao == null || !dao.saveRule(toRow(copy, dialogId), existing)) {
+                    throw new IllegalStateException("Filter could not be saved");
+                }
+                completeRuleWrite(dao, onSaved);
+            } catch (Exception e) {
+                FileLog.e(e);
+                if (onError != null) AndroidUtilities.runOnUIThread(onError);
+            }
+        });
+    }
+
+    public static void setFilterEnabledAsync(String id, boolean enabled, Runnable onSaved) {
+        Utilities.globalQueue.postRunnable(() -> {
+            RegexFilterDao dao = AyuData.getRegexFilterDao();
+            if (dao == null) return;
+            try {
+                RegexFilter row = dao.getById(id);
+                if (row == null) return;
+                row.enabled = enabled;
+                if (dao.saveRule(row, true)) completeRuleWrite(dao, onSaved);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        });
+    }
+
+    public static void removeRuleAsync(String id, Runnable onSaved) {
+        Utilities.globalQueue.postRunnable(() -> {
+            RegexFilterDao dao = AyuData.getRegexFilterDao();
+            if (dao == null) return;
+            try {
+                if (dao.deleteRule(id)) completeRuleWrite(dao, onSaved);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        });
+    }
+
+    private static void completeRuleWrite(RegexFilterDao dao, Runnable onSaved) {
+        RegexFilterDao.Snapshot snapshot = dao.getSnapshot();
+        if (snapshot == null) throw new IllegalStateException("Filter database unavailable");
+        persistFilterBackup(snapshot);
+        rebuildCache();
+        // Preference listeners run on UI; enqueue preloading after those invalidations.
+        AndroidUtilities.runOnUIThread(() -> preloadAsync(onSaved));
+    }
+
     public static CharSequence getMessageText(MessageObject selectedObject, MessageObject.GroupedMessages selectedObjectGroup) {
         if (selectedObject == null) {
             return null;
@@ -195,9 +326,12 @@ public class AyuFilter {
 
     public static void rebuildCache() {
         synchronized (cacheLock) {
+            cacheVersion++;
+            rulesVersion++;
             filterModels = null;
             chatFilterEntries = null;
             excludedSharedFilterIdsByDialog = null;
+            excludedDialogs = null;
             AyuFilterCache.clearAll();
         }
         notifyFiltersUpdated();
@@ -218,6 +352,8 @@ public class AyuFilter {
 
     public static void invalidateFilteredCache() {
         synchronized (cacheLock) {
+            cacheVersion++;
+            rulesVersion++;
             AyuFilterCache.clearAll();
         }
         notifyFiltersUpdated();
@@ -245,8 +381,10 @@ public class AyuFilter {
     }
 
     private static boolean isFilteredInternal(CharSequence text, long dialogId) {
-        if (chatFilterEntries != null) {
-            for (var entry : chatFilterEntries) {
+        List<ChatRules> chats = getChatSnapshot();
+        List<FilterModel> shared = getSharedSnapshot();
+        if (chats != null) {
+            for (var entry : chats) {
                 if (entry.dialogId == dialogId) {
                     if (entry.filters != null) {
                         for (var pattern : entry.filters) {
@@ -265,9 +403,9 @@ public class AyuFilter {
             return false;
         }
 
-        if (filterModels != null) {
+        if (shared != null) {
             HashSet<String> excludedFilterIds = getExcludedSharedFilterIds(dialogId);
-            for (var pattern : filterModels) {
+            for (var pattern : shared) {
                 if (!TextUtils.isEmpty(pattern.id) && excludedFilterIds.contains(pattern.id)) {
                     continue;
                 }
@@ -304,8 +442,10 @@ public class AyuFilter {
         if (TextUtils.isEmpty(text)) {
             return ranges;
         }
-        if (chatFilterEntries != null) {
-            for (var entry : chatFilterEntries) {
+        List<ChatRules> chats = getChatSnapshot();
+        List<FilterModel> shared = getSharedSnapshot();
+        if (chats != null) {
+            for (var entry : chats) {
                 if (entry.dialogId == dialogId) {
                     if (entry.filters != null) {
                         for (var filter : entry.filters) {
@@ -322,9 +462,9 @@ public class AyuFilter {
             return mergeRanges(ranges);
         }
 
-        if (filterModels != null) {
+        if (shared != null) {
             HashSet<String> excludedFilterIds = getExcludedSharedFilterIds(dialogId);
-            for (var filter : filterModels) {
+            for (var filter : shared) {
                 if (!TextUtils.isEmpty(filter.id) && excludedFilterIds.contains(filter.id)) {
                     continue;
                 }
@@ -376,7 +516,12 @@ public class AyuFilter {
         // Push payloads carry preview text only; never let them share cache entries with the real message.
         boolean cacheable = !msg.isFcmMessage();
         AyuFilterCache.DialogKey cacheKey = cacheable ? AyuFilterCache.keyFor(dialogId, msg) : null;
-        Boolean cached = cacheable ? AyuFilterCache.get(cacheKey, msg, group) : null;
+        final long version;
+        final Boolean cached;
+        synchronized (cacheLock) {
+            version = cacheVersion;
+            cached = cacheable ? AyuFilterCache.get(cacheKey, msg, group) : null;
+        }
         if (cached != null) {
             return cached;
         }
@@ -386,16 +531,11 @@ public class AyuFilter {
             return false;
         }
 
-        if (filterModels == null) {
-            getRegexFilters();
-        }
-        if (chatFilterEntries == null) {
-            getChatFilterEntries();
-        }
-
         boolean result = isFilteredInternal(text, dialogId);
         if (cacheable && (group != null || msg.getGroupId() == 0)) {
-            AyuFilterCache.put(cacheKey, msg, group, result);
+            synchronized (cacheLock) {
+                if (version == cacheVersion) AyuFilterCache.put(cacheKey, msg, group, result);
+            }
         }
 
         return result;
@@ -446,7 +586,31 @@ public class AyuFilter {
         if (isFiltered(msg, null)) {
             return true;
         }
-        return AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool() && isIgnoredBlockedMessage(msg);
+        return isIgnoredBlockedMessage(msg);
+    }
+
+    /** Batch-local album suppression; never publishes partial album results to the chat cache. */
+    public static HashSet<MessageObject> getSuppressedNotifications(List<MessageObject> messages) {
+        HashSet<MessageObject> suppressed = new HashSet<>();
+        HashSet<String> albums = new HashSet<>();
+        if (messages == null) return suppressed;
+        for (MessageObject message : messages) {
+            if (shouldSuppressNotification(message)) {
+                suppressed.add(message);
+                if (message.getGroupId() != 0) albums.add(notificationAlbumKey(message));
+            }
+        }
+        for (MessageObject message : messages) {
+            if (message != null && message.messageOwner != null && message.getGroupId() != 0
+                    && albums.contains(notificationAlbumKey(message))) {
+                suppressed.add(message);
+            }
+        }
+        return suppressed;
+    }
+
+    private static String notificationAlbumKey(MessageObject message) {
+        return message.currentAccount + ":" + message.getDialogId() + ":" + message.getGroupId();
     }
 
     public static boolean shouldMaskMessage(MessageObject msg, MessageObject.GroupedMessages group) {
@@ -576,23 +740,30 @@ public class AyuFilter {
         if (peerId == 0L) {
             return false;
         }
-        return MessagesController.getInstance(currentAccount).blockePeers.indexOfKey(peerId) >= 0
-            || isCustomFilteredPeer(peerId)
-            || isBlockedChannel(peerId);
+        return isCustomFilteredPeer(peerId) || isBlockedChannel(peerId)
+            || MessagesController.getInstance(currentAccount).blockePeers.indexOfKey(peerId) >= 0;
     }
 
     private static class FilterMaskSpan {
     }
 
     public static ArrayList<ChatFilterEntry> getChatFilterEntries() {
-        if (chatFilterEntries == null) {
+        return copyChatEntries(getChatSnapshot());
+    }
+
+    private static List<ChatRules> getChatSnapshot() {
+        List<ChatRules> snapshot = chatFilterEntries;
+        if (snapshot == null) {
             synchronized (cacheLock) {
-                if (chatFilterEntries == null) {
-                    chatFilterEntries = loadChatFilterEntries();
+                snapshot = chatFilterEntries;
+                if (snapshot == null) {
+                    ArrayList<ChatRules> entries = new ArrayList<>();
+                    for (ChatFilterEntry entry : loadChatFilterEntries()) entries.add(new ChatRules(entry));
+                    chatFilterEntries = snapshot = Collections.unmodifiableList(entries);
                 }
             }
         }
-        return chatFilterEntries;
+        return snapshot;
     }
 
     private static ArrayList<ChatFilterEntry> loadChatFilterEntries() {
@@ -701,6 +872,17 @@ public class AyuFilter {
             throw new IllegalStateException("Filter database unavailable");
         }
         return snapshot;
+    }
+
+    /** Restore only supplied backup scopes, atomically replacing their Room rows. */
+    public static void restoreFilterPreferences(String sharedJson, String chatsJson, String exclusionsJson) {
+        if (sharedJson == null && chatsJson == null && exclusionsJson == null) return;
+        RegexFilterDao.Snapshot restored = FilterPrefsMigrator.parseLegacy(sharedJson, chatsJson, exclusionsJson);
+        RegexFilterDao dao = AyuData.getRegexFilterDao();
+        if (dao == null || !dao.restoreProvidedFilters(restored, sharedJson != null,
+                chatsJson != null, exclusionsJson != null)) {
+            throw new IllegalStateException("Filter database unavailable");
+        }
     }
 
     public static RegexFilterDao.ImportResult importFilters(ArrayList<FilterModel> shared,
@@ -852,7 +1034,19 @@ public class AyuFilter {
     }
 
 
-    private static HashSet<Long> getExcludedDialogs() {
+    private static Set<Long> getExcludedDialogs() {
+        Set<Long> snapshot = excludedDialogs;
+        if (snapshot != null) return snapshot;
+        synchronized (cacheLock) {
+            snapshot = excludedDialogs;
+            if (snapshot == null) {
+                excludedDialogs = snapshot = Collections.unmodifiableSet(loadExcludedDialogs());
+            }
+        }
+        return snapshot;
+    }
+
+    private static HashSet<Long> loadExcludedDialogs() {
         HashSet<Long> set = new HashSet<>();
         try {
             String str = AyuConfig.INSTANCE.getRegexFiltersExcludedDialogs().String();
@@ -882,7 +1076,12 @@ public class AyuFilter {
             Long[] arr = set.toArray(new Long[0]);
             String str = new Gson().toJson(arr);
             AyuConfig.INSTANCE.getRegexFiltersExcludedDialogs().setConfigString(str);
-            AyuFilterCache.clearDialog(dialogId);
+            synchronized (cacheLock) {
+                excludedDialogs = Collections.unmodifiableSet(new HashSet<>(set));
+                cacheVersion++;
+                rulesVersion++;
+                AyuFilterCache.clearDialog(dialogId);
+            }
             notifyFiltersUpdated();
         }
     }
@@ -909,14 +1108,16 @@ public class AyuFilter {
     }
 
     private static HashMap<Long, HashSet<String>> getExcludedSharedFilterIdsByDialog() {
-        if (excludedSharedFilterIdsByDialog == null) {
+        HashMap<Long, HashSet<String>> snapshot = excludedSharedFilterIdsByDialog;
+        if (snapshot == null) {
             synchronized (cacheLock) {
-                if (excludedSharedFilterIdsByDialog == null) {
-                    excludedSharedFilterIdsByDialog = buildExcludedSharedFilterIdsMap(getExcludedFilterEntries());
+                snapshot = excludedSharedFilterIdsByDialog;
+                if (snapshot == null) {
+                    excludedSharedFilterIdsByDialog = snapshot = buildExcludedSharedFilterIdsMap(getExcludedFilterEntries());
                 }
             }
         }
-        return excludedSharedFilterIdsByDialog;
+        return snapshot;
     }
 
     private static HashMap<Long, HashSet<String>> buildExcludedSharedFilterIdsMap(ArrayList<ExcludedFilterEntry> entries) {
@@ -996,6 +1197,8 @@ public class AyuFilter {
         }
         synchronized (cacheLock) {
             excludedSharedFilterIdsByDialog = null;
+            cacheVersion++;
+            rulesVersion++;
             AyuFilterCache.clearAll();
         }
         notifyFiltersUpdated();
@@ -1012,6 +1215,8 @@ public class AyuFilter {
         }
         synchronized (cacheLock) {
             excludedSharedFilterIdsByDialog = null;
+            cacheVersion++;
+            rulesVersion++;
             AyuFilterCache.clearAll();
         }
         notifyFiltersUpdated();
@@ -1031,6 +1236,8 @@ public class AyuFilter {
         }
         synchronized (cacheLock) {
             excludedSharedFilterIdsByDialog = null;
+            cacheVersion++;
+            rulesVersion++;
             AyuFilterCache.clearAll();
         }
     }
@@ -1059,23 +1266,25 @@ public class AyuFilter {
 
 
     private static HashSet<Long> getBlockedChannels() {
-        if (blockedChannels == null) {
+        HashSet<Long> snapshot = blockedChannels;
+        if (snapshot == null) {
             synchronized (cacheLock) {
-                if (blockedChannels == null) {
+                snapshot = blockedChannels;
+                if (snapshot == null) {
+                    snapshot = new HashSet<>();
                     try {
                         String str = AyuConfig.INSTANCE.getBlockedChannelsData().String();
                         Long[] arr = new Gson().fromJson(str, Long[].class);
-                        blockedChannels = new HashSet<>();
                         if (arr != null) {
-                            blockedChannels.addAll(Arrays.asList(arr));
+                            snapshot.addAll(Arrays.asList(arr));
                         }
                     } catch (Exception e) {
-                        blockedChannels = new HashSet<>();
                     }
+                    blockedChannels = snapshot;
                 }
             }
         }
-        return blockedChannels;
+        return snapshot;
     }
 
     public static boolean isBlockedChannel(long dialogId) {
@@ -1154,7 +1363,10 @@ public class AyuFilter {
     }
 
     public static void onMessageEdited(int msgId, long dialogId) {
-        AyuFilterCache.invalidate(dialogId, msgId);
+        synchronized (cacheLock) {
+            cacheVersion++;
+            AyuFilterCache.invalidate(dialogId, msgId);
+        }
     }
 
 
@@ -1187,13 +1399,17 @@ public class AyuFilter {
     }
 
     private static HashSet<Long> getCustomFilteredUsers() {
-        ensureCustomFilteredUsersLoaded();
-        return customFilteredUsers;
+        synchronized (cacheLock) {
+            ensureCustomFilteredUsersLoaded();
+            return customFilteredUsers;
+        }
     }
 
     private static HashMap<Long, CustomFilteredUser> getCustomFilteredUsersDataMap() {
-        ensureCustomFilteredUsersLoaded();
-        return customFilteredUsersData;
+        synchronized (cacheLock) {
+            ensureCustomFilteredUsersLoaded();
+            return customFilteredUsersData;
+        }
     }
 
     private static void saveCustomFilteredUsers(HashSet<Long> ids, HashMap<Long, CustomFilteredUser> dataMap) {

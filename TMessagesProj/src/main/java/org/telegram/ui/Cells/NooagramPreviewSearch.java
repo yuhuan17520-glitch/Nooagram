@@ -79,6 +79,10 @@ final class NooagramPreviewSearch {
         return loading && token == requestToken;
     }
 
+    boolean accepts(long requestToken, long rulesVersion, long currentRulesVersion) {
+        return rulesVersion == currentRulesVersion && accepts(requestToken);
+    }
+
     boolean complete(long requestToken, long now, boolean failed) {
         if (!accepts(requestToken)) {
             return false;

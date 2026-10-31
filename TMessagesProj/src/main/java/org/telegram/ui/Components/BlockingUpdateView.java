@@ -39,6 +39,7 @@ import org.telegram.ui.Components.voip.CellFlickerDrawable;
 import java.util.Locale;
 
 import tw.nekomimi.nekogram.TextViewEffects;
+import tw.nekomimi.nekogram.helpers.remote.NooagramUpdateHelper;
 import tw.nekomimi.nekogram.helpers.remote.UpdateHelper;
 
 public class BlockingUpdateView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
@@ -141,8 +142,12 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
         acceptButton.setOnClickListener(view1 -> {
             if (appUpdate.document instanceof TLRPC.TL_document) {
                 if (!ApplicationLoader.applicationLoaderInstance.openApkInstall((Activity) getContext(), appUpdate.document)) {
-                    FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update", FileLoader.PRIORITY_HIGH, 1);
                     showProgress(true);
+                    if (NooagramUpdateHelper.isNooagramUpdate(appUpdate)) {
+                        NooagramUpdateHelper.startDownload(accountNum, appUpdate);
+                    } else {
+                        FileLoader.getInstance(accountNum).loadFile(appUpdate.document, "update", FileLoader.PRIORITY_HIGH, 1);
+                    }
                 }
             } else if (appUpdate.url != null) {
                 Browser.openUrl(getContext(), appUpdate.url);
@@ -212,7 +217,7 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
             if (fileName != null && fileName.equals(location)) {
                 Long loadedSize = (Long) args[1];
                 Long totalSize = (Long) args[2];
-                float progress = Math.min(1f, loadedSize / (float) totalSize);
+                float progress = totalSize > 0 ? Math.min(1f, loadedSize / (float) totalSize) : 0f;
                 radialProgress.setProgress(progress, true);
             }
         }
@@ -271,9 +276,13 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
     }
 
     public void show(int account, TLRPC.TL_help_appUpdate update, boolean check) {
+        NotificationCenter.getInstance(accountNum).removeObserver(this, NotificationCenter.fileLoaded);
+        NotificationCenter.getInstance(accountNum).removeObserver(this, NotificationCenter.fileLoadFailed);
+        NotificationCenter.getInstance(accountNum).removeObserver(this, NotificationCenter.fileLoadProgressChanged);
         pressCount = 0;
         appUpdate = update;
         accountNum = account;
+        fileName = null;
         if (update.document instanceof TLRPC.TL_document) {
             fileName = FileLoader.getAttachFileName(update.document);
         }
@@ -292,8 +301,18 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
         NotificationCenter.getInstance(accountNum).addObserver(this, NotificationCenter.fileLoaded);
         NotificationCenter.getInstance(accountNum).addObserver(this, NotificationCenter.fileLoadFailed);
         NotificationCenter.getInstance(accountNum).addObserver(this, NotificationCenter.fileLoadProgressChanged);
+        if (NooagramUpdateHelper.isNooagramUpdate(update)) {
+            boolean downloading = NooagramUpdateHelper.isDownloading(fileName);
+            Float progress = NooagramUpdateHelper.getProgress(fileName);
+            radialProgress.setProgress(progress != null ? progress : 0f, false);
+            showProgress(downloading);
+        }
         if (check) {
             UpdateHelper.getInstance().checkNewVersionAvailable((response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                Activity activity = (Activity) getContext();
+                if (appUpdate != update || getVisibility() != VISIBLE || activity.isFinishing() || activity.isDestroyed()) {
+                    return;
+                }
                 if (response != null) {
                     if (!response.can_not_skip) {
                         setVisibility(GONE);

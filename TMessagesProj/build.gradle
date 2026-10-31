@@ -39,7 +39,7 @@ def verCode = (System.getenv("NOOAGRAM_VERSION_CODE") ?: nooagram.version_code_f
 if (verCode < nooagram.version_code_floor || verCode <= nooagram.previous_release_version_code || verCode > 2100000000) {
     throw new GradleException("Nooagram versionCode must exceed the published upgrade floor")
 }
-def verName = System.getenv("NOOAGRAM_VERSION_NAME") ?: "${nooagram.version}-migration-${APP_VERSION_NAME}.n${nooagram.upstream_build}+${verCode}"
+def verName = System.getenv("NOOAGRAM_VERSION_NAME") ?: "${nooagram.version}-${APP_VERSION_NAME}.n${nooagram.upstream_build}+${verCode}"
 
 // Compile checks are allowed; do not accidentally package/publish this unfinished migration.
 gradle.taskGraph.whenReady { graph ->
@@ -104,14 +104,6 @@ def nativeSignerSha1 = System.getenv("NOOAGRAM_NATIVE_SIGNER_SHA1") ?: ""
 // Only read the public certificate of the isolated Android debug keystore.
 // Never open the production keystore while configuring or testing this build.
 def debugNativeSignerSha1 = ""
-def debugStore = new File(System.getProperty("user.home"), ".android/debug.keystore")
-if (System.getenv("COMPILE_NATIVE") != null && debugStore.isFile()) {
-    def debugKeys = java.security.KeyStore.getInstance(java.security.KeyStore.getDefaultType())
-    debugStore.withInputStream { debugKeys.load(it, "android".toCharArray()) }
-    def debugCertificate = debugKeys.getCertificate("androiddebugkey")
-    if (debugCertificate == null) throw new GradleException("Android debug signing certificate missing")
-    debugNativeSignerSha1 = java.security.MessageDigest.getInstance("SHA-1").digest(debugCertificate.encoded).encodeHex().toString().toUpperCase()
-}
 
 Properties properties
 def base64 = System.getenv("LOCAL_PROPERTIES")
@@ -290,6 +282,24 @@ android {
         }
     }
 
+    def debugSigning = signingConfigs.debug
+    def debugStore = debugSigning.storeFile
+    if (System.getenv("COMPILE_NATIVE") != null && debugStore != null && debugStore.isFile()) {
+        def debugKeys = java.security.KeyStore.getInstance(debugSigning.storeType ?: java.security.KeyStore.getDefaultType())
+        debugStore.withInputStream { debugKeys.load(it, debugSigning.storePassword.toCharArray()) }
+        def debugCertificate = debugKeys.getCertificate(debugSigning.keyAlias)
+        if (debugCertificate == null) throw new GradleException("Android debug signing certificate missing")
+        debugNativeSignerSha1 = java.security.MessageDigest.getInstance("SHA-1").digest(debugCertificate.encoded).encodeHex().toString().toUpperCase()
+    }
+    gradle.taskGraph.whenReady { graph ->
+        if (debugNativeSignerSha1.isEmpty() && graph.allTasks.any {
+            it.project == project && it.name.contains("Debug") &&
+                    (it.name.contains("CMake") || it.name.startsWith("externalNativeBuild"))
+        }) {
+            throw new GradleException("Debug native builds require the Android debug keystore at ${debugStore}. Create it first (alias ${debugSigning.keyAlias}, configured debug store password), then rerun with COMPILE_NATIVE=1.")
+        }
+    }
+
     buildTypes {
         debug {
             isDefault true
@@ -302,7 +312,9 @@ android {
             resValue "string", "migration_test_app_name", "Nooagram Migration Test"
             buildConfigField "boolean", "MIGRATION_TEST_BUILD", "true"
             signingConfig signingConfigs.debug
-            externalNativeBuild.cmake.arguments "-DNOOAGRAM_EXPECTED_SIGNER_SHA1=${debugNativeSignerSha1}"
+            if (!debugNativeSignerSha1.isEmpty()) {
+                externalNativeBuild.cmake.arguments "-DNOOAGRAM_EXPECTED_SIGNER_SHA1=${debugNativeSignerSha1}"
+            }
         }
 
         release {

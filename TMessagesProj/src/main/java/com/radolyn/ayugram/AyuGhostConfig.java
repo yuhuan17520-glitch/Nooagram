@@ -10,6 +10,8 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 
+import tw.nekomimi.nekogram.helpers.CloudSettingsHelper;
+
 import java.util.HashMap;
 
 public abstract class AyuGhostConfig {
@@ -17,6 +19,7 @@ public abstract class AyuGhostConfig {
     private static final String PREFS_FILE = "ayughostconfig";
     private static final String KEY_GLOBAL_OVERRIDE = "useGlobalConfig";
     private static final String KEY_MIGRATED = "migratedFromNekoConfig";
+    private static final String KEY_LEGACY_KEYS_CORRECTED = "correctedLegacyNekoGhostKeys";
     private static final String KEY_SILENT_MIGRATED = "migratedSilentMessage";
     private static final String KEY_SUGGEST_GHOST_BEFORE_STORY = "suggestGhostModeBeforeViewingStory";
 
@@ -30,6 +33,7 @@ public abstract class AyuGhostConfig {
     private static HashMap<Long, GhostModeSettings> settings = new HashMap<>();
     private static final Object sync = new Object();
     private static boolean useGlobalConfig = true;
+    private static boolean cloudListenerRegistered;
 
     static {
         loadConfig();
@@ -46,6 +50,10 @@ public abstract class AyuGhostConfig {
             preferences = ApplicationLoader.applicationContext
                     .getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
             editor = preferences.edit();
+            if (!cloudListenerRegistered) {
+                preferences.registerOnSharedPreferenceChangeListener(CloudSettingsHelper.listener);
+                cloudListenerRegistered = true;
+            }
 
             settings = new HashMap<>();
             settings.put(-1L, new GhostModeSettings(-1L));
@@ -60,9 +68,17 @@ public abstract class AyuGhostConfig {
 
             useGlobalConfig = preferences.getBoolean(KEY_GLOBAL_OVERRIDE, true);
 
-            if (!preferences.getBoolean(KEY_MIGRATED, false)) {
+            boolean wasMigrated = preferences.getBoolean(KEY_MIGRATED, false);
+            if (!wasMigrated) {
                 migrateFromNekoConfig();
                 editor.putBoolean(KEY_MIGRATED, true).apply();
+            }
+
+            if (!preferences.getBoolean(KEY_LEGACY_KEYS_CORRECTED, false)) {
+                if (wasMigrated) {
+                    correctLegacyNekoGhostKeys();
+                }
+                editor.putBoolean(KEY_LEGACY_KEYS_CORRECTED, true).apply();
             }
 
             if (!preferences.getBoolean(KEY_SILENT_MIGRATED, false)) {
@@ -295,15 +311,15 @@ public abstract class AyuGhostConfig {
                     .getSharedPreferences("nkmrcfg", Context.MODE_PRIVATE);
             GhostModeSettings global = settings.get(-1L);
             global.sendReadMessagePackets = nekoPrefs.getBoolean("sendReadMessagePackets", true);
-            global.sendReadStoryPackets = nekoPrefs.getBoolean("sendReadStoriesPackets", true);
+            global.sendReadStoryPackets = nekoPrefs.getBoolean("sendReadStoryPackets", true);
             global.sendOnlinePackets = nekoPrefs.getBoolean("sendOnlinePackets", true);
             global.sendUploadProgress = nekoPrefs.getBoolean("sendUploadProgress", true);
-            global.sendOfflinePacketAfterOnline = nekoPrefs.getBoolean("sendOfflinePacketAfterOnline", false);
+            global.sendOfflinePacketAfterOnline = nekoPrefs.getBoolean("sendOfflineAfterOnline", false);
             global.sendReadMessagePacketsLocked = nekoPrefs.getBoolean("sendReadMessagePacketsLocked", false);
-            global.sendReadStoryPacketsLocked = nekoPrefs.getBoolean("sendReadStoriesPacketsLocked", false);
+            global.sendReadStoryPacketsLocked = nekoPrefs.getBoolean("sendReadStoryPacketsLocked", false);
             global.sendOnlinePacketsLocked = nekoPrefs.getBoolean("sendOnlinePacketsLocked", false);
             global.sendUploadProgressLocked = nekoPrefs.getBoolean("sendUploadProgressLocked", false);
-            global.sendOfflinePacketAfterOnlineLocked = nekoPrefs.getBoolean("sendOfflinePacketAfterOnlineLocked", false);
+            global.sendOfflinePacketAfterOnlineLocked = nekoPrefs.getBoolean("sendOfflineAfterOnlineLocked", false);
             global.markReadAfterSend = nekoPrefs.getBoolean("markReadAfterSend", true);
             global.useScheduledMessages = nekoPrefs.getBoolean("useScheduledMessages", false);
             global.suggestGhostModeBeforeViewingStory = nekoPrefs.getBoolean("suggestGhostModeBeforeViewingStory", true);
@@ -311,6 +327,49 @@ public abstract class AyuGhostConfig {
             FileLog.d("AyuGhostConfig: migrated settings from nkmrcfg");
         } catch (Exception e) {
             FileLog.e("AyuGhostConfig: migration failed", e);
+        }
+    }
+
+    private static void correctLegacyNekoGhostKeys() {
+        try {
+            SharedPreferences legacy = ApplicationLoader.applicationContext
+                    .getSharedPreferences("nkmrcfg", Context.MODE_PRIVATE);
+            GhostModeSettings global = settings.get(-1L);
+            boolean changed = false;
+            if (legacy.contains("sendReadStoryPackets")) {
+                boolean value = legacy.getBoolean("sendReadStoryPackets", true);
+                if (global.sendReadStoryPackets && !value) {
+                    global.sendReadStoryPackets = value;
+                    changed = true;
+                }
+            }
+            if (legacy.contains("sendOfflineAfterOnline")) {
+                boolean value = legacy.getBoolean("sendOfflineAfterOnline", false);
+                if (!global.sendOfflinePacketAfterOnline && value) {
+                    global.sendOfflinePacketAfterOnline = value;
+                    changed = true;
+                }
+            }
+            if (legacy.contains("sendReadStoryPacketsLocked")) {
+                boolean value = legacy.getBoolean("sendReadStoryPacketsLocked", false);
+                if (!global.sendReadStoryPacketsLocked && value) {
+                    global.sendReadStoryPacketsLocked = value;
+                    changed = true;
+                }
+            }
+            if (legacy.contains("sendOfflineAfterOnlineLocked")) {
+                boolean value = legacy.getBoolean("sendOfflineAfterOnlineLocked", false);
+                if (!global.sendOfflinePacketAfterOnlineLocked && value) {
+                    global.sendOfflinePacketAfterOnlineLocked = value;
+                    changed = true;
+                }
+            }
+            if (changed) {
+                global.save();
+                FileLog.d("AyuGhostConfig: corrected legacy ghost keys");
+            }
+        } catch (Exception e) {
+            FileLog.e("AyuGhostConfig: legacy ghost key correction failed", e);
         }
     }
 

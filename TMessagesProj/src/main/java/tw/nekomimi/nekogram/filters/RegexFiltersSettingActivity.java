@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.gson.Gson;
 import com.radolyn.ayugram.database.dao.RegexFilterDao;
+import com.radolyn.ayugram.database.FilterPrefsMigrator;
 import com.radolyn.ayugram.database.entities.RegexFilter;
 import com.radolyn.ayugram.database.entities.RegexFilterGlobalExclusion;
 
@@ -38,6 +39,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenu;
@@ -54,6 +56,7 @@ import org.telegram.ui.DialogsActivity;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 
 import com.radolyn.ayugram.AyuOptions;
 import com.radolyn.ayugram.config.CellGroup;
@@ -88,6 +91,9 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     }
 
     private ListAdapter listAdapter;
+    private ArrayList<DialogFilterItem> dialogFilterItems = new ArrayList<>();
+    private int sharedFilterCount;
+    private int rowsGeneration;
     private final CellGroup cellGroup = new CellGroup(this);
     private final AbstractConfigCell filtersOptionHeaderRow = new ConfigCellHeader(getString(R.string.General));
     private final AbstractConfigCell regexFiltersEnabledRow = new ConfigCellTextCheck(AyuConfig.INSTANCE.getRegexFiltersEnabled(), null, getString(R.string.RegexFiltersEnabled));
@@ -130,7 +136,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         addCell(sharedFiltersPageRow);
         addCell(userFiltersPageRow);
         addCell(dividerRow);
-        var chatEntries = getDialogFilterItems();
+        var chatEntries = dialogFilterItems;
         if (!chatEntries.isEmpty()) {
             addCell(chatFiltersHeaderRow);
             for (DialogFilterItem item : chatEntries) {
@@ -143,7 +149,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     @SuppressLint("NotifyDataSetChanged")
     @Override
     public void onResume() {
-        rebuildRows();
+        refreshRows();
         super.onResume();
     }
 
@@ -213,8 +219,12 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                     .setMessage(getString(R.string.ClearRegexFiltersAlertMessage))
                     .setNegativeButton(getString(R.string.Cancel), null)
                     .setPositiveButton(getString(R.string.Clear), (dialog, which) -> {
-                        AyuFilter.clearAllFilters();
-                        refreshRows();
+                        Utilities.globalQueue.postRunnable(() -> {
+                            AyuFilter.clearAllFilters();
+                            AndroidUtilities.runOnUIThread(() -> {
+                                if (!isFinished && !isFinishing() && getParentActivity() != null) refreshRows();
+                            });
+                        });
                     })
                     .makeRed(AlertDialog.BUTTON_POSITIVE)
                     .show();
@@ -267,7 +277,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     }
 
     private int getShadowBanCount() {
-        return AyuFilter.getBlockedChannelsList().size() + AyuFilter.getCustomFilteredUsersList().size();
+        return AyuFilter.getBlockedChannelsCount() + AyuFilter.getCustomFilteredUsersList().size();
     }
 
     private String buildExportJson() {
@@ -295,6 +305,13 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             addPeerUsername(data.peers, entry.dialogId, messagesController);
         }
         data.customFilteredUsersData = AyuFilter.getCustomFilteredUsersDataList();
+        data.blockedChannelsData = new Gson().fromJson(AyuConfig.INSTANCE.getBlockedChannelsData().String(),
+                new com.google.gson.reflect.TypeToken<ArrayList<Long>>(){}.getType());
+        if (data.blockedChannelsData != null) {
+            for (Long dialogId : data.blockedChannelsData) {
+                if (dialogId != null) addPeerUsername(data.peers, dialogId, messagesController);
+            }
+        }
         return new Gson().toJson(data);
     }
 
@@ -315,24 +332,37 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     }
 
     private void exportToClipboard() {
-        try {
-            AndroidUtilities.addToClipboard(buildExportJson());
-            BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
-        } catch (Exception e) {
-            FileLog.e(e);
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersExportError)).show();
-        }
+        prepareExport(false);
     }
 
     private void exportToUrl() {
-        final String json;
-        try {
-            json = buildExportJson();
-        } catch (Exception e) {
-            FileLog.e(e);
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersExportError)).show();
-            return;
-        }
+        prepareExport(true);
+    }
+
+    private void prepareExport(boolean url) {
+        Utilities.globalQueue.postRunnable(() -> {
+            try {
+                String json = buildExportJson();
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (isFinished || isFinishing() || getParentActivity() == null) return;
+                    if (url) exportToUrl(json);
+                    else {
+                        AndroidUtilities.addToClipboard(json);
+                        BulletinFactory.of(this).createCopyBulletin(getString(R.string.TextCopied)).show();
+                    }
+                });
+            } catch (Exception e) {
+                FileLog.e(e);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (!isFinished && !isFinishing() && getParentActivity() != null) {
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersExportError)).show();
+                    }
+                });
+            }
+        });
+    }
+
+    private void exportToUrl(String json) {
         Request request = new Request.Builder()
                 .url("https://dpaste.com/api/v2/")
                 .post(new MultipartBody.Builder()
@@ -408,12 +438,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         ArrayList<AyuFilter.ChatFilterEntry> chatsIncoming;
         ArrayList<AyuFilter.CustomFilteredUser> customFilteredUsersIncoming;
         ArrayList<AyuFilter.ExcludedFilterEntry> exclusionsIncoming;
+        ArrayList<Long> blockedChannelsIncoming;
         HashMap<Long, String> peersIncoming;
 
         boolean hasAnyData() {
             return (sharedIncoming != null && !sharedIncoming.isEmpty())
                     || (chatsIncoming != null && !chatsIncoming.isEmpty())
                     || (customFilteredUsersIncoming != null && !customFilteredUsersIncoming.isEmpty())
+                    || (blockedChannelsIncoming != null && !blockedChannelsIncoming.isEmpty())
                     || (exclusionsIncoming != null && !exclusionsIncoming.isEmpty());
         }
     }
@@ -424,89 +456,99 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         long selfUserId = getUserConfig().getClientUserId();
         ParsedImport out = new ParsedImport();
         try {
+            TransferData data;
             if (json.startsWith("[")) {
-                AyuFilter.FilterModel[] arr = new Gson().fromJson(json, AyuFilter.FilterModel[].class);
-                if (arr != null) {
-                    out.sharedIncoming = new ArrayList<>();
-                    for (AyuFilter.FilterModel m : arr) {
-                        if (m == null || m.regex == null) continue;
-                        m.migrateFromLegacy(0L);
-                        out.sharedIncoming.add(m);
-                    }
+                RegexFilterDao.Snapshot legacy = FilterPrefsMigrator.parseLegacy(json, null, null);
+                data = new TransferData();
+                data.filters = new ArrayList<>();
+                for (RegexFilter row : legacy.filters) data.filters.add(buildBackupFilter(row));
+                data.exclusions = new ArrayList<>();
+                for (RegexFilterGlobalExclusion row : legacy.exclusions) {
+                    BackupExclusion exclusion = new BackupExclusion();
+                    exclusion.dialogId = row.dialogId;
+                    exclusion.filterId = row.filterId;
+                    data.exclusions.add(exclusion);
                 }
             } else {
-                TransferData data = new Gson().fromJson(json, TransferData.class);
-                if (data != null) {
-                    if (data.filters != null) {
-                        out.sharedIncoming = new ArrayList<>();
-                        out.chatsIncoming = new ArrayList<>();
-                        HashMap<Long, AyuFilter.ChatFilterEntry> chatMap = new HashMap<>();
-                        for (BackupFilter bf : data.filters) {
-                            if (bf == null || TextUtils.isEmpty(bf.text)) continue;
-                            AyuFilter.FilterModel m = new AyuFilter.FilterModel();
-                            m.id = bf.id;
-                            m.regex = bf.text;
-                            m.enabled = bf.enabled;
-                            m.caseInsensitive = bf.caseInsensitive;
-                            m.reversed = bf.reversed;
-                            m.ensureId();
-                            if (bf.dialogId == null) {
-                                out.sharedIncoming.add(m);
-                            } else {
-                                long did = bf.dialogId;
-                                AyuFilter.ChatFilterEntry entry = chatMap.get(did);
-                                if (entry == null) {
-                                    entry = new AyuFilter.ChatFilterEntry();
-                                    entry.dialogId = did;
-                                    entry.filters = new ArrayList<>();
-                                    chatMap.put(did, entry);
-                                    out.chatsIncoming.add(entry);
-                                }
-                                entry.filters.add(m);
+                data = new Gson().fromJson(json, TransferData.class);
+            }
+            if (data != null) {
+                if (data.filters != null) {
+                    out.sharedIncoming = new ArrayList<>();
+                    out.chatsIncoming = new ArrayList<>();
+                    HashMap<Long, AyuFilter.ChatFilterEntry> chatMap = new HashMap<>();
+                    for (BackupFilter bf : data.filters) {
+                        if (bf == null || TextUtils.isEmpty(bf.text)) continue;
+                        AyuFilter.FilterModel m = new AyuFilter.FilterModel();
+                        m.id = bf.id;
+                        m.regex = bf.text;
+                        m.enabled = bf.enabled;
+                        m.caseInsensitive = bf.caseInsensitive;
+                        m.reversed = bf.reversed;
+                        m.ensureId();
+                        if (bf.dialogId == null) {
+                            out.sharedIncoming.add(m);
+                        } else {
+                            long did = bf.dialogId;
+                            AyuFilter.ChatFilterEntry entry = chatMap.get(did);
+                            if (entry == null) {
+                                entry = new AyuFilter.ChatFilterEntry();
+                                entry.dialogId = did;
+                                entry.filters = new ArrayList<>();
+                                chatMap.put(did, entry);
+                                out.chatsIncoming.add(entry);
                             }
+                            entry.filters.add(m);
                         }
                     }
-                    if (data.exclusions != null) {
-                        out.exclusionsIncoming = new ArrayList<>();
-                        for (BackupExclusion be : data.exclusions) {
-                            if (be == null || TextUtils.isEmpty(be.filterId)) continue;
-                            AyuFilter.ExcludedFilterEntry entry = new AyuFilter.ExcludedFilterEntry();
-                            entry.dialogId = be.dialogId;
-                            entry.filterId = be.filterId;
-                            out.exclusionsIncoming.add(entry);
-                        }
+                }
+                if (data.exclusions != null) {
+                    out.exclusionsIncoming = new ArrayList<>();
+                    for (BackupExclusion be : data.exclusions) {
+                        if (be == null || TextUtils.isEmpty(be.filterId)) continue;
+                        AyuFilter.ExcludedFilterEntry entry = new AyuFilter.ExcludedFilterEntry();
+                        entry.dialogId = be.dialogId;
+                        entry.filterId = be.filterId;
+                        out.exclusionsIncoming.add(entry);
                     }
-                    if (data.peers != null && !data.peers.isEmpty()) {
-                        out.peersIncoming = new HashMap<>(data.peers);
+                }
+                if (data.peers != null && !data.peers.isEmpty()) {
+                    out.peersIncoming = new HashMap<>(data.peers);
+                }
+                if (data.blockedChannelsData != null) {
+                    HashSet<Long> ids = new HashSet<>();
+                    for (Long id : data.blockedChannelsData) {
+                        if (id != null && id < 0L) ids.add(id);
                     }
-                    if (data.customFilteredUsersData != null) {
-                        out.customFilteredUsersIncoming = new ArrayList<>();
-                        for (AyuFilter.CustomFilteredUser user : data.customFilteredUsersData) {
-                            if (user == null || user.id <= 0L || user.id == selfUserId) {
-                                continue;
-                            }
-                            AyuFilter.CustomFilteredUser normalized = new AyuFilter.CustomFilteredUser();
-                            normalized.id = user.id;
-                            normalized.accessHash = user.accessHash;
-                            normalized.username = user.username;
-                            if (!TextUtils.isEmpty(user.displayName)) {
-                                String displayName = user.displayName.trim();
-                                if (!TextUtils.isEmpty(displayName)) {
-                                    normalized.displayName = displayName;
-                                }
-                            }
-                            out.customFilteredUsersIncoming.add(normalized);
+                    out.blockedChannelsIncoming = new ArrayList<>(ids);
+                }
+                if (data.customFilteredUsersData != null) {
+                    out.customFilteredUsersIncoming = new ArrayList<>();
+                    for (AyuFilter.CustomFilteredUser user : data.customFilteredUsersData) {
+                        if (user == null || user.id <= 0L || user.id == selfUserId) {
+                            continue;
                         }
-                    } else if (data.customFilteredUsers != null) {
-                        out.customFilteredUsersIncoming = new ArrayList<>();
-                        for (Long userId : data.customFilteredUsers) {
-                            if (userId == null || userId <= 0L || userId == selfUserId) {
-                                continue;
+                        AyuFilter.CustomFilteredUser normalized = new AyuFilter.CustomFilteredUser();
+                        normalized.id = user.id;
+                        normalized.accessHash = user.accessHash;
+                        normalized.username = user.username;
+                        if (!TextUtils.isEmpty(user.displayName)) {
+                            String displayName = user.displayName.trim();
+                            if (!TextUtils.isEmpty(displayName)) {
+                                normalized.displayName = displayName;
                             }
-                            AyuFilter.CustomFilteredUser normalized = new AyuFilter.CustomFilteredUser();
-                            normalized.id = userId;
-                            out.customFilteredUsersIncoming.add(normalized);
                         }
+                        out.customFilteredUsersIncoming.add(normalized);
+                    }
+                } else if (data.customFilteredUsers != null) {
+                    out.customFilteredUsersIncoming = new ArrayList<>();
+                    for (Long userId : data.customFilteredUsers) {
+                        if (userId == null || userId <= 0L || userId == selfUserId) {
+                            continue;
+                        }
+                        AyuFilter.CustomFilteredUser normalized = new AyuFilter.CustomFilteredUser();
+                        normalized.id = userId;
+                        out.customFilteredUsersIncoming.add(normalized);
                     }
                 }
             }
@@ -526,6 +568,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         s.newChatFilters = merged.newChatFilters;
         s.updatedFilters = merged.updatedFilters;
         s.newExclusions = merged.newExclusions;
+        if (parsed.blockedChannelsIncoming != null) {
+            HashSet<Long> existing = new HashSet<>();
+            Long[] ids = new Gson().fromJson(AyuConfig.INSTANCE.getBlockedChannelsData().String(), Long[].class);
+            if (ids != null) java.util.Collections.addAll(existing, ids);
+            for (Long id : parsed.blockedChannelsIncoming) {
+                if (existing.add(id)) s.newShadowBans++;
+            }
+        }
         if (parsed.customFilteredUsersIncoming != null) {
             long selfUserId = getUserConfig().getClientUserId();
             HashMap<Long, AyuFilter.CustomFilteredUser> existing = new HashMap<>();
@@ -592,22 +642,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             }
             AyuFilter.setCustomFilteredUsersData(new ArrayList<>(merged.values()));
         }
-        if (parsed.peersIncoming != null && !parsed.peersIncoming.isEmpty()) {
-            resolveUnknownPeers(parsed.peersIncoming);
+        if (parsed.blockedChannelsIncoming != null) {
+            for (Long id : parsed.blockedChannelsIncoming) AyuFilter.blockPeer(id);
         }
     }
 
-    private void showImportPreview(ParsedImport parsed) {
+    private void showImportPreview(ParsedImport parsed, FiltersImportBottomSheet.Summary summary) {
         if (parsed == null || !parsed.hasAnyData()) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportNoChanges)).show();
-            return;
-        }
-        final FiltersImportBottomSheet.Summary summary;
-        try {
-            summary = buildImportSummary(parsed);
-        } catch (Exception e) {
-            FileLog.e(e);
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
             return;
         }
         if (summary.isEmpty()) {
@@ -615,15 +657,52 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             return;
         }
         new FiltersImportBottomSheet(this, summary, () -> {
+            Utilities.globalQueue.postRunnable(() -> {
+                try {
+                    applyImport(parsed);
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (isFinished || isFinishing() || getParentActivity() == null) return;
+                        refreshRows();
+                        if (parsed.peersIncoming != null) resolveUnknownPeers(parsed.peersIncoming);
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.done, getString(R.string.RegexFiltersImportSuccess)).show();
+                    });
+                } catch (Exception e) {
+                    FileLog.e(e);
+                    AndroidUtilities.runOnUIThread(this::showImportError);
+                }
+            });
+        }).show();
+    }
+
+    private void prepareImport(String json) {
+        prepareImport(json, null);
+    }
+
+    private void prepareImport(String json, String url) {
+        Utilities.globalQueue.postRunnable(() -> {
             try {
-                applyImport(parsed);
-                refreshRows();
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.done, getString(R.string.RegexFiltersImportSuccess)).show();
+                ParsedImport parsed = parseImportJson(json);
+                if (parsed == null) {
+                    AndroidUtilities.runOnUIThread(this::showImportError);
+                    return;
+                }
+                FiltersImportBottomSheet.Summary summary = buildImportSummary(parsed);
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (isFinished || isFinishing() || getParentActivity() == null) return;
+                    if (url != null) AyuConfig.INSTANCE.getRegexFiltersLastImportLink().setConfigString(url);
+                    showImportPreview(parsed, summary);
+                });
             } catch (Exception e) {
                 FileLog.e(e);
-                BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
+                AndroidUtilities.runOnUIThread(this::showImportError);
             }
-        }).show();
+        });
+    }
+
+    private void showImportError() {
+        if (!isFinished && !isFinishing() && getParentActivity() != null) {
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
+        }
     }
 
     private void showImportSourceChooser(Context context) {
@@ -652,12 +731,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
             return;
         }
-        ParsedImport parsed = parseImportJson(text.toString());
-        if (parsed == null) {
-            BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError)).show();
-            return;
-        }
-        showImportPreview(parsed);
+        prepareImport(text.toString());
     }
 
     private void importFromUrl(Context context) {
@@ -726,6 +800,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 AndroidUtilities.runOnUIThread(() -> {
                     progress.dismiss();
+                    if (isFinished || isFinishing() || getParentActivity() == null) return;
                     BulletinFactory.of(RegexFiltersSettingActivity.this)
                             .createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportUrlFetchFailed))
                             .show();
@@ -744,21 +819,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 final String finalBody = body;
                 AndroidUtilities.runOnUIThread(() -> {
                     progress.dismiss();
+                    if (isFinished || isFinishing() || getParentActivity() == null) return;
                     if (TextUtils.isEmpty(finalBody)) {
                         BulletinFactory.of(RegexFiltersSettingActivity.this)
                                 .createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportUrlFetchFailed))
                                 .show();
                         return;
                     }
-                    ParsedImport parsed = parseImportJson(finalBody);
-                    if (parsed == null) {
-                        BulletinFactory.of(RegexFiltersSettingActivity.this)
-                                .createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportError))
-                                .show();
-                        return;
-                    }
-                    AyuConfig.INSTANCE.getRegexFiltersLastImportLink().setConfigString(url);
-                    showImportPreview(parsed);
+                    prepareImport(finalBody, url);
                 });
             }
         });
@@ -799,10 +867,18 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
 
     @SuppressLint("NotifyDataSetChanged")
     private void refreshRows() {
-        rebuildRows();
-        if (listAdapter != null) {
-            listAdapter.notifyDataSetChanged();
-        }
+        final int generation = ++rowsGeneration;
+        Utilities.globalQueue.postRunnable(() -> {
+            ArrayList<DialogFilterItem> items = getDialogFilterItems();
+            int sharedCount = AyuFilter.getRegexFilters().size();
+            AndroidUtilities.runOnUIThread(() -> {
+                if (generation != rowsGeneration || isFinished || isFinishing() || getParentActivity() == null) return;
+                dialogFilterItems = items;
+                sharedFilterCount = sharedCount;
+                rebuildRows();
+                if (listAdapter != null) listAdapter.notifyDataSetChanged();
+            });
+        });
     }
 
     private void updateHideOnlyMatchedRowsAnimated(boolean maskEnabled) {
@@ -912,6 +988,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         public HashMap<Long, String> peers;
         public ArrayList<AyuFilter.CustomFilteredUser> customFilteredUsersData;
         public ArrayList<Long> customFilteredUsers;
+        public ArrayList<Long> blockedChannelsData;
     }
 
     private static class BackupFilter {
@@ -964,7 +1041,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 infoCell.setText(getString(R.string.RegexFiltersHideOnlyMatchedAbout));
             } else if (row == sharedFiltersPageRow) {
                 TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
-                settingsCell.setTextAndValue(getString(R.string.RegexFiltersSharedHeader), String.valueOf(AyuFilter.getRegexFilters().size()), true);
+                settingsCell.setTextAndValue(getString(R.string.RegexFiltersSharedHeader), String.valueOf(sharedFilterCount), true);
             } else if (row == userFiltersPageRow) {
                 TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
                 settingsCell.setTextAndValue(getString(R.string.ShadowBan), String.valueOf(getShadowBanCount()), false);

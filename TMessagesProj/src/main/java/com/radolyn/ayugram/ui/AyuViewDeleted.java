@@ -107,6 +107,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     private final ArrayList<MessageObject> messageObjects = new ArrayList<>();
     private final SparseArray<DeletedMessageFull> messageIdMap = new SparseArray<>();
     private final Map<String, TLRPC.Message> replyCache = new HashMap<>();
+    private final Map<String, PreparedDeletedMessage> preparedMessages = new HashMap<>();
     private final AtomicInteger loadGeneration = new AtomicInteger();
     private final int pageSize = AyuHistoryPagination.PAGE_SIZE;
     private int rowCount;
@@ -226,6 +227,74 @@ public class AyuViewDeleted extends NekoDelegateFragment {
         return messageFull != null && AyuMessageUtils.hasContent(messageFull.message);
     }
 
+    static final class ArchiveMessageKey {
+        final long userId;
+        final long dialogId;
+        final int messageId;
+
+        ArchiveMessageKey(long userId, long dialogId, int messageId) {
+            this.userId = userId;
+            this.dialogId = dialogId;
+            this.messageId = messageId;
+        }
+
+        ArchiveMessageKey(DeletedMessageFull full) {
+            this(full.message.userId, full.message.dialogId, full.message.messageId);
+        }
+
+        boolean matches(DeletedMessageFull full) {
+            return full != null && full.message != null && full.message.userId == userId
+                    && full.message.dialogId == dialogId && full.message.messageId == messageId;
+        }
+
+        int findIndex(List<DeletedMessageFull> messages) {
+            for (int i = 0; i < messages.size(); i++) {
+                if (matches(messages.get(i))) return i;
+            }
+            return -1;
+        }
+    }
+
+    private static final class PreparedDeletedMessage {
+        final TLRPC.TL_message message;
+        final TLRPC.TL_message replyMessage;
+        final boolean attachPathExists;
+        final boolean mediaExists;
+
+        PreparedDeletedMessage(TLRPC.TL_message message, TLRPC.TL_message replyMessage, boolean attachPathExists, boolean mediaExists) {
+            this.message = message;
+            this.replyMessage = replyMessage;
+            this.attachPathExists = attachPathExists;
+            this.mediaExists = mediaExists;
+        }
+    }
+
+    private Map<String, PreparedDeletedMessage> prepareMessages(List<DeletedMessageFull> list) {
+        int account = getCurrentAccount();
+        Map<String, PreparedDeletedMessage> prepared = new HashMap<>();
+        for (DeletedMessageFull full : list) {
+            TLRPC.TL_message message = new TLRPC.TL_message();
+            AyuMessageUtils.map(full.message, message, account);
+            AyuMessageUtils.mapMedia(full.message, message, account);
+            message.ayuDeleted = true;
+            message.ayuDeleteDate = full.message.entityCreateDate;
+            // Keep a separate snapshot without nested replies to avoid reply cycles.
+            TLRPC.TL_message replyMessage = new TLRPC.TL_message();
+            AyuMessageUtils.map(full.message, replyMessage, account);
+            replyMessage.media = message.media;
+            replyMessage.attachPath = message.attachPath;
+            replyMessage.stickerVerified = message.stickerVerified;
+            replyMessage.ayuDeleted = true;
+            replyMessage.ayuDeleteDate = message.ayuDeleteDate;
+            boolean attachPathExists = !TextUtils.isEmpty(message.attachPath) && new File(message.attachPath).exists();
+            File mediaFile = FileLoader.getInstance(account).getPathToMessage(message);
+            boolean mediaExists = mediaFile != null && mediaFile.exists();
+            prepared.put(replyKey(full.message.dialogId, full.message.messageId),
+                    new PreparedDeletedMessage(message, replyMessage, attachPathExists, mediaExists));
+        }
+        return prepared;
+    }
+
     private void updateVisibleMessageCells() {
         if (listView != null) {
             updateVisibleChatMessageCells(listView);
@@ -237,8 +306,13 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private Runnable reloadSearchRunnable;
+    private final Runnable refreshDeletedRunnable = () -> {
+        if (isFinished) return;
+        updateDeleted();
+    };
 
     private int beginReload() {
+        if (isFinished) return loadGeneration.get();
         if (reloadSearchRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(reloadSearchRunnable);
             reloadSearchRunnable = null;
@@ -251,9 +325,10 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private void reloadForSearch() {
+        if (isFinished) return;
         int request = beginReload();
         reloadSearchRunnable = () -> {
-            if (loadGeneration.get() != request) return;
+            if (isFinished || loadGeneration.get() != request) return;
             reloadSearchRunnable = null;
             loadFirstPage(request, () -> {
                 if (rowCount > 0 && listView != null) {
@@ -266,6 +341,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private void updateDeleted(Runnable onComplete) {
+        if (isFinished) return;
         loadFirstPage(beginReload(), onComplete);
     }
 
@@ -281,19 +357,23 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private void loadFirstPage(int request, Runnable onComplete) {
+        if (isFinished) return;
         long userId = getUserConfig().getClientUserId();
         String query = searchQuery == null ? "" : searchQuery;
         Utilities.globalQueue.postRunnable(() -> {
-            if (loadGeneration.get() != request) return;
+            if (isFinished || loadGeneration.get() != request) return;
             try {
                 AyuHistoryPagination.Page<DeletedMessageFull> page = queryPage(userId, query, 0);
                 ArrayList<DeletedMessageFull> latest = new ArrayList<>(page.messages);
-                Map<String, TLRPC.Message> replies = prefetchReplyTargets(userId, latest);
+                Map<String, PreparedDeletedMessage> prepared = prepareMessages(latest);
+                Map<String, TLRPC.Message> replies = prefetchReplyTargets(userId, prepared);
                 Collections.reverse(latest);
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (loadGeneration.get() != request || getUserConfig().getClientUserId() != userId) return;
+                    if (isFinished || loadGeneration.get() != request || getUserConfig().getClientUserId() != userId) return;
                     deletedMessages.clear();
                     messageIdMap.clear();
+                    preparedMessages.clear();
+                    preparedMessages.putAll(prepared);
                     replyCache.clear();
                     replyCache.putAll(replies);
                     deletedMessages.addAll(latest);
@@ -307,7 +387,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             } catch (Exception e) {
                 FileLog.e("AyuViewDeleted.loadFirstPage", e);
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (loadGeneration.get() == request) loading = false;
+                    if (!isFinished && loadGeneration.get() == request) loading = false;
                 });
             }
         });
@@ -476,35 +556,38 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private void loadOlder() {
-        if (loading || noMoreOlder) return;
+        if (isFinished || loading || noMoreOlder) return;
         loading = true;
         int request = loadGeneration.get();
         long userId = getUserConfig().getClientUserId();
         int currentOldestId = oldestId;
         String query = searchQuery == null ? "" : searchQuery;
 
-        int firstPos = layoutManager.findFirstVisibleItemPosition();
-        View firstView = layoutManager.findViewByPosition(firstPos);
-        int top = firstView != null ? firstView.getTop() : 0;
-
         Utilities.globalQueue.postRunnable(() -> {
-            if (loadGeneration.get() != request) return;
+            if (isFinished || loadGeneration.get() != request) return;
             try {
                 AyuHistoryPagination.Page<DeletedMessageFull> page = queryPage(userId, query, currentOldestId);
                 ArrayList<DeletedMessageFull> older = new ArrayList<>(page.messages);
-                Map<String, TLRPC.Message> replies = prefetchReplyTargets(userId, older);
+                Map<String, PreparedDeletedMessage> prepared = prepareMessages(older);
+                Map<String, TLRPC.Message> replies = prefetchReplyTargets(userId, prepared);
                 Collections.reverse(older);
                 AndroidUtilities.runOnUIThread(() -> {
-                if (loadGeneration.get() != request || getUserConfig().getClientUserId() != userId) return;
-                int insertCount = older.size();
-                replyCache.putAll(replies);
-                deletedMessages.addAll(0, older);
-                for (int i = 0; i < insertCount; i++) {
-                    DeletedMessageFull m = older.get(i);
-                    messageIdMap.put(m.message.messageId, m);
-                }
-                if (!older.isEmpty()) oldestId = older.get(0).message.messageId;
-                noMoreOlder = !page.hasMoreOlder;
+                    if (isFinished || loadGeneration.get() != request || getUserConfig().getClientUserId() != userId) return;
+                    int insertCount = older.size();
+                    int firstPos = layoutManager != null ? layoutManager.findFirstVisibleItemPosition() : -1;
+                    View firstView = layoutManager != null ? layoutManager.findViewByPosition(firstPos) : null;
+                    ArchiveMessageKey anchor = insertCount > 0 && firstPos >= 0 && firstPos < filteredMessages.size()
+                            ? new ArchiveMessageKey(filteredMessages.get(firstPos)) : null;
+                    int top = firstView != null ? firstView.getTop() : 0;
+                    replyCache.putAll(replies);
+                    preparedMessages.putAll(prepared);
+                    deletedMessages.addAll(0, older);
+                    for (int i = 0; i < insertCount; i++) {
+                        DeletedMessageFull m = older.get(i);
+                        messageIdMap.put(m.message.messageId, m);
+                    }
+                    if (!older.isEmpty()) oldestId = older.get(0).message.messageId;
+                    noMoreOlder = !page.hasMoreOlder;
 
                     filteredMessages.addAll(0, older);
                     ArrayList<MessageObject> olderObjects = new ArrayList<>(insertCount);
@@ -519,19 +602,20 @@ public class AyuViewDeleted extends NekoDelegateFragment {
                     updateActionBarCount();
                     updateEmptyView();
 
-                if (layoutManager != null) {
-                    layoutManager.scrollToPositionWithOffset(firstPos + insertCount, top);
-                }
-                loading = false;
+                    if (anchor != null && layoutManager != null) {
+                        int anchorPosition = anchor.findIndex(filteredMessages);
+                        if (anchorPosition >= 0) layoutManager.scrollToPositionWithOffset(anchorPosition, top);
+                    }
+                    loading = false;
 
-                updatePagedownButtonVisibility(false);
-                AndroidUtilities.runOnUIThread(updateFloatingDateRunnable);
-                updateVisibleMessageCells();
+                    updatePagedownButtonVisibility(false);
+                    AndroidUtilities.runOnUIThread(updateFloatingDateRunnable);
+                    updateVisibleMessageCells();
                 });
             } catch (Exception e) {
                 FileLog.e("AyuViewDeleted.loadOlder", e);
                 AndroidUtilities.runOnUIThread(() -> {
-                    if (loadGeneration.get() == request) loading = false;
+                    if (!isFinished && loadGeneration.get() == request) loading = false;
                 });
             }
         });
@@ -553,6 +637,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
         super.onFragmentDestroy();
         loadGeneration.incrementAndGet();
         if (reloadSearchRunnable != null) AndroidUtilities.cancelRunOnUIThread(reloadSearchRunnable);
+        AndroidUtilities.cancelRunOnUIThread(refreshDeletedRunnable);
 
         getNotificationCenter().removeObserver(this, AyuConstants.MESSAGES_DELETED_NOTIFICATION);
         getNotificationCenter().removeObserver(this, AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION);
@@ -623,14 +708,12 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     @SuppressLint("NotifyDataSetChanged")
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
+        if (isFinished) return;
         if (id == AyuConstants.MESSAGES_DELETED_NOTIFICATION) {
             long did = (long) args[0];
             if (did == dialogId) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    updateDeleted();
-                    applySearchFilter();
-                    updateActionBarCount();
-                }, 500);
+                AndroidUtilities.cancelRunOnUIThread(refreshDeletedRunnable);
+                AndroidUtilities.runOnUIThread(refreshDeletedRunnable, 500);
             }
         } else if (id == AyuConstants.DELETED_MEDIA_LOADED_NOTIFICATION) {
             try {
@@ -651,6 +734,8 @@ public class AyuViewDeleted extends NekoDelegateFragment {
         if (msg == null || getParentActivity() == null) {
             return;
         }
+        final int menuAccount = getCurrentAccount();
+        final ArchiveMessageKey menuKey = new ArchiveMessageKey(getUserConfig().getClientUserId(), msg.getDialogId(), msg.getId());
 
         ArrayList<CharSequence> items = new ArrayList<>();
         ArrayList<Integer> options = new ArrayList<>();
@@ -722,7 +807,6 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             cell.setTextAndIcon(items.get(a), icons.get(a));
             final Integer option = options.get(a);
             popupLayout.addView(cell);
-            final int pos = position;
             cell.setOnClickListener(v1 -> {
                 if (option == OPTION_SHOW_IN_CHAT) {
                     Bundle args = new Bundle();
@@ -743,20 +827,21 @@ public class AyuViewDeleted extends NekoDelegateFragment {
                     NotificationCenter.getInstance(getCurrentAccount()).postNotificationName(NotificationCenter.closeChats);
                     presentFragment(new ChatActivity(args), false, false);
                 } else if (option == OPTION_DELETE_FROM_DATABASE) {
-                    long userId = getUserConfig().getClientUserId();
-                    long dialogId = msg.getDialogId();
-                    int messageId = msg.getId();
-                    Utilities.globalQueue.postRunnable(() -> AyuMessagesController.getInstance().delete(userId, dialogId, messageId));
-                    if (pos >= 0 && pos < filteredMessages.size()) {
+                    if (isFinished || getCurrentAccount() != menuAccount || getUserConfig().getClientUserId() != menuKey.userId) return;
+                    int pos = menuKey.findIndex(filteredMessages);
+                    if (pos >= 0) {
+                        Utilities.globalQueue.postRunnable(() -> AyuMessagesController.getInstance()
+                                .delete(menuKey.userId, menuKey.dialogId, menuKey.messageId));
+                        loadGeneration.incrementAndGet();
+                        loading = false;
                         DeletedMessageFull toRemove = filteredMessages.remove(pos);
-                        int removedMessageId = toRemove != null && toRemove.message != null ? toRemove.message.messageId : 0;
                         if (pos < messageObjects.size()) {
                             messageObjects.remove(pos);
                         }
                         deletedMessages.remove(toRemove);
-                        if (toRemove != null && toRemove.message != null) {
-                            messageIdMap.remove(toRemove.message.messageId);
-                        }
+                        messageIdMap.remove(menuKey.messageId);
+                        preparedMessages.remove(replyKey(menuKey.dialogId, menuKey.messageId));
+                        replyCache.remove(replyKey(menuKey.dialogId, menuKey.messageId));
                         rowCount = filteredMessages.size();
                         if (!deletedMessages.isEmpty() && deletedMessages.get(0).message != null) {
                             oldestId = deletedMessages.get(0).message.messageId;
@@ -764,7 +849,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
                             oldestId = Integer.MAX_VALUE;
                         }
                         notifyMessageListItemRemoved(listView, pos);
-                        invalidateCachedReplyReferences(removedMessageId);
+                        invalidateCachedReplyReferences(menuKey);
                         updateActionBarCount();
                         updateEmptyView(rowCount == 0);
                         if (listView != null) {
@@ -775,10 +860,6 @@ public class AyuViewDeleted extends NekoDelegateFragment {
                         } else {
                             updatePagedownButtonVisibility(false);
                         }
-                    } else {
-                        updateDeleted();
-                        notifyAdapterDataChanged();
-                        updateActionBarCount();
                     }
                 } else if (option == OPTION_COPY) {
                     String text = msg.messageOwner != null ? msg.messageOwner.message : null;
@@ -934,7 +1015,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     }
 
     private void updateActionBarCount() {
-        if (actionBar == null) {
+        if (isFinished || actionBar == null) {
             return;
         }
         long userId = getUserConfig().getClientUserId();
@@ -944,7 +1025,7 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             // 话题内查看 / 搜索时要按话题统计，否则数字会和列表对不上
             int count = AyuMessagesController.getInstance().getDeletedCount(userId, dialogId, topicId, query);
             AndroidUtilities.runOnUIThread(() -> {
-                if (actionBar != null && loadGeneration.get() == request && getUserConfig().getClientUserId() == userId) {
+                if (!isFinished && actionBar != null && loadGeneration.get() == request && getUserConfig().getClientUserId() == userId) {
                     String label = getString(R.string.EventLogFilterDeletedMessages);
                     actionBar.setSubtitle(label + " (" + count + ")");
                 }
@@ -1050,8 +1131,8 @@ public class AyuViewDeleted extends NekoDelegateFragment {
         }
     }
 
-    private void invalidateCachedReplyReferences(int removedMessageId) {
-        if (removedMessageId == 0 || messageObjects.isEmpty()) {
+    private void invalidateCachedReplyReferences(ArchiveMessageKey removed) {
+        if (removed.messageId == 0 || messageObjects.isEmpty()) {
             return;
         }
         RecyclerView.Adapter<?> adapter = listView == null ? null : listView.getAdapter();
@@ -1060,13 +1141,15 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             if (messageObject == null || messageObject.replyMessageObject == null || messageObject.replyMessageObject == messageObject) {
                 continue;
             }
-            if (messageObject.replyMessageObject.getId() != removedMessageId) {
+            if (messageObject.replyMessageObject.getId() != removed.messageId
+                    || messageObject.replyMessageObject.getDialogId() != removed.dialogId) {
                 continue;
             }
             messageObject.replyMessageObject = null;
             if (messageObject.messageOwner != null) {
                 messageObject.messageOwner.replyMessage = null;
-                if (messageObject.messageOwner.reply_to != null && messageObject.messageOwner.reply_to.reply_to_msg_id == removedMessageId) {
+                if (messageObject.messageOwner.reply_to != null && messageObject.messageOwner.reply_to.reply_to_msg_id == removed.messageId
+                        && MessageObject.getReplyToDialogId(messageObject.messageOwner) == removed.dialogId) {
                     messageObject.messageOwner.reply_to = null;
                 }
             }
@@ -1167,16 +1250,12 @@ public class AyuViewDeleted extends NekoDelegateFragment {
      * 回复目标不在本页（甚至不在本话题）时，引用头只能回查归档；
      * 绑定单元格时不能做数据库查询，所以提前在后台把这页需要的目标捞出来。
      */
-    private Map<String, TLRPC.Message> prefetchReplyTargets(long userId, List<DeletedMessageFull> list) {
+    private Map<String, TLRPC.Message> prefetchReplyTargets(long userId, Map<String, PreparedDeletedMessage> prepared) {
         Map<String, TLRPC.Message> replies = new HashMap<>();
         if (getUserConfig().getClientUserId() != userId) return replies;
         Map<Long, ArrayList<Integer>> wanted = new HashMap<>();
-        for (DeletedMessageFull full : list) {
-            if (full == null || full.message == null) {
-                continue;
-            }
-            TLRPC.TL_message message = new TLRPC.TL_message();
-            AyuMessageUtils.map(full.message, message, getCurrentAccount());
+        for (PreparedDeletedMessage item : prepared.values()) {
+            TLRPC.Message message = item.message;
             int replyId = message.reply_to != null ? message.reply_to.reply_to_msg_id : 0;
             if (replyId == 0) {
                 continue;
@@ -1215,9 +1294,9 @@ public class AyuViewDeleted extends NekoDelegateFragment {
     private MessageObject createMessageObject(DeletedMessageFull deletedMessageFull, boolean resolveReply) {
         int currentAccount = getCurrentAccount();
         var base = deletedMessageFull.message;
-        var tl = new TLRPC.TL_message();
-        AyuMessageUtils.map(base, tl, currentAccount);
-        AyuMessageUtils.mapMedia(base, tl, currentAccount);
+        PreparedDeletedMessage prepared = preparedMessages.get(replyKey(base.dialogId, base.messageId));
+        if (prepared == null) return null;
+        TLRPC.TL_message tl = prepared.message;
 
         int replyMessageId = tl.reply_to != null ? tl.reply_to.reply_to_msg_id : 0;
         if (resolveReply && replyMessageId != 0) {
@@ -1238,8 +1317,11 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             if (!found) {
                 DeletedMessageFull m = messageIdMap.get(replyMessageId);
                 if (m != null && m.message != null && m.message.dialogId == replyDialogId) {
-                    tl.replyMessage = createMessageObject(m, false).messageOwner;
-                    found = true;
+                    PreparedDeletedMessage reply = preparedMessages.get(replyKey(replyDialogId, replyMessageId));
+                    if (reply != null) {
+                        tl.replyMessage = reply.replyMessage;
+                        found = true;
+                    }
                 }
             }
             if (!found) {
@@ -1250,9 +1332,10 @@ public class AyuViewDeleted extends NekoDelegateFragment {
             }
         }
 
-        tl.ayuDeleted = true;
-        tl.ayuDeleteDate = base.entityCreateDate;
-        return new MessageObject(getCurrentAccount(), tl, false, true);
+        MessageObject messageObject = new MessageObject(currentAccount, tl, false, false);
+        messageObject.attachPathExists = prepared.attachPathExists;
+        messageObject.mediaExists = prepared.mediaExists;
+        return messageObject;
     }
 
     private void rebuildMessageObjects() {

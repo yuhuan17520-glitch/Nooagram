@@ -328,6 +328,7 @@ public class AyuForward {
     }
 
     private void executeForward(ArrayList<MessageObject> messages, long targetDialogId, boolean hideCaption, boolean notify, int scheduleDate, long payStars, long taskId, CompletionCallback onComplete) {
+        LongSparseArray<ForwardGroupInfo> groupInfos = null;
         try {
             if (!ensureTaskCanProceed(taskId, onComplete)) {
                 return;
@@ -343,7 +344,7 @@ public class AyuForward {
                 }
             }
 
-            LongSparseArray<ForwardGroupInfo> groupInfos = new LongSparseArray<>();
+            groupInfos = new LongSparseArray<>();
             prepareGroupState(messages, groupInfos);
             totalMessages = messages.size();
             sentMessages = 0;
@@ -360,19 +361,46 @@ public class AyuForward {
                     continue;
                 }
 
-                ForwardGroupState groupState = consumeGroupState(messageObject, groupInfos);
+                if (!isPotentiallySendable(messageObject)) {
+                    onMessageSkipped();
+                    continue;
+                }
+                ForwardGroupState groupState = peekGroupState(messageObject, groupInfos);
                 if (!forwardSingleMessage(messageObject, targetDialogId, hideCaption, notify, scheduleDate, payStars, groupState)) {
                     onMessageSkipped();
                     continue;
                 }
+                commitGroupState(messageObject, groupInfos);
                 onMessageSent();
             }
 
+            finishPendingGroups(groupInfos, scheduleDate);
             finishRun(taskId, true, onComplete);
         } catch (Exception e) {
             FileLog.e(e);
             failRun(taskId, LocaleController.getString(R.string.ForceForwardFailed), onComplete);
+        } finally {
+            finishPendingGroups(groupInfos, scheduleDate);
         }
+    }
+
+    private boolean isPotentiallySendable(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null) {
+            return false;
+        }
+        String sourceText = resolveMessageText(messageObject);
+        boolean mediaDownloadable = AyuMessageUtils.isMediaDownloadable(messageObject, false);
+        if (TextUtils.isEmpty(sourceText) && !mediaDownloadable) {
+            return false;
+        }
+        if (messageObject.isSticker() || messageObject.isAnimatedSticker()) {
+            return messageObject.getDocument() != null;
+        }
+        if (!mediaDownloadable) {
+            return true;
+        }
+        return (messageObject.getDocument() != null || MessageObject.getPhoto(messageObject.messageOwner) != null)
+                && resolveExistingFile(messageObject) != null;
     }
 
     private boolean forwardSingleMessage(MessageObject messageObject, long targetDialogId, boolean hideCaption, boolean notify, int scheduleDate, long payStars, ForwardGroupState groupState) {
@@ -475,7 +503,7 @@ public class AyuForward {
     private void prepareGroupState(ArrayList<MessageObject> messages, LongSparseArray<ForwardGroupInfo> groupInfos) {
         for (int i = 0; i < messages.size(); i++) {
             MessageObject messageObject = messages.get(i);
-            if (messageObject == null || messageObject.getGroupId() == 0L) {
+            if (!isPotentiallySendable(messageObject) || messageObject.getGroupId() == 0L) {
                 continue;
             }
             long groupId = messageObject.getGroupId();
@@ -489,7 +517,7 @@ public class AyuForward {
         }
     }
 
-    private ForwardGroupState consumeGroupState(MessageObject messageObject, LongSparseArray<ForwardGroupInfo> groupInfos) {
+    private ForwardGroupState peekGroupState(MessageObject messageObject, LongSparseArray<ForwardGroupInfo> groupInfos) {
         if (messageObject == null) {
             return new ForwardGroupState(null, false, false, false, 0, true, false, null);
         }
@@ -501,12 +529,35 @@ public class AyuForward {
         if (info == null) {
             return new ForwardGroupState(null, false, false, false, 0, true, false, null);
         }
-        info.remainingCount--;
-        boolean finalItem = info.remainingCount <= 0;
-        if (finalItem) {
-            groupInfos.remove(groupId);
-        }
+        boolean finalItem = info.remainingCount <= 1;
         return new ForwardGroupState(info.groupToken, false, finalItem, false, 0, true, false, null);
+    }
+
+    private void commitGroupState(MessageObject messageObject, LongSparseArray<ForwardGroupInfo> groupInfos) {
+        if (messageObject == null || messageObject.getGroupId() == 0L) {
+            return;
+        }
+        ForwardGroupInfo info = groupInfos.get(messageObject.getGroupId());
+        if (info == null) {
+            return;
+        }
+        info.remainingCount--;
+        if (info.remainingCount <= 0) {
+            groupInfos.remove(messageObject.getGroupId());
+        }
+    }
+
+    private void finishPendingGroups(LongSparseArray<ForwardGroupInfo> groupInfos, int scheduleDate) {
+        if (groupInfos == null) {
+            return;
+        }
+        for (int i = 0; i < groupInfos.size(); i++) {
+            ForwardGroupInfo info = groupInfos.valueAt(i);
+            if (info != null) {
+                SendMessagesHelper.getInstance(currentAccount).finishDelayedGroup(info.groupToken, scheduleDate);
+            }
+        }
+        groupInfos.clear();
     }
 
     private ArrayList<MessageObject> collectPendingDownloads(ArrayList<MessageObject> messages, boolean fullAyuForwardsNeeded) {
@@ -561,8 +612,7 @@ public class AyuForward {
         if (messageObject == null || messageObject.messageOwner == null) {
             return null;
         }
-        if (messageObject.type == MessageObject.TYPE_EMOJIS
-                || messageObject.type == MessageObject.TYPE_ANIMATED_STICKER
+        if (messageObject.type == MessageObject.TYPE_ANIMATED_STICKER
                 || messageObject.type == MessageObject.TYPE_STICKER) {
             return null;
         }
@@ -590,10 +640,12 @@ public class AyuForward {
             messageText = ChatActivity.getMessageContent(messageObject, 0, false);
         }
         if (messageText != null && Emoji.fullyConsistsOfEmojis(messageText)) {
-            messageText = null;
+            messageText = messageObject.messageOwner.message;
         }
-        if (messageObject.translated || messageObject.isRestrictedMessage) {
+        if (messageObject.isRestrictedMessage) {
             messageText = null;
+        } else if (messageObject.translated) {
+            messageText = messageObject.messageOwner.message;
         }
         return messageText;
     }
@@ -1091,7 +1143,7 @@ public class AyuForward {
         synchronized (this) {
             currentTask = activeTaskId == taskId;
             finishedKey = activeKey;
-            callbackAllowed = currentTask && shouldContinue && !disposed && !stopRequested
+            callbackAllowed = currentTask && shouldContinue && skippedMessages == 0 && !disposed && !stopRequested
                     && finishedKey != null && finishedKey.userId != 0
                     && finishedKey.equals(keyFor(currentAccount, finishedKey.dialogId));
             if (currentTask) {

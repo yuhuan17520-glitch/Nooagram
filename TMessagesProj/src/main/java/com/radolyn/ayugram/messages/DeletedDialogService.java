@@ -37,62 +37,125 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.radolyn.ayugram.AyuConfig;
 
 public class DeletedDialogService {
-    private final ConcurrentHashMap<Integer, ConcurrentHashMap<Long, MessageObject>> lastMessagesByAccount = new ConcurrentHashMap<>();
-    /** dialogId -> (topicId -> 该话题内最后一条已删除消息)，供话题单元格的预览回退 */
-    private final ConcurrentHashMap<Integer, ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>>> lastTopicMessagesByAccount = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, AccountCache<MessageObject>> cachesByAccount = new ConcurrentHashMap<>();
+
+    static final class AccountCache<T> {
+        private long userId;
+        private long generation;
+        final ConcurrentHashMap<Long, T> messages = new ConcurrentHashMap<>();
+        /** dialogId -> (topicId -> 该话题内最后一条已删除消息)，供话题单元格的预览回退 */
+        final ConcurrentHashMap<Long, ConcurrentHashMap<Long, T>> topics = new ConcurrentHashMap<>();
+
+        synchronized long bind(long userId) {
+            if (this.userId != userId) {
+                clear();
+                this.userId = userId;
+            }
+            return generation;
+        }
+
+        synchronized boolean isCurrent(long userId, long generation) {
+            return userId != 0 && this.userId == userId && this.generation == generation;
+        }
+
+        synchronized void clear() {
+            generation++;
+            messages.clear();
+            topics.clear();
+        }
+    }
 
     public DeletedDialogService() {
     }
 
-    private ConcurrentHashMap<Long, MessageObject> mapForAccount(int account) {
-        return lastMessagesByAccount.computeIfAbsent(account, k -> new ConcurrentHashMap<>());
+    private AccountCache<MessageObject> cacheForAccount(int account) {
+        return cachesByAccount.computeIfAbsent(account, k -> new AccountCache<>());
     }
 
-    private ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>> topicMapForAccount(int account) {
-        return lastTopicMessagesByAccount.computeIfAbsent(account, k -> new ConcurrentHashMap<>());
+    private boolean isCurrent(int account, long userId, long generation) {
+        return UserConfig.getInstance(account).clientUserId == userId
+                && cacheForAccount(account).isCurrent(userId, generation);
+    }
+
+    private void postForAccount(int account, long userId, long generation, Runnable runnable, long delay) {
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            if (!isCurrent(account, userId, generation)) {
+                return;
+            }
+            AndroidUtilities.runOnUIThread(() -> {
+                synchronized (cache) {
+                    if (isCurrent(account, userId, generation)) {
+                        runnable.run();
+                    }
+                }
+            }, delay);
+        }
+    }
+
+    public void clearAccount(int account) {
+        cacheForAccount(account).clear();
     }
 
     public MessageObject getLastMessageCached(int account, long dialogId) {
-        ConcurrentHashMap<Long, MessageObject> map = lastMessagesByAccount.get(account);
-        return map != null ? map.get(dialogId) : null;
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            long userId = UserConfig.getInstance(account).clientUserId;
+            cache.bind(userId);
+            return userId != 0 ? cache.messages.get(dialogId) : null;
+        }
     }
 
     public MessageObject getLastTopicMessageCached(int account, long dialogId, long topicId) {
-        ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>> map = lastTopicMessagesByAccount.get(account);
-        if (map == null || topicId == 0) {
-            return null;
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            long userId = UserConfig.getInstance(account).clientUserId;
+            cache.bind(userId);
+            ConcurrentHashMap<Long, MessageObject> topicMap = cache.topics.get(dialogId);
+            return userId != 0 && topicId != 0 && topicMap != null ? topicMap.get(topicId) : null;
         }
-        ConcurrentHashMap<Long, MessageObject> topicMap = map.get(dialogId);
-        return topicMap != null ? topicMap.get(topicId) : null;
     }
 
-    public void putLastTopicMessage(int account, long dialogId, long topicId, MessageObject messageObject) {
+    public void putLastTopicMessage(int account, long ownerUserId, long dialogId, long topicId, MessageObject messageObject) {
         if (messageObject == null || topicId == 0) {
             return;
         }
-        ConcurrentHashMap<Long, MessageObject> topicMap = topicMapForAccount(account)
-                .computeIfAbsent(dialogId, k -> new ConcurrentHashMap<>());
-        MessageObject existing = topicMap.get(topicId);
-        if (AyuMessageUtils.isNewerMessage(messageObject, existing)) {
-            topicMap.put(topicId, messageObject);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            long userId = UserConfig.getInstance(account).clientUserId;
+            cache.bind(userId);
+            if (userId == 0 || userId != ownerUserId) {
+                return;
+            }
+            ConcurrentHashMap<Long, MessageObject> topicMap = cache.topics
+                    .computeIfAbsent(dialogId, k -> new ConcurrentHashMap<>());
+            MessageObject existing = topicMap.get(topicId);
+            if (AyuMessageUtils.isNewerMessage(messageObject, existing)) {
+                topicMap.put(topicId, messageObject);
+            }
         }
     }
 
     public void removeTopicMessages(int account, long dialogId) {
-        ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>> map = lastTopicMessagesByAccount.get(account);
-        if (map != null) {
-            map.remove(dialogId);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            cache.bind(UserConfig.getInstance(account).clientUserId);
+            cache.topics.remove(dialogId);
         }
     }
 
-    public void putLastMessage(int account, long dialogId, MessageObject messageObject) {
+    /** ownerUserId is the archive owner; the write is dropped if the slot now belongs to someone else. */
+    public void putLastMessage(int account, long ownerUserId, long dialogId, MessageObject messageObject) {
         if (messageObject == null) {
             return;
         }
-        ConcurrentHashMap<Long, MessageObject> map = mapForAccount(account);
-        MessageObject existing = map.get(dialogId);
-        if (AyuMessageUtils.isNewerMessage(messageObject, existing)) {
-            map.put(dialogId, messageObject);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            long userId = UserConfig.getInstance(account).clientUserId;
+            cache.bind(userId);
+            if (userId != 0 && userId == ownerUserId && AyuMessageUtils.isNewerMessage(messageObject, cache.messages.get(dialogId))) {
+                cache.messages.put(dialogId, messageObject);
+            }
         }
     }
 
@@ -107,15 +170,22 @@ public class DeletedDialogService {
                 return;
             }
             long userId = UserConfig.getInstance(account).clientUserId;
+            if (userId == 0) {
+                return;
+            }
+            long generation = cacheForAccount(account).bind(userId);
             int entityCreateDate = ConnectionsManager.getInstance(account).getCurrentTime();
             DeletedDialog entity = mapDialogToEntity(dialog, userId, entityCreateDate);
-            Utilities.globalQueue.postRunnable(() -> saveDeletedDialog(account, entity));
+            Utilities.globalQueue.postRunnable(() -> saveDeletedDialog(account, entity, generation));
         } catch (Throwable e) {
             FileLog.e("onDialogDeleted", e);
         }
     }
 
-    private void saveDeletedDialog(int account, DeletedDialog entity) {
+    private void saveDeletedDialog(int account, DeletedDialog entity, long generation) {
+        if (!isCurrent(account, entity.userId, generation)) {
+            return;
+        }
         try {
             DeletedDialogDao dao = AyuData.getDeletedDialogDao();
             if (dao == null) {
@@ -126,7 +196,7 @@ public class DeletedDialogService {
                 dao.delete(existing);
             }
             dao.insert(entity);
-            AndroidUtilities.runOnUIThread(() -> {
+            postForAccount(account, entity.userId, generation, () -> {
                 putDialog(account, entity);
                 MessagesController mc = MessagesController.getInstance(account);
                 mc.sortDialogs(null);
@@ -144,10 +214,12 @@ public class DeletedDialogService {
         if (!UserConfig.getInstance(account).isClientActivated()) {
             return;
         }
+        long userId = UserConfig.getInstance(account).clientUserId;
+        long generation = cacheForAccount(account).bind(userId);
         Utilities.globalQueue.postRunnable(() -> {
             try {
-                loadLastMessages(account);
-                loadDeletedDialogs(account);
+                loadLastMessages(account, userId, generation);
+                loadDeletedDialogs(account, userId, generation);
             } catch (Throwable e) {
                 FileLog.e("loadAndRestore", e);
             }
@@ -158,16 +230,15 @@ public class DeletedDialogService {
      * 归档被清空后立刻丢掉这些会话（含其话题）的预览缓存，避免界面继续显示已经不存在的内容。
      */
     public void removeLastMessages(int account, long dialogId, long mergeDialogId) {
-        ConcurrentHashMap<Long, MessageObject> map = lastMessagesByAccount.get(account);
-        if (map != null) {
-            map.remove(dialogId);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            cache.bind(UserConfig.getInstance(account).clientUserId);
+            cache.messages.remove(dialogId);
+            cache.topics.remove(dialogId);
             if (mergeDialogId != 0) {
-                map.remove(mergeDialogId);
+                cache.messages.remove(mergeDialogId);
+                cache.topics.remove(mergeDialogId);
             }
-        }
-        removeTopicMessages(account, dialogId);
-        if (mergeDialogId != 0) {
-            removeTopicMessages(account, mergeDialogId);
         }
     }
 
@@ -176,12 +247,13 @@ public class DeletedDialogService {
         if (!AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
             return;
         }
-        loadLastMessages(account);
+        long userId = UserConfig.getInstance(account).clientUserId;
+        long generation = cacheForAccount(account).bind(userId);
+        loadLastMessages(account, userId, generation);
     }
 
-    private void loadLastMessages(int account) {
-        long userId = UserConfig.getInstance(account).clientUserId;
-        if (userId == 0) {
+    private void loadLastMessages(int account, long userId, long generation) {
+        if (!isCurrent(account, userId, generation)) {
             return;
         }
         List<DeletedMessageFull> list;
@@ -192,19 +264,13 @@ public class DeletedDialogService {
             return;
         }
 
-        ConcurrentHashMap<Long, MessageObject> accountMap = mapForAccount(account);
-        accountMap.clear();
-        ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>> topicMap = topicMapForAccount(account);
-        topicMap.clear();
-        if (list == null || list.isEmpty()) {
-            return;
-        }
+        ConcurrentHashMap<Long, ConcurrentHashMap<Long, MessageObject>> topicMap = new ConcurrentHashMap<>();
 
         ArrayList<Long> usersToLoad = new ArrayList<>();
         ArrayList<Long> chatsToLoad = new ArrayList<>();
         ConcurrentHashMap<Long, MessageObject> mapped = new ConcurrentHashMap<>();
 
-        for (DeletedMessageFull full : list) {
+        for (DeletedMessageFull full : list != null ? list : java.util.Collections.<DeletedMessageFull>emptyList()) {
             if (full == null || full.message == null || isEmpty(full.message)) {
                 continue;
             }
@@ -239,13 +305,25 @@ public class DeletedDialogService {
             }
         }
 
-        accountMap.putAll(mapped);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            if (!isCurrent(account, userId, generation)) {
+                return;
+            }
+            cache.messages.clear();
+            cache.messages.putAll(mapped);
+            cache.topics.clear();
+            cache.topics.putAll(topicMap);
+        }
+        if (mapped.isEmpty()) {
+            return;
+        }
 
         ArrayList<TLRPC.User> users = new ArrayList<>();
         ArrayList<TLRPC.Chat> chats = new ArrayList<>();
         loadUsersAndChats(account, usersToLoad, chatsToLoad, users, chats);
 
-        AndroidUtilities.runOnUIThread(() -> {
+        postForAccount(account, userId, generation, () -> {
             MessagesController mc = MessagesController.getInstance(account);
             if (!users.isEmpty()) {
                 mc.putUsers(users, true);
@@ -253,12 +331,11 @@ public class DeletedDialogService {
             if (!chats.isEmpty()) {
                 mc.putChats(chats, true);
             }
-        });
+        }, 0);
     }
 
-    private void loadDeletedDialogs(int account) {
-        long userId = UserConfig.getInstance(account).clientUserId;
-        if (userId == 0) {
+    private void loadDeletedDialogs(int account, long userId, long generation) {
+        if (!isCurrent(account, userId, generation)) {
             return;
         }
         List<DeletedDialog> all;
@@ -299,7 +376,7 @@ public class DeletedDialogService {
         }
 
         final List<DeletedDialog> dialogs = all;
-        AndroidUtilities.runOnUIThread(() -> {
+        postForAccount(account, userId, generation, () -> {
             MessagesController mc = MessagesController.getInstance(account);
             for (DeletedDialog deletedDialog : dialogs) {
                 long dialogId = deletedDialog.dialogId;
@@ -329,7 +406,7 @@ public class DeletedDialogService {
             } catch (Throwable e) {
                 FileLog.e("Failed to reload dialogs after loading deleted dialogs", e);
             }
-        });
+        }, 0);
     }
 
     private void collectDialogIds(List<DeletedDialog> list, ArrayList<Long> userIds, ArrayList<Long> chatIds) {
@@ -391,6 +468,9 @@ public class DeletedDialogService {
     }
 
     private void putDialog(int account, DeletedDialog entity) {
+        if (UserConfig.getInstance(account).clientUserId != entity.userId) {
+            return;
+        }
         MessagesController mc = MessagesController.getInstance(account);
         if (mc.getDialog(entity.dialogId) != null) {
             return;
@@ -467,6 +547,7 @@ public class DeletedDialogService {
         if (userId == 0) {
             return;
         }
+        long generation = cacheForAccount(account).bind(userId);
         ArrayList<Long> ids = new ArrayList<>(dialogIds);
         Utilities.globalQueue.postRunnable(() -> {
             try {
@@ -474,10 +555,13 @@ public class DeletedDialogService {
                 if (dao != null) {
                     dao.deleteExisting(userId, ids);
                 }
-                ConcurrentHashMap<Long, MessageObject> map = lastMessagesByAccount.get(account);
-                if (map != null) {
+                AccountCache<MessageObject> cache = cacheForAccount(account);
+                synchronized (cache) {
+                    if (!isCurrent(account, userId, generation)) {
+                        return;
+                    }
                     for (int i = 0; i < ids.size(); i++) {
-                        map.remove(ids.get(i));
+                        cache.messages.remove(ids.get(i));
                     }
                 }
             } catch (Throwable e) {
@@ -501,18 +585,24 @@ public class DeletedDialogService {
     }
 
     public void deleteDialogRecord(int account, long userId, long dialogId) {
-        try {
-            DeletedDialogDao dao = AyuData.getDeletedDialogDao();
-            if (dao != null) {
-                dao.delete(userId, dialogId);
+        AccountCache<MessageObject> cache = cacheForAccount(account);
+        synchronized (cache) {
+            cache.bind(UserConfig.getInstance(account).clientUserId);
+            if (cache.userId == userId) {
+                cache.messages.remove(dialogId);
+                cache.topics.remove(dialogId);
             }
-            ConcurrentHashMap<Long, MessageObject> map = lastMessagesByAccount.get(account);
-            if (map != null) {
-                map.remove(dialogId);
-            }
-        } catch (Throwable e) {
-            FileLog.e("deleteDialogRecord", e);
         }
+        Utilities.globalQueue.postRunnable(() -> {
+            try {
+                DeletedDialogDao dao = AyuData.getDeletedDialogDao();
+                if (dao != null) {
+                    dao.delete(userId, dialogId);
+                }
+            } catch (Throwable e) {
+                FileLog.e("deleteDialogRecord", e);
+            }
+        });
     }
 
     public void deleteDialogRecord(long userId, long dialogId) {

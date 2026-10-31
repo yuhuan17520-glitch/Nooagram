@@ -48,7 +48,8 @@ public interface EditedMessageDao {
     @Query("UPDATE editedmessage SET mediaPath = NULL, documentType = 0 WHERE mediaPath IS NOT NULL")
     void clearAllMediaPaths();
 
-    @Query("SELECT DISTINCT mediaPath FROM editedmessage WHERE mediaPath IS NOT NULL AND mediaPath != '' AND mediaPath != '/'")
+    @Query("SELECT mediaPath FROM editedmessage WHERE mediaPath IS NOT NULL AND mediaPath != '' AND mediaPath != '/' " +
+            "UNION SELECT hqThumbPath FROM editedmessage WHERE hqThumbPath IS NOT NULL AND hqThumbPath != '' AND hqThumbPath != '/'")
     List<String> getAllMediaPaths();
 
     @Insert

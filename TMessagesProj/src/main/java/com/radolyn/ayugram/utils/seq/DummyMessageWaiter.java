@@ -143,8 +143,10 @@ public class DummyMessageWaiter extends SyncWaiter {
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.messageReceivedByAck
-                || id == NotificationCenter.messageReceivedByServer
+        if (id == NotificationCenter.messageReceivedByAck) {
+            return;
+        }
+        if (id == NotificationCenter.messageReceivedByServer
                 || id == NotificationCenter.messageSendError) {
             if (args == null || args.length == 0 || !(args[0] instanceof Integer)) {
                 return;

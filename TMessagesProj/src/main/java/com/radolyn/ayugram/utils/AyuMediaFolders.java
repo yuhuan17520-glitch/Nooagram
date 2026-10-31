@@ -14,23 +14,12 @@ import org.telegram.tgnet.TLRPC;
 import java.io.File;
 import java.text.Normalizer;
 
-import tw.nekomimi.nekogram.NekoConfig;
-
 /** Export folders are resolved from the message's account, never selectedAccount. */
 public final class AyuMediaFolders {
     private AyuMediaFolders() {}
 
     public static String getFolderName(MessageObject message) {
         String folder = AyuOptions.getCustomSavePath();
-        if (!TextUtils.isEmpty(folder)) {
-            StringBuilder parts = new StringBuilder();
-            for (String part : folder.split("/")) {
-                if (parts.length() > 0) parts.append('/');
-                parts.append(sanitizeFolderName(part, 0));
-            }
-            folder = parts.toString();
-            if ("0".equals(folder)) folder = NekoConfig.DEFAULT_CUSTOM_SAVE_PATH;
-        }
         if (message != null && AyuConfig.INSTANCE.getSaveToChatSubfolder().Bool()) {
             String chat = getChatFolderName(message);
             folder = TextUtils.isEmpty(folder) ? chat : folder + File.separator + chat;

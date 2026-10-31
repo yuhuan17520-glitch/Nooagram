@@ -8,7 +8,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.Utilities;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.tgnet.TLRPC;
 
 import java.io.ByteArrayOutputStream;
@@ -38,6 +38,14 @@ public final class NooagramUpdateHelper {
     private static final String UPDATE_MANIFEST_URL =
             "https://github.com/yuhuan17520-glitch/Nooagram/releases/latest/download/update.json";
 
+    private static final class CheckHolder {
+        static final Executor EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "NooagramUpdateCheck");
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
     private static final class DownloadHolder {
         static final OkHttpClient CLIENT = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
@@ -53,7 +61,7 @@ public final class NooagramUpdateHelper {
                 }), AndroidUtilities::runOnUIThread, new DownloadListener() {
                     @Override
                     public void progress(int account, String name, long downloaded, long total) {
-                        NotificationCenter.getInstance(account).postNotificationName(
+                        postDownloadNotification(account,
                                 NotificationCenter.fileLoadProgressChanged, name, downloaded, total);
                         if (downloaded == 0) {
                             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
@@ -62,16 +70,27 @@ public final class NooagramUpdateHelper {
 
                     @Override
                     public void loaded(int account, String name, File file) {
-                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoaded, name, file);
+                        postDownloadNotification(account, NotificationCenter.fileLoaded, name, file);
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
                     }
 
                     @Override
                     public void failed(int account, String name, int reason) {
-                        NotificationCenter.getInstance(account).postNotificationName(NotificationCenter.fileLoadFailed, name, reason);
+                        postDownloadNotification(account, NotificationCenter.fileLoadFailed, name, reason);
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
                     }
                 });
+
+        private static void postDownloadNotification(int account, int id, Object... args) {
+            // Account switches must observe the same shared APK download, including completion.
+            ArrayList<Integer> accounts = new ArrayList<>(SharedConfig.activeAccounts);
+            if (!accounts.contains(account)) {
+                accounts.add(account);
+            }
+            for (int activeAccount : accounts) {
+                NotificationCenter.getInstance(activeAccount).postNotificationName(id, args);
+            }
+        }
     }
 
     private NooagramUpdateHelper() {}
@@ -323,7 +342,7 @@ public final class NooagramUpdateHelper {
             delegate.onTLResponse(null, null);
             return;
         }
-        Utilities.globalQueue.postRunnable(() -> {
+        CheckHolder.EXECUTOR.execute(() -> {
             TLRPC.TL_help_appUpdate update = null;
             String error = null;
             try {

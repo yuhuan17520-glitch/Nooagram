@@ -12,6 +12,7 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.secretmedia.EncryptedFileInputStream;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -24,7 +25,7 @@ import com.radolyn.ayugram.AyuConfig;
 
 public class AyuAttachments {
 
-    private static final AyuAttachments[] INSTANCES = new AyuAttachments[16];
+    private static final AyuAttachments[] INSTANCES = new AyuAttachments[UserConfig.MAX_ACCOUNT_COUNT];
 
     public static final class MediaPreparationResult {
         public int missingMediaCount;

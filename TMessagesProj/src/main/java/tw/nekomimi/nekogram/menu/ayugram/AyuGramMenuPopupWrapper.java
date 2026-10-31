@@ -242,13 +242,17 @@ public class AyuGramMenuPopupWrapper {
                         long ayuTopicId = fragment.getAyuDeletedMessagesTopicId();
                         AyuMessagesController.getInstance().deleteCurrent(fragment.getCurrentAccount(), chatId, fragment.getMergeDialogId(), ayuTopicId, () -> {
                             AndroidUtilities.runOnUIThread(() -> {
+                                if (fragment.getParentActivity() == null || fragment.getParentActivity().isFinishing()
+                                        || fragment.getFragmentView() == null) {
+                                    return;
+                                }
                                 NotificationCenter.getInstance(fragment.getCurrentAccount()).removeObserver(fragment, NotificationCenter.closeChats);
                                 NotificationCenter.getInstance(fragment.getCurrentAccount()).postNotificationName(NotificationCenter.closeChats);
                                 fragment.finishFragment();
+                                if (!NekoConfig.disableVibration.Bool() && LaunchActivity.getLastFragment() != null && LaunchActivity.getLastFragment().getFragmentView() != null) {
+                                    LaunchActivity.getLastFragment().getFragmentView().performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS, android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                                }
                             });
-                            if (!NekoConfig.disableVibration.Bool() && LaunchActivity.getLastFragment() != null && LaunchActivity.getLastFragment().getFragmentView() != null) {
-                                LaunchActivity.getLastFragment().getFragmentView().performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS, android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-                            }
                         });
                     });
                     builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);

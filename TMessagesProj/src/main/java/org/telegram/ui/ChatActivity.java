@@ -1017,6 +1017,7 @@ public class ChatActivity extends BaseFragment implements
 
     private SparseArray<MessageObject>[] messagesDict = new SparseArray[]{new SparseArray<>(), new SparseArray<>()};
     private SparseArray<MessageObject> repliesMessagesDict = new SparseArray<>();
+    private final AyuHistoryHook.ReplyCache ayuReplyCache = new AyuHistoryHook.ReplyCache(); // AyuHistoryHook
     private SparseArray<ArrayList<Integer>> replyMessageOwners = new SparseArray<>();
     private HashMap<String, ArrayList<MessageObject>> messagesByDays = new HashMap<>();
     private SparseArray<ArrayList<MessageObject>> messagesByDaysSorted = new SparseArray<>();
@@ -23832,6 +23833,11 @@ public class ChatActivity extends BaseFragment implements
                 updatePinnedMessageView(true);
             }
 
+            if (args.length > 2 && args[2] instanceof AyuHistoryDeletion) {
+                applyHistoryDeletion((AyuHistoryDeletion) args[2]);
+                return;
+            }
+
             boolean updated = false;
             for (int b = 0; b < messages.size(); b++) {
                 MessageObject obj = messages.get(b);
@@ -25007,11 +25013,9 @@ public class ChatActivity extends BaseFragment implements
             if (did == dialog_id) {
                 ArrayList<MessageObject> loadedMessages = (ArrayList<MessageObject>) args[1];
                 LongSparseArray<SparseArray<ArrayList<MessageObject>>> replyMessageOwners = (LongSparseArray<SparseArray<ArrayList<MessageObject>>>) args[2];
-                SparseArray<MessageObject> loadedMessagesMap = new SparseArray<>(); // AyuHistoryHook
                 for (int a = 0, N = loadedMessages.size(); a < N; a++) {
                     MessageObject obj = loadedMessages.get(a);
                     repliesMessagesDict.put(obj.getId(), obj);
-                    loadedMessagesMap.put(obj.getId(), obj);
                 }
                 if (replyMessageOwners != null) {
                     for (int a = 0, N = replyMessageOwners.size(); a < N; a++) {
@@ -25026,27 +25030,22 @@ public class ChatActivity extends BaseFragment implements
                 }
                 // AyuHistoryHook: fix replyMessage
                 if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
-                    for (int a = 0, N = messages.size(); a < N; a++) {
-                        MessageObject messageObject = messages.get(a);
-                        if (messageObject.getReplyMsgId() != 0 && (messageObject.replyMessageObject == null || messageObject.replyMessageObject.messageOwner instanceof TLRPC.TL_messageEmpty)) {
-                            int replyId = messageObject.getReplyMsgId();
-                            MessageObject replyMessage = loadedMessagesMap.get(replyId);
-                            if (replyMessage == null) {
-                                // 本批没有就查已删除消息表：被回复的那条可能已被删除；
-                                // 跨会话回复要按 reply_to_peer_id 定位，否则会取到同 id 的别的会话消息
-                                long replyDialogId = MessageObject.getReplyToDialogId(messageObject.messageOwner);
-                                if (replyDialogId == 0) {
-                                    replyDialogId = messageObject.getDialogId();
+                    int replyAccount = currentAccount;
+                    long replyUserId = getUserConfig().getClientUserId();
+                    // 本批没有就查已删除消息表：被回复的那条可能已被删除；
+                    // 跨会话回复要按 reply_to_peer_id 定位，否则会取到同 id 的别的会话消息
+                    ayuReplyCache.loadMissing(replyAccount, replyUserId, messages, loadedMessages,
+                            () -> !isFinished && !isFinishing() && getParentActivity() != null
+                                    && currentAccount == replyAccount && dialog_id == did
+                                    && getUserConfig().getClientUserId() == replyUserId,
+                            () -> {
+                                for (MessageObject messageObject : ayuReplyCache.apply(replyAccount, replyUserId, messages)) {
+                                    messageObject.applyTimestampsHighlightForReplyMsg();
+                                    addReplyMessageOwner(messageObject, 0);
                                 }
-                                replyMessage = AyuHistoryHook.findDeletedReply(currentAccount, replyDialogId, replyId);
-                            }
-                            if (replyMessage != null) {
-                                messageObject.replyMessageObject = replyMessage;
-                                messageObject.applyTimestampsHighlightForReplyMsg();
-                                addReplyMessageOwner(messageObject, 0);
-                            }
-                        }
-                    }
+                                updateVisibleRows();
+                                updateReplyMessageHeader(true);
+                            });
                 }
                 updateVisibleRows();
             } else if (waitingForReplies.size() != 0 && ChatObject.isChannel(currentChat) && !currentChat.megagroup && chatInfo != null && did == -chatInfo.linked_chat_id) {
@@ -28040,7 +28039,7 @@ public class ChatActivity extends BaseFragment implements
                 if (!(message.messageOwner instanceof TLRPC.TL_messageService)
                         && !(message.messageOwner instanceof TLRPC.TL_messageEmpty)
                         && !(message.messageOwner.send_state == 1 && messageId < 0)
-                        && !AyuState.isDeletePermitted(deletion.dialogId, messageId)
+                        && !AyuState.isDeletePermitted(currentAccount, deletion.dialogId, messageId)
                         && AyuSavePreferences.saveDeletedMessageFor(currentAccount, deletion.dialogId, message)) {
                     if (retryIds.add(messageId)) retryArchive.add(message.messageOwner);
                     continue;
@@ -28122,8 +28121,8 @@ public class ChatActivity extends BaseFragment implements
             Integer mid = markAsDeletedMessages.get(a);
             MessageObject obj = findHistoryMessage(deletionDialogId, mid, loadIndex);
 
-            if (!allowSaving || !AyuSavePreferences.saveDeletedMessageFor(currentAccount, deletionDialogId, obj) || AyuState.isDeletePermitted(deletionDialogId, mid)) {
-                AyuState.messageDeleted(deletionDialogId, mid);
+            if (!allowSaving || !AyuSavePreferences.saveDeletedMessageFor(currentAccount, deletionDialogId, obj) || AyuState.isDeletePermitted(currentAccount, deletionDialogId, mid)) {
+                AyuState.messageDeleted(currentAccount, deletionDialogId, mid);
             } else {
                 continue;
             }
@@ -36332,7 +36331,7 @@ public class ChatActivity extends BaseFragment implements
                                 TLRPC.Updates updates = (TLRPC.Updates) response;
                                 getMessagesController().processUpdates(updates, false);
                                 for (int i = 0; i < req.id.size(); i++) {
-                                    AyuState.permitDeleteMessage(dialog_id, req.id.get(i));
+                                    AyuState.permitDeleteMessage(currentAccount, dialog_id, req.id.get(i));
                                 }
                                 AndroidUtilities.runOnUIThread(() -> NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.messagesDeleted, req.id, getUserConfig().getClientUserId() == dialog_id ? 0 : -dialog_id, true, true));
                             } else if (error.text != null) {

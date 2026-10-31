@@ -75,15 +75,20 @@ public class LastSeenHelper {
         if (UserConfig.getInstance(currentAccount).getClientUserId() == userId) {
             return;
         }
+        boolean persist = false;
         synchronized (cache) {
             int cached = cache.get(userId, 0);
-            if (cached >= timestamp) return;
-            cache.put(userId, timestamp);
+            if (cached < timestamp) {
+                cache.put(userId, timestamp);
+                persist = true;
+            }
         }
-        synchronized (pending) {
-            pending.put(userId, timestamp);
+        if (persist) {
+            synchronized (pending) {
+                pending.put(userId, timestamp);
+            }
+            scheduleFlush();
         }
-        scheduleFlush();
 
         MessagesController messagesController = MessagesController.getInstance(currentAccount);
         int currentServerTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();

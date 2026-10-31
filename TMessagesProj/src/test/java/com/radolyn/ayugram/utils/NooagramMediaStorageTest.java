@@ -125,4 +125,47 @@ public class NooagramMediaStorageTest {
         File unrelated = new File(files.newFolder("another-app", "documents"), "archive.zip");
         assertEquals(unrelated, NooagramMediaStorage.resolveMappedDownload(current, unrelated, 10));
     }
+
+    @Test
+    public void cleanupIncludesEveryLegacyTypeWithoutCreatingOrMovingDirectories() throws Exception {
+        File selected = files.newFolder("cleanup-cache");
+        for (int i = 0; i < TYPES.length; i++) {
+            File current = NooagramMediaStorage.directory(selected, TYPES[i]);
+            File legacy = new File(selected, OLD_FOLDERS[i]);
+            java.util.List<File> paths = NooagramMediaStorage.cleanupDirectories(current);
+            assertTrue(paths.contains(current));
+            assertTrue(paths.contains(legacy));
+            assertFalse(current.exists());
+            assertFalse(legacy.exists());
+        }
+    }
+
+    @Test
+    public void looseRootDocumentsAreIncludedWithoutScanningSiblingMediaFolders() throws Exception {
+        File selected = files.newFolder("loose-cleanup-cache");
+        File root = NooagramMediaStorage.root(selected);
+        assertTrue(root.mkdir());
+        File loose = new File(root, "archive.zip");
+        Files.write(loose.toPath(), new byte[]{1});
+        File images = NooagramMediaStorage.directory(selected, FileLoader.MEDIA_DIR_IMAGE);
+        assertTrue(images.mkdir());
+        java.util.List<File> paths = NooagramMediaStorage.cleanupDirectories(
+                NooagramMediaStorage.directory(selected, FileLoader.MEDIA_DIR_DOCUMENT));
+        assertTrue(paths.contains(loose));
+        assertFalse(paths.contains(root));
+        assertFalse(paths.contains(images));
+        assertTrue(loose.isFile());
+    }
+
+    @Test
+    public void overlappingPathsAndAliasesAreCountedOnlyOnce() throws Exception {
+        File root = files.newFolder("deduplicated-cache");
+        File child = new File(root, "child");
+        java.util.List<File> paths = NooagramMediaStorage.deduplicatePaths(java.util.Arrays.asList(
+                child, new File(root, "./child"), root, new File(child, "file.bin")));
+        assertEquals(java.util.Collections.singletonList(root), paths);
+        File alias = new File(root, "./child");
+        assertEquals(java.util.Collections.singletonList(alias),
+                NooagramMediaStorage.deduplicatePaths(java.util.Arrays.asList(alias, child)));
+    }
 }

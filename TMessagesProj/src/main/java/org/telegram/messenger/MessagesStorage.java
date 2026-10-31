@@ -16440,18 +16440,21 @@ public class MessagesStorage extends BaseController {
                                     if (oldMessage.out && !message.out) {
                                         message.out = oldMessage.out;
                                     }
-                                    if (message.from_id != null && AyuMessagesController.shouldSaveEdit(oldMessage, message, sameMedia)) {
-                                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveEditsHistory().Bool()) {
-                                            AyuSavePreferences prefs = new AyuSavePreferences(oldMessage, currentAccount);
-                                            prefs.setDialogId(dialogId);
-                                            AyuMessagesController.getInstance().onMessageEdited(prefs, message);
-                                        }
-                                        if (com.radolyn.ayugram.AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
-                                            AyuFilter.onMessageEdited(message.id, dialogId);
-                                        }
+                                    if (com.radolyn.ayugram.AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
+                                        AyuFilter.onMessageEdited(message.id, dialogId);
                                     }
+                                    boolean saveEdit = AyuMessagesController.shouldSaveEdit(oldMessage, message, sameMedia)
+                                            && com.radolyn.ayugram.AyuConfig.INSTANCE.getEnableSaveEditsHistory().Bool();
+                                    // Keep download bookkeeping immediate; only defer physical file deletion.
+                                    ArrayList<File> oldFilesToDelete = saveEdit && !sameMedia ? new ArrayList<>() : filesToDelete;
                                     if (!sameMedia) {
-                                        addFilesToDelete(oldMessage, filesToDelete, idsToDelete, namesToDelete, false);
+                                        addFilesToDelete(oldMessage, oldFilesToDelete, idsToDelete, namesToDelete, false);
+                                    }
+                                    if (saveEdit) {
+                                        AyuSavePreferences prefs = new AyuSavePreferences(oldMessage, currentAccount);
+                                        prefs.setDialogId(dialogId);
+                                        AyuMessagesController.getInstance().onMessageEdited(prefs, message,
+                                                sameMedia ? null : () -> getFileLoader().deleteFiles(oldFilesToDelete, 0));
                                     }
                                     NativeByteBuffer customParams = cursor.byteBufferValue(6);
                                     MessageCustomParamsHelper.readLocalParams(message, customParams);
@@ -18772,7 +18775,7 @@ public class MessagesStorage extends BaseController {
                 if (keepMid2 != 0 && mid == keepMid2) {
                     continue;
                 }
-                if (AyuState.isDeletePermitted(dialogId, mid)) {
+                if (AyuState.isDeletePermitted(currentAccount, dialogId, mid)) {
                     continue;
                 }
                 NativeByteBuffer data = cursor.byteBufferValue(1);

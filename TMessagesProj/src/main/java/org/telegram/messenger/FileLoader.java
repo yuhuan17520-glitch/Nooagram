@@ -621,16 +621,24 @@ public class FileLoader extends BaseController {
             fileName = name;
         }
         LoadOperationUIObject uiObject = loadOperationPathsUI.remove(fileName);
+        FileLoadOperation expectedOperation = uiObject != null && uiObject.operation != null
+                ? uiObject.operation : loadOperationPaths.get(fileName);
+        if (expectedOperation != null) expectedOperation.cancelledByFileLoader = true;
+        com.radolyn.ayugram.utils.NooagramMediaDownload.onFileFailed(currentAccount, fileName);
         Runnable runnable = uiObject != null ? uiObject.loadInternalRunnable : null;
         boolean removed = uiObject != null;
         if (runnable != null) {
             fileLoaderQueue.cancelRunnable(runnable);
         }
         fileLoaderQueue.postRunnable(() -> {
-            FileLoadOperation operation = loadOperationPaths.remove(fileName);
+            FileLoadOperation operation = expectedOperation != null
+                    ? expectedOperation : loadOperationPaths.get(fileName);
             if (operation != null) {
-                FileLoaderPriorityQueue queue = operation.getQueue();
-                queue.cancel(operation);
+                operation.cancelledByFileLoader = true;
+                if (loadOperationPaths.remove(fileName, operation)) {
+                    FileLoaderPriorityQueue queue = operation.getQueue();
+                    queue.cancel(operation);
+                }
             }
         });
         if (removed && document != null) {
@@ -642,18 +650,19 @@ public class FileLoader extends BaseController {
 
     public void cancel(FileLoadOperation operation) {
         if (operation == null) return;
+        operation.cancelledByFileLoader = true;
         final String fileName = operation.getFileName();
-        LoadOperationUIObject uiObject = loadOperationPathsUI.remove(fileName);
-        Runnable runnable = uiObject != null ? uiObject.loadInternalRunnable : null;
-        boolean removed = uiObject != null;
+        LoadOperationUIObject uiObject = loadOperationPathsUI.get(fileName);
+        boolean removed = uiObject != null && uiObject.operation == operation
+                && loadOperationPathsUI.remove(fileName, uiObject);
+        if (removed) com.radolyn.ayugram.utils.NooagramMediaDownload.onFileFailed(currentAccount, fileName);
+        Runnable runnable = removed ? uiObject.loadInternalRunnable : null;
         if (runnable != null) {
             fileLoaderQueue.cancelRunnable(runnable);
         }
         fileLoaderQueue.postRunnable(() -> {
-            FileLoadOperation operation2 = loadOperationPaths.remove(fileName);
-            if (operation2 != null) {
-                operation2.getQueue().cancel(operation2);
-            }
+            loadOperationPaths.remove(fileName, operation);
+            operation.getQueue().cancel(operation);
         });
         if (removed) {
             AndroidUtilities.runOnUIThread(() -> {
@@ -878,6 +887,8 @@ public class FileLoader extends BaseController {
         priority = getPriorityValue(priority);
 
         if (operation != null) {
+            LoadOperationUIObject uiObject = loadOperationPathsUI.get(fileName);
+            if (uiObject != null) uiObject.operation = operation;
             if (canonicalParent != null) {
                 operation.requestCanonicalDownload(canonicalParent);
             }
@@ -1062,6 +1073,10 @@ public class FileLoader extends BaseController {
                     checkDownloadQueue(operation, operation.getQueue(), 0);
                     return;
                 }
+                if (!operation.isPreloadVideoOperation() && !removeLoadingUI(fileName, operation)) {
+                    checkDownloadQueue(operation, operation.getQueue(), 0);
+                    return;
+                }
                 FilePathDatabase.FileMeta fileMeta = getFileMetadataFromParent(currentAccount, parentObject);
                 if (fileMeta != null) {
                     getFileLoader().getFileDatabase().saveFileDialogId(finalFile, fileMeta);
@@ -1075,7 +1090,6 @@ public class FileLoader extends BaseController {
 
                 if (!operation.isPreloadVideoOperation()) {
                     com.radolyn.ayugram.utils.NooagramMediaDownload.onFileLoaded(currentAccount, fileName, finalFile);
-                    loadOperationPathsUI.remove(fileName);
                     if (getDelegate() != null) {
                         delegate.fileDidLoaded(fileName, finalFile, parentObject, finalType);
                     }
@@ -1086,8 +1100,11 @@ public class FileLoader extends BaseController {
 
             @Override
             public void didFailedLoadingFile(FileLoadOperation operation, int reason) {
+                if (!removeLoadingUI(fileName, operation)) {
+                    checkDownloadQueue(operation, operation.getQueue());
+                    return;
+                }
                 com.radolyn.ayugram.utils.NooagramMediaDownload.onFileFailed(currentAccount, fileName);
-                loadOperationPathsUI.remove(fileName);
                 checkDownloadQueue(operation, operation.getQueue());
                 if (getDelegate() != null) {
                     delegate.fileDidFailedLoad(fileName, reason);
@@ -1139,6 +1156,8 @@ public class FileLoader extends BaseController {
         };
         operation.setDelegate(fileLoadOperationDelegate);
 
+        LoadOperationUIObject uiObject = loadOperationPathsUI.get(fileName);
+        if (uiObject != null) uiObject.operation = operation;
         loadOperationPaths.put(finalFileName, operation);
         operation.setPriority(priority);
         if (stream == null) {
@@ -1281,7 +1300,7 @@ public class FileLoader extends BaseController {
     private void checkDownloadQueue(FileLoadOperation operation, FileLoaderPriorityQueue queue, long delay) {
         fileLoaderQueue.postRunnable(() -> {
             if (queue.remove(operation)) {
-                loadOperationPaths.remove(operation.getFileName());
+                loadOperationPaths.remove(operation.getFileName(), operation);
                 queue.checkLoadingOperations(operation.isStory);
             }
         }, delay);
@@ -2000,6 +2019,17 @@ public class FileLoader extends BaseController {
 
     private static class LoadOperationUIObject {
         Runnable loadInternalRunnable;
+        volatile FileLoadOperation operation;
+    }
+
+    private boolean removeLoadingUI(String fileName, FileLoadOperation operation) {
+        while (true) {
+            LoadOperationUIObject uiObject = loadOperationPathsUI.get(fileName);
+            FileLoadOperation current = loadOperationPaths.get(fileName);
+            if (operation.cancelledByFileLoader || current != null && current != operation) return false;
+            // A rebind can replace the UI entry before attaching the running operation.
+            if (uiObject == null || loadOperationPathsUI.remove(fileName, uiObject)) return true;
+        }
     }
 
     public static byte[] longToBytes(long x) {
