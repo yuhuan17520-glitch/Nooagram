@@ -2,8 +2,8 @@ param([switch]$RequireReleaseReady)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $meta = Get-Content -LiteralPath (Join-Path $repo 'nooagram-version.json') -Raw | ConvertFrom-Json
-if ($meta.upstream_repository -cne 'NextAlone/Nagram' -or $meta.upstream_branch -cne 'main' -or
-    $meta.upstream_commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid Nagram stable pin.' }
+if ($meta.upstream_repository -cne 'NextAlone/Nagram' -or @('main', 'dev') -cnotcontains $meta.upstream_branch -or
+    $meta.upstream_commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Invalid Nagram upstream pin.' }
 & git -C $repo cat-file -e "$($meta.upstream_commit)^{commit}"
 if ($LASTEXITCODE -ne 0) { throw 'Pinned upstream commit is missing; fetch full history.' }
 & git -C $repo merge-base --is-ancestor $meta.upstream_commit HEAD
@@ -17,4 +17,4 @@ if ($official.Count -ne 1 -or $local.Count -ne 1 -or $official[0] -cne $local[0]
 if ($meta.version_code_floor -le $meta.previous_release_version_code -or
     $meta.previous_release_version_code -lt 125000081 -or $meta.version_code_floor -gt 2100000000) { throw 'Unsafe Android upgrade version floor.' }
 if ($RequireReleaseReady -and !$meta.migration_ready) { throw 'Migration is not release-ready.' }
-Write-Output "PASS Nagram stable pin $($meta.upstream_commit), build $($meta.upstream_build), upgrade floor $($meta.version_code_floor)"
+Write-Output "PASS Nagram $($meta.upstream_branch) pin $($meta.upstream_commit), build $($meta.upstream_build), upgrade floor $($meta.version_code_floor)"
