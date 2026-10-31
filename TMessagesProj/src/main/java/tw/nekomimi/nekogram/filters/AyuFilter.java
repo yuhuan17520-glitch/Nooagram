@@ -42,7 +42,8 @@ public class AyuFilter {
     private static final Object cacheLock = new Object();
     private static long cacheVersion;
     // Bumped only when rules/exclusions change; message edits bump cacheVersion alone.
-    private static long rulesVersion;
+    // Written under cacheLock; volatile so the UI thread can read it without waiting on a load.
+    private static volatile long rulesVersion;
     private static volatile List<FilterModel> filterModels;
     private static volatile List<ChatRules> chatFilterEntries;
     private static volatile Set<Long> excludedDialogs;
@@ -114,20 +115,17 @@ public class AyuFilter {
 
     /** Read-only version check; never waits for rule loading. */
     public static long getRulesVersion() {
-        synchronized (cacheLock) {
-            return rulesVersion;
-        }
+        return rulesVersion;
     }
 
     /** Loads/compiles on globalQueue, then calls onLoaded on the UI thread. Recheck isLoaded there. */
     public static void preloadAsync(Runnable onLoaded) {
         Utilities.globalQueue.postRunnable(() -> {
-            synchronized (cacheLock) {
-                getSharedSnapshot();
-                getChatSnapshot();
-                getExcludedSharedFilterIdsByDialog();
-                getExcludedDialogs();
-            }
+            // Each getter locks only around its own load, so filter checks can run between loads.
+            getSharedSnapshot();
+            getChatSnapshot();
+            getExcludedSharedFilterIdsByDialog();
+            getExcludedDialogs();
             if (onLoaded != null) AndroidUtilities.runOnUIThread(onLoaded);
         });
     }
