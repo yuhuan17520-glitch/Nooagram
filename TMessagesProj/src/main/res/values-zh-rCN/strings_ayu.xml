@@ -161,8 +161,6 @@
     <string name="SaveDeletedExcluded">排除</string>
     <string name="RegexFiltersSubMenuDescription">您可以选择为此聊天排除全局过滤器。</string>
     <string name="NooagramFilteredPreview">消息已过滤</string>
-    <string name="NooagramPreviewUnavailable">暂时无法加载上一条消息</string>
-    <string name="NooagramPreviewSearching">正在查找上一条未过滤消息…</string>
     <string name="NooagramQuickFilterNoText">这条消息没有可提取的文本</string>
     <string name="NooagramQuickFilterFailed">添加过滤规则失败</string>
     <string name="NooagramQuickFilterDuplicate">规则已存在，已启用消息过滤</string>

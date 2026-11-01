@@ -988,12 +988,11 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         return currentAccount;
     }
 
-    private MessageObject getFilteredPreviewPlaceholder(MessageObject source, TLRPC.Dialog dialog) {
+    private MessageObject getFilteredPreviewPlaceholder(MessageObject source, TLRPC.Dialog dialog, boolean pending) {
         int date = NooagramPreviewSearch.previewDate(0, source.messageOwner.date, dialog.last_message_date);
-        int status = NooagramDialogPreviewFilter.getStatus(currentAccount, dialog.id);
-        String text = getString(status == NooagramDialogPreviewFilter.EXHAUSTED ? R.string.NooagramFilteredPreview
-                : status == NooagramDialogPreviewFilter.UNAVAILABLE ? R.string.NooagramPreviewUnavailable
-                : R.string.NooagramPreviewSearching);
+        // Search progress is never shown as message text; a visible message found later replaces this.
+        // While rules or album context load, the source may still turn out visible, so stay blank.
+        String text = pending ? "" : getString(R.string.NooagramFilteredPreview);
         // A placeholder belongs to this cell/dialog, never to every dialog in an account.
         if (filteredPreviewPlaceholder == null || filteredPreviewPlaceholder.currentAccount != currentAccount
                 || filteredPreviewPlaceholder.getDialogId() != dialog.id
@@ -3463,7 +3462,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                 filteredPreview = true;
                                 MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
                                 if (replacement == null) {
-                                    replacement = getFilteredPreviewPlaceholder(message, dialog);
+                                    replacement = getFilteredPreviewPlaceholder(message, dialog, false);
                                 }
                                 message = replacement;
                                 groupMessages = null;
@@ -3472,7 +3471,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                     NooagramDialogPreviewFilter.preloadRules(this);
                                 }
                                 NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
-                                message = getFilteredPreviewPlaceholder(message, dialog);
+                                message = getFilteredPreviewPlaceholder(message, dialog, true);
                                 groupMessages = null;
                                 filteredPreview = true;
                             } else {

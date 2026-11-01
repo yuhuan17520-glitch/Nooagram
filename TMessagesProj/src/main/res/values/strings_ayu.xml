@@ -162,8 +162,6 @@
     <string name="SaveDeletedExcluded">Exclude</string>
     <string name="RegexFiltersSubMenuDescription">You can choose to exclude Shared Filters for this chat.</string>
     <string name="NooagramFilteredPreview">Messages filtered</string>
-    <string name="NooagramPreviewUnavailable">Could not load the previous message</string>
-    <string name="NooagramPreviewSearching">Finding the previous unfiltered message…</string>
     <string name="NooagramQuickFilterNoText">This message has no extractable text</string>
     <string name="NooagramQuickFilterFailed">Failed to add the filter</string>
     <string name="NooagramQuickFilterDuplicate">The filter already exists and was enabled</string>
