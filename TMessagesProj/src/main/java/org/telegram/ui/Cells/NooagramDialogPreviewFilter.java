@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import tw.nekomimi.nekogram.filters.AyuFilter;
 
@@ -176,16 +177,25 @@ final class NooagramDialogPreviewFilter {
         }
     }
 
-    private static void clearGroupContexts(int account) {
+    private static ArrayList<GroupLoad> clearGroupContexts(int account) {
+        removeGroupContexts(entry -> account < 0 || entry.getKey().account == account);
+        return cancelGroupLoads(key -> account < 0 || key.account == account);
+    }
+
+    private static void removeGroupContexts(Predicate<Map.Entry<GroupKey, GroupContext>> filter) {
         synchronized (GROUP_CONTEXTS) {
-            GROUP_CONTEXTS.keySet().removeIf(key -> account < 0 || key.account == account);
+            GROUP_CONTEXTS.entrySet().removeIf(filter);
         }
+    }
+
+    // Returns the cancelled loads so their waiting cells can request a fresh album context.
+    private static ArrayList<GroupLoad> cancelGroupLoads(Predicate<GroupKey> filter) {
         ArrayList<GroupLoad> removed = new ArrayList<>();
         synchronized (GROUP_LOADS) {
             Iterator<Map.Entry<GroupKey, GroupLoad>> iterator = GROUP_LOADS.entrySet().iterator();
             while (iterator.hasNext()) {
                 Map.Entry<GroupKey, GroupLoad> entry = iterator.next();
-                if (account < 0 || entry.getKey().account == account) {
+                if (filter.test(entry.getKey())) {
                     removed.add(entry.getValue());
                     iterator.remove();
                 }
@@ -194,6 +204,16 @@ final class NooagramDialogPreviewFilter {
         for (GroupLoad load : removed) {
             load.cancel();
         }
+        return removed;
+    }
+
+    private static boolean containsAny(GroupContext context, Set<Integer> ids) {
+        for (MessageObject message : context.messages.messages) {
+            if (ids.contains(message.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static void ensureGroupContext(DialogCell cell, int account, long dialogId, MessageObject message) {
@@ -475,6 +495,57 @@ final class NooagramDialogPreviewFilter {
         return NooagramPreviewSearch.latestEligible(remembered, message -> eligible(state, message));
     }
 
+    // Remembered entries were visible under the current rules; id and edit date pin the exact content.
+    private static boolean verifiedVisible(NooagramPreviewSearch.Key key, MessageObject message) {
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+        if (remembered == null || !AyuFilter.isLoaded()) {
+            return false;
+        }
+        for (MessageObject previous : remembered) {
+            if (previous.getId() == message.getId()
+                    && previous.messageOwner.edit_date == message.messageOwner.edit_date) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Prefer a newer message already shown as normal over an older candidate while its album reloads.
+    private static MessageObject settle(State state, Page page) {
+        for (MessageObject pending : page.pendingGroups) {
+            if (verifiedVisible(state.key, pending)) {
+                return pending;
+            }
+        }
+        return page.candidate;
+    }
+
+    /**
+     * Preview for a source whose rules or album context are still loading: the source itself when it
+     * was already shown as normal, otherwise the newest remembered normal message. Null means blank.
+     */
+    static MessageObject pendingPreview(int account, long dialogId, MessageObject source) {
+        Account owner = account(account);
+        if (owner.userId == 0 || !validMessage(account, dialogId, source)) {
+            return null;
+        }
+        NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
+        if (verifiedVisible(key, source)) {
+            return source;
+        }
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+        if (remembered == null || !AyuFilter.isLoaded()) {
+            return null;
+        }
+        for (MessageObject message : remembered) {
+            if (message.getId() != source.getId() && validMessage(account, dialogId, message)
+                    && !isHidden(account, dialogId, message)) {
+                return message;
+            }
+        }
+        return null;
+    }
+
     static int getStatus(int account, long dialogId) {
         Account owner = account(account);
         State state = STATES.get(new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId));
@@ -528,7 +599,8 @@ final class NooagramDialogPreviewFilter {
         int visibility = getVisibility(state.key.account, state.key.dialogId, candidate);
         if (visibility == PENDING) {
             ensureGroupContext(state, candidate);
-            return false;
+            // A message already shown as normal stays on screen while its album context reloads.
+            return verifiedVisible(state.key, candidate);
         }
         return visibility == VISIBLE;
     }
@@ -613,7 +685,7 @@ final class NooagramDialogPreviewFilter {
                     return;
                 }
                 publishPage(state, page);
-                MessageObject result = page.candidate;
+                MessageObject result = settle(state, page);
                 if (result != null) {
                     finish(state, token, result, false);
                 } else if (page.rows == NooagramPreviewSearch.PAGE_SIZE && pageIndex + 1 < NooagramPreviewSearch.MAX_LOCAL_PAGES) {
@@ -756,7 +828,7 @@ final class NooagramDialogPreviewFilter {
                     return;
                 }
                 publishPage(state, page);
-                MessageObject result = page.candidate;
+                MessageObject result = settle(state, page);
                 if (result == null) {
                     forget(state.key, state.replacement.getId());
                 }
@@ -894,7 +966,7 @@ final class NooagramDialogPreviewFilter {
                             return;
                         }
                         publishPage(state, stored);
-                        MessageObject result = stored.candidate;
+                        MessageObject result = settle(state, stored);
                         state.search.historyStored(token, count, oldestId);
                         if (result != null) {
                             finish(state, token, result, false);
@@ -994,32 +1066,62 @@ final class NooagramDialogPreviewFilter {
             return;
         }
         long dialogId = ((Number) args[0]).longValue();
-        clearGroupContexts(account);
         Account owner = account(account);
         NooagramPreviewSearch.Key key = new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId);
         Set<Integer> ids = new HashSet<>();
+        Set<Long> groups = new HashSet<>();
+        ArrayList<MessageObject> edited = new ArrayList<>();
         for (Object replacement : (List<?>) args[1]) {
-            if (!(replacement instanceof MessageObject)) {
-                continue;
+            if (replacement instanceof MessageObject && validMessage(account, dialogId, (MessageObject) replacement)) {
+                MessageObject message = (MessageObject) replacement;
+                edited.add(message);
+                ids.add(message.getId());
+                if (message.getGroupId() != 0) {
+                    groups.add(message.getGroupId());
+                }
             }
-            MessageObject message = (MessageObject) replacement;
-            if (!validMessage(account, dialogId, message)) {
-                continue;
-            }
-            ids.add(message.getId());
-            ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
-            if (remembered != null && remembered.removeIf(previous -> previous.getId() == message.getId())) {
-                if (!isHidden(account, dialogId, message)) {
+        }
+        if (edited.isEmpty()) {
+            return;
+        }
+        // Edits are frequent; clearing every album context here made all album previews reload in a loop.
+        // Only the edited albums need new context, and every member must be checked again.
+        ArrayList<GroupLoad> loads = new ArrayList<>();
+        if (!groups.isEmpty()) {
+            removeGroupContexts(entry -> entry.getKey().account == account
+                    && entry.getKey().dialogId == dialogId && groups.contains(entry.getKey().groupId));
+            loads = cancelGroupLoads(groupKey -> groupKey.account == account
+                    && groupKey.dialogId == dialogId && groups.contains(groupKey.groupId));
+        }
+        ArrayList<MessageObject> remembered = VISIBLE_PREVIEWS.get(key);
+        if (remembered != null) {
+            for (MessageObject message : edited) {
+                if (remembered.removeIf(previous -> previous.getId() == message.getId()
+                        || message.getGroupId() != 0 && previous.getGroupId() == message.getGroupId())
+                        && message.getGroupId() == 0 && !isHidden(account, dialogId, message)) {
                     remember(key, message);
                 }
             }
         }
         State state = STATES.get(key);
-        if (state != null && (ids.contains(state.search.sourceId)
-                || state.replacement != null && ids.contains(state.replacement.getId()))) {
+        boolean stale = state != null && (ids.contains(state.search.sourceId)
+                || state.source.getGroupId() != 0 && groups.contains(state.source.getGroupId())
+                || state.replacement != null && (ids.contains(state.replacement.getId())
+                || state.replacement.getGroupId() != 0 && groups.contains(state.replacement.getGroupId())));
+        if (stale) {
             STATES.remove(key);
             state.dispose();
-            AndroidUtilities.runOnUIThread(() -> refresh(state));
+        }
+        if (stale || !loads.isEmpty()) {
+            ArrayList<GroupLoad> cancelled = loads;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (stale) {
+                    refresh(state);
+                }
+                for (GroupLoad load : cancelled) {
+                    refreshGroupLoad(load);
+                }
+            });
         }
     }
 
@@ -1035,7 +1137,6 @@ final class NooagramDialogPreviewFilter {
         if (args.length > 2 && Boolean.TRUE.equals(args[2])) {
             return true; // Scheduled-message deletion does not affect the main dialog preview.
         }
-        clearGroupContexts(account);
         Set<Integer> ids = new HashSet<>();
         for (Object id : (List<?>) args[0]) {
             if (id instanceof Number) {
@@ -1043,6 +1144,11 @@ final class NooagramDialogPreviewFilter {
             }
         }
         long channelId = ((Number) args[1]).longValue();
+        // Only albums that lost a member change; in-flight loads in the affected dialogs restart.
+        removeGroupContexts(entry -> entry.getKey().account == account
+                && isDeletedDialog(account, entry.getKey().dialogId, channelId) && containsAny(entry.getValue(), ids));
+        ArrayList<GroupLoad> loads = cancelGroupLoads(key -> key.account == account
+                && isDeletedDialog(account, key.dialogId, channelId));
         Iterator<Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>>> previews = VISIBLE_PREVIEWS.entrySet().iterator();
         while (previews.hasNext()) {
             Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>> entry = previews.next();
@@ -1065,10 +1171,13 @@ final class NooagramDialogPreviewFilter {
                 states.remove();
             }
         }
-        if (!removed.isEmpty()) {
+        if (!removed.isEmpty() || !loads.isEmpty()) {
             AndroidUtilities.runOnUIThread(() -> {
                 for (State state : removed) {
                     refresh(state);
+                }
+                for (GroupLoad load : loads) {
+                    refreshGroupLoad(load);
                 }
             });
         }
@@ -1090,8 +1199,26 @@ final class NooagramDialogPreviewFilter {
         }
 
         void reset(boolean refresh, boolean keepVisible) {
+            long previousGeneration = generation;
             generation = ++nextGeneration;
-            clearGroupContexts(account);
+            // Album membership does not depend on filter rules, so a rule or block-list change keeps
+            // complete contexts instead of sending every album preview back to loading.
+            Map<GroupKey, GroupContext> kept = new LinkedHashMap<>();
+            if (keepVisible) {
+                synchronized (GROUP_CONTEXTS) {
+                    for (Map.Entry<GroupKey, GroupContext> entry : GROUP_CONTEXTS.entrySet()) {
+                        GroupKey key = entry.getKey();
+                        if (key.account == account && key.userId == userId && key.generation == previousGeneration
+                                && entry.getValue().complete) {
+                            kept.put(new GroupKey(account, userId, generation, key.dialogId, key.groupId), entry.getValue());
+                        }
+                    }
+                }
+            }
+            ArrayList<GroupLoad> loads = clearGroupContexts(account);
+            synchronized (GROUP_CONTEXTS) {
+                GROUP_CONTEXTS.putAll(kept);
+            }
             ArrayList<MessageObject> remembered = new ArrayList<>();
             Iterator<Map.Entry<NooagramPreviewSearch.Key, ArrayList<MessageObject>>> previews = VISIBLE_PREVIEWS.entrySet().iterator();
             while (previews.hasNext()) {
@@ -1104,8 +1231,10 @@ final class NooagramDialogPreviewFilter {
                 }
             }
             for (MessageObject message : remembered) {
-                if (validMessage(account, message.getDialogId(), message)
-                        && !isHidden(account, message.getDialogId(), message)) {
+                int visibility = getVisibility(account, message.getDialogId(), message);
+                // An album member stays remembered only if its context proves it is visible under the new rules.
+                if (validMessage(account, message.getDialogId(), message) && visibility != HIDDEN
+                        && (message.getGroupId() == 0 || visibility == VISIBLE)) {
                     remember(new NooagramPreviewSearch.Key(account, userId, generation, message.getDialogId()), message);
                 }
             }
@@ -1123,6 +1252,9 @@ final class NooagramDialogPreviewFilter {
                 AndroidUtilities.runOnUIThread(() -> {
                     for (State state : removed) {
                         refresh(state);
+                    }
+                    for (GroupLoad load : loads) {
+                        refreshGroupLoad(load);
                     }
                 });
             }

@@ -3471,9 +3471,13 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                     NooagramDialogPreviewFilter.preloadRules(this);
                                 }
                                 NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
-                                message = getFilteredPreviewPlaceholder(message, dialog, true);
-                                groupMessages = null;
-                                filteredPreview = true;
+                                // Keep a message already shown as normal instead of flashing blank while context reloads.
+                                MessageObject shown = NooagramDialogPreviewFilter.pendingPreview(currentAccount, dialog.id, message);
+                                if (shown != message) {
+                                    message = shown != null ? shown : getFilteredPreviewPlaceholder(message, dialog, true);
+                                    groupMessages = null;
+                                    filteredPreview = true;
+                                }
                             } else {
                                 NooagramDialogPreviewFilter.rememberVisible(currentAccount, dialog.id, message);
                             }

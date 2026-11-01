@@ -313,6 +313,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Preview probe compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Preview probe failed' }
 
 $dialogCell = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java') -Raw
+if (-not $dialogCell.Contains('NooagramDialogPreviewFilter.pendingPreview(currentAccount, dialog.id, message)')) {
+    throw 'DialogCell does not keep the shown preview while album context loads'
+}
 if (-not $dialogCell.Contains('lastMessageDate = NooagramDialogPreviewFilter.dialogPreviewDate(')) {
     throw 'DialogCell does not use the filtered-preview date'
 }

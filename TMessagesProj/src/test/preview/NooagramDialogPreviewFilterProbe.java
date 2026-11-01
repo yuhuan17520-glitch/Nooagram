@@ -94,6 +94,31 @@ public class NooagramDialogPreviewFilterProbe {
         MessagesController.instance.dialogs_dict.clear();
     }
 
+    // Simulates album contexts being evicted from the bounded cache.
+    private static void evictAlbumContexts() {
+        try {
+            java.lang.reflect.Field field = NooagramDialogPreviewFilter.class.getDeclaredField("GROUP_CONTEXTS");
+            field.setAccessible(true);
+            ((java.util.Map<?, ?>) field.get(null)).clear();
+        } catch (ReflectiveOperationException error) {
+            throw new AssertionError(error);
+        }
+    }
+
+    // Shows album 100+99 (group 300) as the visible top message with complete context.
+    private static DialogCell visibleAlbum() {
+        MessageObject source = add(100);
+        MessageObject sibling = add(99);
+        source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 300;
+        DialogCell cell = cell(source);
+        network.respond(pageOf(raw(110), groupedRaw(100, 300), groupedRaw(99, 300), raw(90)), false);
+        drain();
+        check(NooagramDialogPreviewFilter.getVisibility(0, -77, source) == NooagramDialogPreviewFilter.VISIBLE,
+                "Album context did not complete");
+        check(cell.applied == source, "Album was not shown");
+        return cell;
+    }
+
     private static void test(String name, Runnable body) {
         reset();
         body.run();
@@ -665,6 +690,70 @@ public class NooagramDialogPreviewFilterProbe {
             NotificationCenter.getInstance(0).postNotificationName(
                     NotificationCenter.messagesDeleted, List.of(99), 77L, false);
             check(network.cancelled.contains(deleteRequestId), "Deletion did not cancel album request");
+        });
+        test("Unrelated edits and deletions keep verified album context", () -> {
+            DialogCell cell = visibleAlbum();
+            int requests = network.offsets.size();
+            MessageObject other = add(50);
+            NotificationCenter.getInstance(0).postNotificationName(
+                    NotificationCenter.replaceMessagesObjects, -77L, List.of(other), false);
+            TLRPC.Message elsewhere = raw(60); elsewhere.dialog_id = -88;
+            NotificationCenter.getInstance(0).postNotificationName(NotificationCenter.replaceMessagesObjects,
+                    -88L, List.of(new MessageObject(0, elsewhere, false, false)), false);
+            NotificationCenter.getInstance(0).postNotificationName(NotificationCenter.messagesDeleted, List.of(50), 77L, false);
+            drain();
+            cell.refreshFilteredPreview();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, cell.source) == NooagramDialogPreviewFilter.VISIBLE,
+                    "Unrelated edit or deletion sent the album back to loading");
+            check(network.offsets.size() == requests, "Unrelated edit refetched album context");
+        });
+        test("Block-list reload keeps verified album context", () -> {
+            DialogCell cell = visibleAlbum();
+            int requests = network.offsets.size();
+            NotificationCenter.getInstance(0).postNotificationName(NotificationCenter.blockedUsersDidLoad);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, cell.source) == NooagramDialogPreviewFilter.VISIBLE,
+                    "Block-list reload sent the album back to loading");
+            check(network.offsets.size() == requests, "Block-list reload refetched album context");
+        });
+        test("An album shown as normal stays on screen while its context reloads", () -> {
+            DialogCell cell = visibleAlbum();
+            evictAlbumContexts();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, cell.source) == NooagramDialogPreviewFilter.PENDING,
+                    "Evicted context was not pending");
+            check(NooagramDialogPreviewFilter.pendingPreview(0, -77, cell.source) == cell.source,
+                    "Shown album flashed to a placeholder while reloading");
+            MessageObject newer = add(120);
+            newer.messageOwner.grouped_id = 301;
+            check(NooagramDialogPreviewFilter.pendingPreview(0, -77, newer) == cell.source,
+                    "New unverified album blanked the previous normal preview");
+            TLRPC.Message caption = groupedRaw(99, 300); caption.edit_date = 999;
+            NotificationCenter.getInstance(0).postNotificationName(NotificationCenter.replaceMessagesObjects,
+                    -77L, List.of(new MessageObject(0, caption, false, false)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.pendingPreview(0, -77, cell.source) == null,
+                    "Edited album was shown before it was checked again");
+        });
+        test("A remembered album replacement survives context reloads without flicker", () -> {
+            MessageObject album = add(100);
+            MessageObject sibling = add(99);
+            album.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 302;
+            add(80);
+            AyuFilter.regex.add(200);
+            DialogCell cell = cell(add(200));
+            drain();
+            check(cell.applied != null && cell.applied.getId() == 80, "Initial fallback");
+            network.respond(pageOf(raw(110), groupedRaw(100, 302), groupedRaw(99, 302), raw(90)), false);
+            drain();
+            check(cell.applied != null && cell.applied.getId() == 100, "Album replacement not found");
+            evictAlbumContexts();
+            AndroidUtilities.advance(60000);
+            cell.refreshFilteredPreview();
+            check(cell.applied != null && cell.applied.getId() == 100,
+                    "Album replacement switched while its context reloaded");
+            drain();
+            check(cell.applied != null && cell.applied.getId() == 100,
+                    "Rescan replaced the shown album with an older message");
         });
         test("Filtered fallback preview uses a valid message date", () -> {
             MessageObject replacement = add(90);
