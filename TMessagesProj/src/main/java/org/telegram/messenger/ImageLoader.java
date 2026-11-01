@@ -2433,7 +2433,11 @@ public class ImageLoader {
         try {
             telegramPath = com.radolyn.ayugram.utils.NooagramMediaStorage.root(EnvUtil.getTelegramPath());
             FileUtil.initDir(telegramPath);
-            AndroidUtilities.createEmptyFile(new File(telegramPath, ".nomedia"));
+            // Typed subfolders carry their own markers; drop the root marker older builds created.
+            File rootMarker = new File(telegramPath, ".nomedia");
+            if (rootMarker.isFile() && rootMarker.length() == 0) {
+                rootMarker.delete();
+            }
 
             if (telegramPath.isDirectory()) {
                 try {

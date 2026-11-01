@@ -299,6 +299,8 @@ public class AyuMediaPathTest {
                     EnvUtil.selected = Files.createTempDirectory("nooagram-typed-paths").toFile();
                     File oldImages = new File(EnvUtil.selected, "images"); oldImages.mkdir();
                     File old = new File(oldImages, "old.jpg"); Files.write(old.toPath(), new byte[]{1,2});
+                    File legacyRoot = new File(EnvUtil.selected, "Telegram"); legacyRoot.mkdirs();
+                    new File(legacyRoot, ".nomedia").createNewFile();
                     SparseArray<File> dirs = new MediaDirectoriesProbe().createMediaPaths();
                     int[] types={0,1,2,3,5,6};
                     String[] names={"Telegram Images","Telegram Audio","Telegram Video","Telegram Documents","Telegram Files","Telegram Stories"};
@@ -311,7 +313,7 @@ public class AyuMediaPathTest {
                     File resolved = com.radolyn.ayugram.utils.NooagramMediaStorage.resolve(dirs.get(0), "old.jpg");
                     if(!old.equals(resolved) || old.length()!=2) throw new AssertionError("Lost legacy image");
                     for(File entry:new File(EnvUtil.selected,"Telegram").listFiles()) {
-                        if(entry.isFile() && !entry.getName().equals(".nomedia")) throw new AssertionError("Loose media in root");
+                        if(entry.isFile()) throw new AssertionError("Loose file in root: "+entry.getName());
                     }
                 }
             """;
