@@ -3458,6 +3458,14 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         }
                         if (message != null) {
                             int previewVisibility = NooagramDialogPreviewFilter.getVisibility(currentAccount, dialog.id, message);
+                            if (previewVisibility == NooagramDialogPreviewFilter.PENDING) {
+                                if (!AyuFilter.isLoaded()) {
+                                    NooagramDialogPreviewFilter.preloadRules(this);
+                                }
+                                NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
+                                // While album context loads, judge from the members on the device instead of staying blank.
+                                previewVisibility = NooagramDialogPreviewFilter.provisionalVisibility(currentAccount, dialog.id, message, groupMessages);
+                            }
                             if (previewVisibility == NooagramDialogPreviewFilter.HIDDEN) {
                                 filteredPreview = true;
                                 MessageObject replacement = NooagramDialogPreviewFilter.resolve(this, currentAccount, dialog.id, message);
@@ -3467,11 +3475,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                                 message = replacement;
                                 groupMessages = null;
                             } else if (previewVisibility == NooagramDialogPreviewFilter.PENDING) {
-                                if (!AyuFilter.isLoaded()) {
-                                    NooagramDialogPreviewFilter.preloadRules(this);
-                                }
-                                NooagramDialogPreviewFilter.ensureGroupContext(this, currentAccount, dialog.id, message);
-                                // Keep a message already shown as normal instead of flashing blank while context reloads.
+                                // Rules are still loading: keep a message already shown as normal instead of flashing blank.
                                 MessageObject shown = NooagramDialogPreviewFilter.pendingPreview(currentAccount, dialog.id, message);
                                 if (shown != message) {
                                     message = shown != null ? shown : getFilteredPreviewPlaceholder(message, dialog, true);

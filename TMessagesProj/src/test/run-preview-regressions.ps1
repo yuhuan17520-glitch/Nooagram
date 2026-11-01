@@ -265,6 +265,11 @@ public class AyuFilter {
   }
   return regex.contains(message.getId());
  }
+ public static int uncachedCalls;
+ public static boolean isFilteredUncached(MessageObject message, MessageObject.GroupedMessages group) {
+  uncachedCalls++;
+  return isFiltered(message, group);
+ }
  public static boolean isIgnoredBlockedMessage(MessageObject message) { return blocked.contains(message.getId()); }
 }
 '@
@@ -274,6 +279,7 @@ import org.telegram.messenger.MessageObject;
 public class DialogCell {
  public int account; public long dialog = -77; public boolean attached = true;
  public MessageObject source, applied; public int refreshes;
+ public java.util.List<MessageObject> known;
  public long getDialogId() { return dialog; }
  public int getCurrentAccount() { return account; }
  public boolean isAttachedToWindow() { return attached; }
@@ -281,11 +287,14 @@ public class DialogCell {
  public void refreshFilteredPreview() {
   refreshes++;
   int visibility = NooagramDialogPreviewFilter.getVisibility(account, dialog, source);
+  if (visibility == NooagramDialogPreviewFilter.PENDING) {
+   NooagramDialogPreviewFilter.ensureGroupContext(this, account, dialog, source);
+   visibility = NooagramDialogPreviewFilter.provisionalVisibility(account, dialog, source, known);
+  }
   if (visibility == NooagramDialogPreviewFilter.HIDDEN) {
    applied = NooagramDialogPreviewFilter.resolve(this, account, dialog, source);
   } else if (visibility == NooagramDialogPreviewFilter.PENDING) {
    applied = source;
-   NooagramDialogPreviewFilter.ensureGroupContext(this, account, dialog, source);
   } else {
    applied = source;
    NooagramDialogPreviewFilter.rememberVisible(account, dialog, source);
@@ -315,6 +324,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Preview probe failed' }
 $dialogCell = Get-Content -LiteralPath (Join-Path $repo 'TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java') -Raw
 if (-not $dialogCell.Contains('NooagramDialogPreviewFilter.pendingPreview(currentAccount, dialog.id, message)')) {
     throw 'DialogCell does not keep the shown preview while album context loads'
+}
+if (-not $dialogCell.Contains('previewVisibility = NooagramDialogPreviewFilter.provisionalVisibility(currentAccount, dialog.id, message, groupMessages);')) {
+    throw 'DialogCell leaves a loading album blank instead of judging its known members'
 }
 if (-not $dialogCell.Contains('lastMessageDate = NooagramDialogPreviewFilter.dialogPreviewDate(')) {
     throw 'DialogCell does not use the filtered-preview date'

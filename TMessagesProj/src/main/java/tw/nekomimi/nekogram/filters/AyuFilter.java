@@ -493,23 +493,30 @@ public class AyuFilter {
         return merged;
     }
 
+    private static boolean canFilter(MessageObject msg) {
+        return AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool()
+                && msg != null && !msg.isOutOwner() && !msg.isOut() && !msg.skipAyuFiltering
+                && !isDialogExcluded(msg.getDialogId());
+    }
+
+    /**
+     * Same match as {@link #isFiltered} without reading or writing the cache. The album cache is keyed
+     * by group id, so a judgment from only some album members must never be stored there.
+     */
+    public static boolean isFilteredUncached(MessageObject msg, MessageObject.GroupedMessages group) {
+        if (!canFilter(msg)) {
+            return false;
+        }
+        var text = getMessageText(msg, group);
+        return !TextUtils.isEmpty(text) && isFilteredInternal(text, msg.getDialogId());
+    }
+
     public static boolean isFiltered(MessageObject msg, MessageObject.GroupedMessages group) {
-        if (!AyuConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
-            return false;
-        }
-
-        if (msg == null || msg.isOutOwner() || msg.isOut()) {
-            return false;
-        }
-
-        if (msg.skipAyuFiltering) {
+        if (!canFilter(msg)) {
             return false;
         }
 
         long dialogId = msg.getDialogId();
-        if (isDialogExcluded(dialogId)) {
-            return false;
-        }
 
         // Push payloads carry preview text only; never let them share cache entries with the real message.
         boolean cacheable = !msg.isFcmMessage();

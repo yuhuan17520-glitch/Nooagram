@@ -546,6 +546,43 @@ final class NooagramDialogPreviewFilter {
         return null;
     }
 
+    /**
+     * Visibility to show while an album's full context loads, judged from the members already on the
+     * device. Only rules still loading stay PENDING. Never cached: the complete context replaces it.
+     */
+    static int provisionalVisibility(int account, long dialogId, MessageObject source, List<MessageObject> known) {
+        int visibility = getVisibility(account, dialogId, source);
+        if (visibility != PENDING || !AyuFilter.isLoaded() || source.getGroupId() == 0) {
+            return visibility;
+        }
+        MessageObject.GroupedMessages group = new MessageObject.GroupedMessages();
+        group.groupId = source.getGroupId();
+        Set<Integer> ids = new HashSet<>();
+        GroupContext partial = groupContext(account, dialogId, group.groupId);
+        if (partial != null) {
+            addMembers(group, ids, partial.messages.messages);
+        }
+        if (known != null) {
+            addMembers(group, ids, known);
+        }
+        addMembers(group, ids, List.of(source));
+        boolean skipFiltering = source.skipAyuFiltering;
+        try {
+            source.skipAyuFiltering = false;
+            return AyuFilter.isFilteredUncached(source, group.messages.size() > 1 ? group : null) ? HIDDEN : VISIBLE;
+        } finally {
+            source.skipAyuFiltering = skipFiltering;
+        }
+    }
+
+    private static void addMembers(MessageObject.GroupedMessages group, Set<Integer> ids, List<MessageObject> members) {
+        for (MessageObject member : members) {
+            if (member != null && member.getGroupId() == group.groupId && ids.add(member.getId())) {
+                group.messages.add(member);
+            }
+        }
+    }
+
     static int getStatus(int account, long dialogId) {
         Account owner = account(account);
         State state = STATES.get(new NooagramPreviewSearch.Key(account, owner.userId, owner.generation, dialogId));

@@ -509,6 +509,44 @@ public class NooagramDialogPreviewFilterProbe {
             check(cell.applied != null && cell.applied.getId() == fallback.getId(),
                     "Storage album context missed the filtered sibling");
         });
+        test("A loading album with a filtered known member is replaced at once", () -> {
+            MessageObject source = add(100);
+            MessageObject captioned = add(101);
+            add(90);
+            source.messageOwner.grouped_id = captioned.messageOwner.grouped_id = 45;
+            AyuFilter.regex.add(101);
+            DialogCell cell = new DialogCell();
+            cell.source = source;
+            cell.known = List.of(source, captioned);
+            cell.refreshFilteredPreview();
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source) == NooagramDialogPreviewFilter.PENDING,
+                    "Album context completed without a response");
+            check(cell.applied != null && cell.applied.getId() == 90,
+                    "Album with a filtered known member was not replaced while loading");
+        });
+        test("A loading album with clean known members shows normally until its context says otherwise", () -> {
+            MessageObject source = add(100);
+            MessageObject sibling = add(99);
+            add(90);
+            source.messageOwner.grouped_id = sibling.messageOwner.grouped_id = 46;
+            AyuFilter.regex.add(98);
+            DialogCell cell = new DialogCell();
+            cell.source = source;
+            cell.known = List.of(source, sibling);
+            cell.refreshFilteredPreview();
+            drain();
+            check(cell.applied == source, "Loading album with clean known members stayed blank");
+            NooagramDialogPreviewFilter.rememberVisible(0, -77, source);
+            check(NooagramDialogPreviewFilter.pendingPreview(0, -77, source) != source,
+                    "Provisionally shown album was cached as verified");
+            network.respond(pageOf(raw(110), groupedRaw(100, 46), groupedRaw(99, 46), groupedRaw(98, 46), raw(90)), false);
+            drain();
+            check(NooagramDialogPreviewFilter.getVisibility(0, -77, source) == NooagramDialogPreviewFilter.HIDDEN,
+                    "Complete context did not see the unloaded filtered member");
+            check(cell.applied != null && cell.applied.getId() == 90,
+                    "Provisional album was not corrected once its context loaded");
+        });
         test("Storage fallback candidates defer partial album context", () -> {
             MessageObject source = add(200);
             MessageObject candidate = add(90);
