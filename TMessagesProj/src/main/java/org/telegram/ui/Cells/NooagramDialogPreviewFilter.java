@@ -1031,13 +1031,11 @@ final class NooagramDialogPreviewFilter {
         if (state.replacement != null) {
             remember(state.key, state.replacement);
         }
-        state.status = failed ? UNAVAILABLE
-                : state.replacement == null && state.search.needsHistoryContinuation() ? SEARCHING : EXHAUSTED;
+        state.status = failed ? UNAVAILABLE : EXHAUSTED;
         // Complete shared state even if every waiting cell was rebound or destroyed.
         refresh(state);
-        boolean retryFailure = failed && state.search.shouldRetryAutomatically();
-        boolean continueHistory = !failed && state.replacement == null && state.search.needsHistoryContinuation();
-        if (retryFailure || continueHistory) {
+        // Only a failed request retries on its own; a finished pass never keeps fetching in the background.
+        if (failed && state.search.shouldRetryAutomatically()) {
             state.cancelScheduledRefresh();
             state.scheduledRefresh = () -> {
                 state.scheduledRefresh = null;
@@ -1045,8 +1043,7 @@ final class NooagramDialogPreviewFilter {
                     refresh(state);
                 }
             };
-            AndroidUtilities.runOnUIThread(state.scheduledRefresh,
-                    retryFailure ? NooagramPreviewSearch.RETRY_MS : NooagramPreviewSearch.REFRESH_MS);
+            AndroidUtilities.runOnUIThread(state.scheduledRefresh, NooagramPreviewSearch.RETRY_MS);
         }
     }
 

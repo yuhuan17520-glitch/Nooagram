@@ -437,30 +437,26 @@ public class NooagramDialogPreviewFilterProbe {
             for (int p = 0; p < 5; p++) { network.respond(page(500 - p * 80, 421 - p * 80), false); drain(); }
             check(network.offsets.size() == 5 && network.requests.isEmpty(), "History budget exceeded");
         });
-        test("Five filtered pages continue after cooldown and restore the older normal preview", () -> {
+        test("Five filtered pages end the history search without background refetching", () -> {
             for (int id = 101; id <= 500; id++) AyuFilter.regex.add(id);
             DialogCell cell = cell(add(500)); drain();
             for (int p = 0; p < 5; p++) { network.respond(page(500 - p * 80, 421 - p * 80), false); drain(); }
             check(cell.applied == null && network.offsets.size() == 5, "First pass exceeded its budget");
-            check(NooagramDialogPreviewFilter.getStatus(0, -77) == NooagramDialogPreviewFilter.SEARCHING,
-                    "Page cap was mistaken for the end of history");
-            AndroidUtilities.advance(59999); drain();
-            check(network.offsets.size() == 5, "History resumed before cooldown");
-            AndroidUtilities.advance(1); drain();
-            check(network.offsets.size() == 6 && network.offsets.get(5) == 101, "Lost continuation cursor");
-            network.respond(page(100, 21), false); drain();
-            check(cell.applied != null && cell.applied.getId() == 100, "Older normal preview not restored");
-            AndroidUtilities.advance(60000); drain();
-            check(network.offsets.size() == 6, "Kept paging after finding preview");
+            check(NooagramDialogPreviewFilter.getStatus(0, -77) == NooagramDialogPreviewFilter.EXHAUSTED,
+                    "Finished pass still reported searching");
+            for (int i = 0; i < 3; i++) {
+                AndroidUtilities.advance(60000); drain();
+                cell.refreshFilteredPreview(); drain();
+            }
+            check(network.offsets.size() == 5 && network.requests.isEmpty(), "History was refetched in the background");
         });
-        test("Detached cells stop continuation until reattached", () -> {
-            for (int id = 101; id <= 500; id++) AyuFilter.regex.add(id);
+        test("A new filtered top message gets a fresh history budget", () -> {
+            for (int id = 101; id <= 501; id++) AyuFilter.regex.add(id);
             DialogCell cell = cell(add(500)); drain();
             for (int p = 0; p < 5; p++) { network.respond(page(500 - p * 80, 421 - p * 80), false); drain(); }
-            cell.attached = false; AndroidUtilities.advance(60000); drain();
-            check(network.offsets.size() == 5, "Detached cell kept requesting history");
-            cell.attached = true; cell.refreshFilteredPreview(); drain();
-            check(network.offsets.size() == 6 && network.offsets.get(5) == 101, "Reattach lost its cursor");
+            check(network.offsets.size() == 5, "First pass budget");
+            cell.source = add(501); cell.refreshFilteredPreview(); drain();
+            check(network.offsets.size() == 6, "New top message did not search history");
         });
         test("Exhausted all-filtered history does not cause a request loop", () -> {
             AyuFilter.regex.addAll(List.of(100, 99));
