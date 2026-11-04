@@ -9808,6 +9808,10 @@ public class ChatActivityEnterView extends FrameLayout implements
             } else {
                 layoutParams.rightMargin = dp(50);
             }
+            // With the attach menu kept while typing, the suggest button stays in attachLayout next to the menu button
+            if (suggestButtonVisible && suggestButton != null && suggestButton.getParent() == attachLayout) {
+                layoutParams.rightMargin += dp(48);
+            }
         } else {
             if (scheduledButton != null && scheduledButton.getTag() != null) {
                 layoutParams.rightMargin = dp(50);
