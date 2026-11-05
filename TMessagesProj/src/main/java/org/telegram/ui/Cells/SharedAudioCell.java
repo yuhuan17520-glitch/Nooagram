@@ -447,6 +447,7 @@ public class SharedAudioCell extends FrameLayout implements DownloadController.F
         } else if (buttonState == 2) {
             radialProgress.setProgress(0, false);
             currentMessageObject.putInDownloadsStore = true;
+            com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
             FileLoader.getInstance(currentAccount).loadFile(currentMessageObject.getDocument(), currentMessageObject, FileLoader.PRIORITY_NORMAL, 0);
             buttonState = 4;
             radialProgress.setIcon(getIconForCurrentState(), false, true);

@@ -166,6 +166,7 @@ public class SearchDownloadsContainer extends FrameLayout implements Notificatio
                     AndroidUtilities.openDocument(message, parentActivity, parentFragment);
                 } else if (!cell.isLoading()) {
                     messageObject.putInDownloadsStore = true;
+                    com.radolyn.ayugram.utils.NooagramMediaDownload.request(messageObject);
                     AccountInstance.getInstance(UserConfig.selectedAccount).getFileLoader().loadFile(document, messageObject, FileLoader.PRIORITY_LOW, 0);
                     cell.updateFileExistIcon(true);
                     DownloadController.getInstance(currentAccount).updateFilesLoadingPriority();

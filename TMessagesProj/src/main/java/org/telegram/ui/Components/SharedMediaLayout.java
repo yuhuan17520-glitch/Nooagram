@@ -7896,6 +7896,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     } else if (!cell.isLoading()) {
                         MessageObject messageObject = cell.getMessage();
                         messageObject.putInDownloadsStore = true;
+                        com.radolyn.ayugram.utils.NooagramMediaDownload.request(messageObject);
                         profileActivity.getFileLoader().loadFile(document, messageObject, FileLoader.PRIORITY_LOW, 0);
                         cell.updateFileExistIcon(true);
                     } else {

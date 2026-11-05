@@ -868,9 +868,6 @@ public class FileLoader extends BaseController {
             loadOperationPathsUI.put(fileName, new LoadOperationUIObject());
         }
 
-        if (cacheType != ImageLoader.CACHE_TYPE_ENCRYPTED && cacheType != 10 && parentObject instanceof MessageObject message) {
-            com.radolyn.ayugram.utils.NooagramMediaDownload.request(message, fileName);
-        }
         MessageObject downloadParent = null;
         if (document != null && parentObject instanceof MessageObject
                 && ((MessageObject) parentObject).putInDownloadsStore

@@ -12,14 +12,16 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
-import org.telegram.tgnet.TLRPC;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 
-/** Exports completed manual media downloads without moving files used by playback/image loaders. */
+/**
+ * Exports media the user explicitly downloads (download buttons on videos, audio and files) without
+ * moving files used by playback/image loaders. Opening or viewing media never calls this.
+ */
 public final class NooagramMediaDownload {
     private static final DispatchQueue queue = new DispatchQueue("nooagramMediaDownloads");
     private static final LinkedHashMap<String, ArrayList<Pending>> pending = new LinkedHashMap<>();
@@ -29,21 +31,16 @@ public final class NooagramMediaDownload {
 
     private NooagramMediaDownload() {}
 
-    public static void request(MessageObject message) { request(message, null); }
-
-    public static void request(MessageObject message, String loadedFileName) {
-        if (message == null || !AyuOptions.enableCustomSavePath.Bool()) return;
+    public static void request(MessageObject message) {
+        // Photos have no separate download action; tapping one only views it.
+        if (message == null || message.getDocument() == null || !AyuOptions.enableCustomSavePath.Bool()) return;
         boolean restricted = MessagesController.getInstance(message.currentAccount)
                 .isPeerNoForwardsWithOverride(message.getDialogId());
         NooagramCanonicalDownload.Claim claim = NooagramCanonicalDownload.createMediaClaim(message, true, restricted);
         if (claim == null) return;
         if (NooagramCanonicalDownload.isEligibleDocument(message, true)
                 && NooagramDownloadDestination.usesCanonicalDocuments()) return;
-        TLRPC.PhotoSize photo = message.getDocument() == null ? NooagramCanonicalDownload.mediaPhoto(message) : null;
-        String fileName = photo == null ? NooagramCanonicalDownload.mediaFileName(message)
-                : FileLoader.getAttachFileName(photo);
-        // Thumbnail and preloaded video operations never count as a manual full-size download.
-        if (loadedFileName != null && !fileName.equals(loadedFileName)) return;
+        String fileName = NooagramCanonicalDownload.mediaFileName(message);
         String transferKey = message.currentAccount + ":" + fileName;
         String destination = AyuOptions.customSavePath.String();
         String subfolder = AyuConfig.INSTANCE.getSaveToChatSubfolder().Bool() ? AyuMediaFolders.getChatFolderName(message) : "";
@@ -51,10 +48,8 @@ public final class NooagramMediaDownload {
         Pending request = new Pending(exportKey, message, claim, destination, subfolder);
         queue.postRunnable(() -> {
             FileLoader loader = FileLoader.getInstance(message.currentAccount);
-            File source = photo != null
-                    ? loader.getPathToAttach(photo)
-                    : loader.getPathToMessage(message.messageOwner);
-            if (source != null && source.isFile() && !FileLoader.getInstance(message.currentAccount).isLoadingFile(fileName)) {
+            File source = loader.getPathToMessage(message.messageOwner);
+            if (source != null && source.isFile() && !loader.isLoadingFile(fileName)) {
                 export(request, source);
             } else {
                 ArrayList<Pending> requests = pending.computeIfAbsent(transferKey, key -> new ArrayList<>());

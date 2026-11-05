@@ -192,7 +192,7 @@
     <string name="SaveReadDate">Save read receipts</string>
     <string name="NooagramDownloadSettings">Downloads and saving</string>
     <string name="NooagramDownloadSaveEnabled">Save manual downloads to this folder</string>
-    <string name="NooagramDownloadSaveInfo">Files, photos, videos and audio you download manually are saved here when complete. Automatic previews keep their existing cache behavior. This setting is shared by N Settings and AyuMoments.</string>
+    <string name="NooagramDownloadSaveInfo">Files, videos and audio you download with the download button are saved here when complete. Opening or viewing media, including photos, only uses the cache. This setting is shared by N Settings and AyuMoments.</string>
     <string name="NooagramDownloadFolder">Save directory</string>
     <string name="NooagramDownloadFolderHint">Enter a full path, e.g. /sdcard/Download/Nooagram</string>
     <string name="NooagramDownloadSelectDirectory">Choose directory</string>

@@ -190,7 +190,7 @@
     <string name="SaveReadDate">保存已读回执</string>
     <string name="NooagramDownloadSettings">下载与保存</string>
     <string name="NooagramDownloadSaveEnabled">自动保存手动下载的文件</string>
-    <string name="NooagramDownloadSaveInfo">手动下载的文件、图片、视频和音频完成后保存到下方目录。自动预览仍使用缓存。本设置与 N 设置、AyuMoments 共用。</string>
+    <string name="NooagramDownloadSaveInfo">点下载按钮下载的文件、视频和音频完成后保存到下方目录。打开或查看媒体（包括图片）只使用缓存。本设置与 N 设置、AyuMoments 共用。</string>
     <string name="NooagramDownloadFolder">保存目录</string>
     <string name="NooagramDownloadFolderHint">输入完整路径，例如 /sdcard/Download/Nooagram</string>
     <string name="NooagramDownloadSelectDirectory">选择目录</string>

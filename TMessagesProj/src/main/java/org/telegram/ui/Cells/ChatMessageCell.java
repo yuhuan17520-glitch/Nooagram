@@ -18041,6 +18041,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             radialProgress.setProgress(0, false);
             if (currentMessageObject != null && !currentMessageObject.isAnyKindOfSticker()) {
                 currentMessageObject.putInDownloadsStore = true;
+                com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
             }
             if (documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
                 FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, currentMessageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
@@ -18073,7 +18074,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
         if (currentMessageObject != null && !currentMessageObject.isAnyKindOfSticker()) {
             currentMessageObject.putInDownloadsStore = true;
-            com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
         }
         if (buttonState == 0 && (!drawVideoImageButton || video)) {
             if (documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC || documentAttachType == DOCUMENT_ATTACH_TYPE_ROUND && currentMessageObject != null && currentMessageObject.isVoiceTranscriptionOpen() && currentMessageObject.mediaExists) {
@@ -18128,11 +18128,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                     wouldBeInPip = true;
                     ChatMessageCell.this.invalidate();
                 } else if (currentMessageObject.type == MessageObject.TYPE_FILE) {
+                    com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
                     FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, 0);
                     if (currentMessageObject.loadedFileSize > 0) {
                         createLoadingProgressLayout(documentAttach);
                     }
                 } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_VIDEO) {
+                    com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
                     FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL, cacheType);
                     if (currentMessageObject.loadedFileSize > 0) {
                         createLoadingProgressLayout(currentMessageObject.getDocument());
@@ -18146,6 +18148,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             createLoadingProgressLayout(currentMessageObject.getDocument());
                         }
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_DOCUMENT) {
+                        com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
                         FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, 0);
                     } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_WALLPAPER) {
                         photoImage.setImage(ImageLocation.getForDocument(documentAttach), currentPhotoFilter, ImageLocation.getForDocument(currentPhotoObject, documentAttach), "b1", 0, "jpg", currentMessageObject, 1);
@@ -18232,6 +18235,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
             } else if (documentAttachType == DOCUMENT_ATTACH_TYPE_AUDIO || documentAttachType == DOCUMENT_ATTACH_TYPE_MUSIC) {
                 radialProgress.setProgress(0, false);
+                com.radolyn.ayugram.utils.NooagramMediaDownload.request(currentMessageObject);
                 FileLoader.getInstance(currentAccount).loadFile(documentAttach, currentMessageObject, FileLoader.PRIORITY_NORMAL_UP, 0);
                 currentMessageObject.loadingCancelled = false;
                 buttonState = 4;
