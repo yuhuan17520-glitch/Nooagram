@@ -98,6 +98,16 @@ for (const [name, method] of Object.entries({DeletedMessageDao: 'getMessage',
 assert.ok(classes.has('Lcom/radolyn/ayugram/database/AyuDatabase_Impl;'), 'Room database implementation missing');
 console.log('PASS Room database implementation');
 
+// Gson-only models: if R8 removes them, settings restore/import fails with a
+// message-less ClassCastException while validating regex filter backups.
+for (const name of ['LegacyFilterModel', 'LegacyChatFilterEntry', 'LegacyExcludedFilterEntry']) {
+    const model = classes.get('Lcom/radolyn/ayugram/database/FilterPrefsMigrator$' + name + ';');
+    assert.ok(model, 'Gson filter backup model removed or renamed by R8: ' + name);
+    assert.ok(model.methods.some(method => method.name === '<init>' && method.noArgs),
+        'Gson filter backup model constructor missing after R8: ' + name);
+    console.log('PASS R8 preserves Gson filter backup model: ' + name);
+}
+
 for (const name of [
     'com.radolyn.ayugram.settings.NekoAyuMomentsSettingsActivity',
     'com.radolyn.ayugram.settings.NooagramPinnedHiderActivity',

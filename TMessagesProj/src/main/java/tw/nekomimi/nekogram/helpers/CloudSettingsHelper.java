@@ -543,18 +543,24 @@ public class CloudSettingsHelper {
                                 callback.run(true, null);
                             } catch (Exception e) {
                                 FileLog.e(e);
-                                callback.run(false, e.getLocalizedMessage());
+                                callback.run(false, describeError(e));
                             }
                         }
                     });
                 } catch (Exception e) {
                     FileLog.e(e);
-                    callback.run(false, e.getLocalizedMessage());
+                    callback.run(false, describeError(e));
                 }
             } else {
                 callback.run(false, error);
             }
         });
+    }
+
+    static String describeError(Throwable error) {
+        String message = error.getLocalizedMessage();
+        String type = error.getClass().getSimpleName();
+        return message == null || message.isEmpty() ? type : type + ": " + message;
     }
 
     private void deleteCloudBackup(Utilities.Callback2<Boolean, String> callback) {

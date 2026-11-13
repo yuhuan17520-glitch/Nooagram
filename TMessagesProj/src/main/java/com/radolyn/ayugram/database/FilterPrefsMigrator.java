@@ -77,7 +77,7 @@ public final class FilterPrefsMigrator {
         Gson gson = new Gson();
         ArrayList<RegexFilter> filters = new ArrayList<>();
         ArrayList<RegexFilterGlobalExclusion> exclusionRows = new ArrayList<>();
-        ArrayList<LegacyFilterModel> shared = readList(gson, sharedJson, new TypeToken<ArrayList<LegacyFilterModel>>(){}.getType());
+        ArrayList<LegacyFilterModel> shared = readList(gson, sharedJson, TypeToken.getParameterized(ArrayList.class, LegacyFilterModel.class).getType());
         if (shared != null) {
             for (LegacyFilterModel model : shared) {
                 if (model == null || model.regex == null) continue;
@@ -106,7 +106,7 @@ public final class FilterPrefsMigrator {
                 }
             }
         }
-        ArrayList<LegacyChatFilterEntry> chats = readList(gson, chatJson, new TypeToken<ArrayList<LegacyChatFilterEntry>>(){}.getType());
+        ArrayList<LegacyChatFilterEntry> chats = readList(gson, chatJson, TypeToken.getParameterized(ArrayList.class, LegacyChatFilterEntry.class).getType());
         if (chats != null) {
             for (LegacyChatFilterEntry entry : chats) {
                 if (entry == null || entry.filters == null) continue;
@@ -115,7 +115,7 @@ public final class FilterPrefsMigrator {
                 }
             }
         }
-        ArrayList<LegacyExcludedFilterEntry> exclusions = readList(gson, exclusionsJson, new TypeToken<ArrayList<LegacyExcludedFilterEntry>>(){}.getType());
+        ArrayList<LegacyExcludedFilterEntry> exclusions = readList(gson, exclusionsJson, TypeToken.getParameterized(ArrayList.class, LegacyExcludedFilterEntry.class).getType());
         if (exclusions != null) {
             for (LegacyExcludedFilterEntry entry : exclusions) {
                 if (entry == null || entry.dialogId == 0L || isEmpty(entry.filterId)) continue;

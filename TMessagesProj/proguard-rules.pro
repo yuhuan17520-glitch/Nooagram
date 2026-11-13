@@ -140,7 +140,9 @@
 -keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$ChatFilterEntry { <fields>; }
 -keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$ExcludedFilterEntry { <fields>; }
 -keepclassmembers class tw.nekomimi.nekogram.filters.AyuFilter$CustomFilteredUser { <fields>; }
--keepclassmembers class com.radolyn.ayugram.database.FilterPrefsMigrator$* { <fields>; }
+# The legacy filter models are only created by Gson; without -keep R8 full mode
+# removes them and parseLegacy() fails with ClassCastException on cloud restore.
+-keep class com.radolyn.ayugram.database.FilterPrefsMigrator$Legacy* { <fields>; <init>(); }
 
 # LaunchActivity restores the current custom settings page by class name and
 # no-argument constructor after process death. Keep those reflective contracts
