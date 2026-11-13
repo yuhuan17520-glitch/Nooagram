@@ -1,10 +1,10 @@
 {
-  "version": "1.4.3",
+  "version": "1.5.0",
   "upstream_repository": "NextAlone/Nagram",
   "upstream_branch": "dev",
-  "upstream_build": 1257,
-  "upstream_commit": "12a4d33a2e954703824c2a7366daaf2976a534df",
-  "version_code_floor": 125014000,
-  "previous_release_version_code": 125013000,
+  "upstream_build": 1260,
+  "upstream_commit": "1af7c74198b2c3ee3276e27bfe86704bd477d8e5",
+  "version_code_floor": 125015000,
+  "previous_release_version_code": 125014000,
   "migration_ready": true
 }
