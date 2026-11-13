@@ -62,7 +62,12 @@ public class JoinGroupAlert extends BottomSheet {
     }
 
     public JoinGroupAlert(final Context context, TLObject obj, String group, BaseFragment parentFragment, Theme.ResourcesProvider resourcesProvider, int origination) {
+        this(context, obj, group, parentFragment, resourcesProvider, parentFragment == null ? UserConfig.selectedAccount : parentFragment.getCurrentAccount(), origination);
+    }
+
+    public JoinGroupAlert(final Context context, TLObject obj, String group, BaseFragment parentFragment, Theme.ResourcesProvider resourcesProvider, int account, int origination) {
         super(context, false, resourcesProvider);
+        currentAccount = account;
         setApplyBottomPadding(false);
         setApplyTopPadding(false);
         fixNavigationBar(getThemedColor(Theme.key_windowBackgroundWhite));

@@ -5264,7 +5264,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                 });
                             } else {
                                 BaseFragment fragment = mainFragmentsStack.get(mainFragmentsStack.size() - 1);
-                                fragment.showDialog(new JoinGroupAlert(LaunchActivity.this, invite, group, fragment, (fragment instanceof ChatActivity ? ((ChatActivity) fragment).themeDelegate : null)));
+                                fragment.showDialog(new JoinGroupAlert(LaunchActivity.this, invite, group, fragment, (fragment instanceof ChatActivity ? ((ChatActivity) fragment).themeDelegate : null), intentAccount, JoinGroupAlert.ORIGINATION_OTHER));
                             }
                         } else {
                             AlertDialog.Builder builder = new AlertDialog.Builder(LaunchActivity.this);
@@ -5297,12 +5297,12 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     final TLRPC.Updates updates;
                     if (response instanceof TLRPC.TL_chatInviteJoinResultOk) {
                         updates = ((TLRPC.TL_chatInviteJoinResultOk) response).updates;
-                        MessagesController.getInstance(currentAccount).processUpdates(updates, false);
+                        MessagesController.getInstance(intentAccount).processUpdates(updates, false);
                     } else if (response instanceof TLRPC.TL_chatInviteJoinResultWebView) {
                         TLRPC.TL_chatInviteJoinResultWebView resultWebView = (TLRPC.TL_chatInviteJoinResultWebView) response;
                         AndroidUtilities.runOnUIThread(() -> {
-                            MessagesController.getInstance(currentAccount).putUsers(resultWebView.users, false);
-                            BotGuardHelper.getInstance(currentAccount).openGuardBotWebApp(resultWebView.bot_id,
+                            MessagesController.getInstance(intentAccount).putUsers(resultWebView.users, false);
+                            BotGuardHelper.getInstance(intentAccount).openGuardBotWebApp(resultWebView.bot_id,
                                     resultWebView.bot_id, resultWebView.query_id);
                         });
 
@@ -5334,6 +5334,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                                         }
                                     }
                                 }
+                            } else if ("CHANNELS_TOO_MUCH".equals(error.text) && !mainFragmentsStack.isEmpty()) {
+                                AlertsCreator.processError(intentAccount, error, mainFragmentsStack.get(mainFragmentsStack.size() - 1), req);
                             } else {
                                 AlertDialog.Builder builder = new AlertDialog.Builder(LaunchActivity.this);
                                 builder.setTitle(LocaleController.getString(R.string.NekoX));
