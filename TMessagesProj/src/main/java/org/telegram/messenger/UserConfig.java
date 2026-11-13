@@ -637,6 +637,11 @@ public class UserConfig extends BaseController {
         return user.premium || NekoConfig.localPremium.Bool();
     }
 
+    public boolean isRealPremium() {
+        TLRPC.User user = currentUser;
+        return user != null && user.premium;
+    }
+
     public Long getEmojiStatus() {
         return UserObject.getEmojiStatusDocumentId(currentUser);
     }
