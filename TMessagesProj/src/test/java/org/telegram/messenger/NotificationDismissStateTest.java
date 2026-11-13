@@ -34,7 +34,10 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(application = android.app.Application.class, sdk = 28)
+// NotificationsController.<clinit> names its channel through LocaleController (Telegram 13.2), which would
+// otherwise start MessagesController and its JNI-only ConnectionsManager.native_isTestBackend().
+@Config(application = android.app.Application.class, sdk = 28,
+        shadows = {org.telegram.ui.Components.FragmentContextViewPlayerTest.Strings.class})
 public class NotificationDismissStateTest {
 
     private static final String PENDING_INTENT_ACTION = "org.telegram.messenger.test.NOTIFICATION_DISMISS";
@@ -181,7 +184,7 @@ public class NotificationDismissStateTest {
         intent.putExtra(NotificationDismissState.EXTRA_DISMISS_MESSAGES, true);
         StubNotificationsControllerRegistry controllers = new StubNotificationsControllerRegistry();
         ReflectionHelpers.setStaticField(NotificationsController.class, "Instance", controllers);
-        DispatchQueue queue = ReflectionHelpers.getStaticField(NotificationsController.class, "notificationsQueue");
+        DispatchQueue2 queue = ReflectionHelpers.getStaticField(NotificationsController.class, "notificationsQueue");
         Handler previousHandler = ReflectionHelpers.getField(queue, "handler");
         Handler pausedHandler = new Handler(Looper.getMainLooper());
         ReflectionHelpers.setField(queue, "handler", pausedHandler);

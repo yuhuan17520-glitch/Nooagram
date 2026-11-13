@@ -31,7 +31,7 @@ public class FilePathDatabase {
         ERROR
     }
 
-    private DispatchQueue dispatchQueue;
+    private DispatchQueue2 dispatchQueue;
     private final int currentAccount;
 
     private SQLiteDatabase database;
@@ -188,7 +188,7 @@ public class FilePathDatabase {
             }
             return path;
         }
-        if (dispatchQueue != null && dispatchQueue.getHandler() != null && Thread.currentThread() == dispatchQueue.getHandler().getLooper().getThread()) {
+        if (dispatchQueue != null && Thread.currentThread() == dispatchQueue) {
             useQueue = false;
         }
         if (useQueue) {
@@ -285,8 +285,8 @@ public class FilePathDatabase {
 
     /** Commits a path before its caller removes the previous file. Returns false on SQLite failure. */
     public boolean putPathBlocking(long id, int dc, int type, int flags, String path) {
-        if (dispatchQueue != null && dispatchQueue.getHandler() != null
-                && Thread.currentThread() == dispatchQueue.getHandler().getLooper().getThread()) {
+        if (dispatchQueue != null
+                && Thread.currentThread() == dispatchQueue) {
             return putPathInternal(id, dc, type, flags, path);
         }
         boolean[] result = new boolean[1];
@@ -772,8 +772,8 @@ public class FilePathDatabase {
                 syncLatch.countDown();
             }
         };
-        if (dispatchQueue != null && dispatchQueue.getHandler() != null
-                && Thread.currentThread() == dispatchQueue.getHandler().getLooper().getThread()) {
+        if (dispatchQueue != null
+                && Thread.currentThread() == dispatchQueue) {
             query.run();
         } else {
             postRunnable(query);
@@ -872,7 +872,7 @@ public class FilePathDatabase {
         return path.replace("'","").replace("\"","");
     }
 
-    public DispatchQueue getQueue() {
+    public DispatchQueue2 getQueue() {
         ensureQueueExist();
         return dispatchQueue;
     }
@@ -940,7 +940,7 @@ public class FilePathDatabase {
         if (dispatchQueue == null) {
             synchronized (this) {
                 if (dispatchQueue == null) {
-                    dispatchQueue = new DispatchQueue("files_database_queue_" + currentAccount);
+                    dispatchQueue = new DispatchQueue2("files_database_queue_" + currentAccount);
                     dispatchQueue.setPriority(Thread.MAX_PRIORITY);
                 }
             }

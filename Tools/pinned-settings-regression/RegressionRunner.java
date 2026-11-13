@@ -289,7 +289,7 @@ public class RegressionRunner {
         var matcher = java.util.regex.Pattern.compile("private final AbstractConfigCell ([a-zA-Z0-9]+)").matcher(Files.readString(file));
         var rows = new java.util.LinkedHashSet<String>();
         while (matcher.find()) rows.add(matcher.group(1));
-        String fields = rows.stream().map(name -> "final Object " + name + " = new Object();").collect(java.util.stream.Collectors.joining());
+        String fields = rows.stream().map(name -> "final Object " + name + " = new ConfigCellTextCheck();").collect(java.util.stream.Collectors.joining());
         return source("ExperimentalSettingsProbe", """
                 import java.util.*;
                 class ExperimentalBase { protected void setCanNotChange() {} }
@@ -315,6 +315,8 @@ public class RegressionRunner {
                         static void setGhostMode(boolean value) { throw new AssertionError("Page visibility wrote ghost mode"); }
                     }
                     static class NekoXConfig { static boolean disableFlagSecure = true; }
+                    // Rows may be enabled/disabled while rebuilding; that must not change their visibility.
+                    static class ConfigCellTextCheck { void setEnabled(boolean enabled) {} }
                     static class Group { final List<Object> rows = new ArrayList<>(); }
                     final Group cellGroup = new Group();
                     void addRowsToMap() {}

@@ -103,7 +103,6 @@
     <string name="DisableSendReadStories">Disable Send Read Stories</string>
     <string name="HideFilterMuteAll">Hide filter mute all</string>
     <string name="UseLocalQuoteColor">Use local quote color</string>
-    <string name="ShowSquareAvatar">Show square avatar</string>
     <string name="DisableProfileAvatarBlur">Disable Profile Avatar Blur</string>
     <string name="DisableCustomWallpaperUser">Disable user custom wallpaper</string>
     <string name="DisableCustomWallpaperChannel">Disable channel custom wallpaper</string>
@@ -142,7 +141,6 @@
     <string name="SendMp4DocumentAsVideo">Send mp4 document as video</string>
     <string name="StickersChooseShortNameForStickerPack">Choose a short name for your pack.</string>
     <string name="StickersCopyStickerSet">Copy Sticker Set</string>
-    <string name="DisableChannelMuteButton">Disable channel mute button</string>
     <string name="DisablePreviewVideoSoundShortcut">Disable preview video sound shortcut</string>
     <string name="DisablePreviewVideoSoundShortcutNotice">Disable volume keys to enable preview video sound</string>
     <string name="DisableAutoWebLogin">Disable auto web login</string>

@@ -24,7 +24,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(application = android.app.Application.class, sdk = 28)
+// NotificationsController.<clinit> names its channel through LocaleController (Telegram 13.2), which would
+// otherwise start MessagesController and its JNI-only ConnectionsManager.native_isTestBackend().
+@Config(application = android.app.Application.class, sdk = 28,
+        shadows = {org.telegram.ui.Components.FragmentContextViewPlayerTest.Strings.class})
 public class NotificationsControllerDismissTest {
 
     private SharedPreferences preferences;

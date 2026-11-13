@@ -106,7 +106,7 @@
     <string name="DisableSendReadStories">Disable Send Read Stories</string>
     <string name="HideFilterMuteAll">Hide filter mute all</string>
     <string name="UseLocalQuoteColor">Use local quote color</string>
-    <string name="ShowSquareAvatar">Show square avatar</string>
+    <string name="AvatarCorners">Avatar corners</string>
     <string name="DisableProfileAvatarBlur">Disable Profile Avatar Blur</string>
     <string name="DisableCustomWallpaperUser">Disable user custom wallpaper</string>
     <string name="DisableCustomWallpaperChannel">Disable channel custom wallpaper</string>
@@ -133,7 +133,6 @@
     <string name="DisableClickCommandToSendHint">To prevent accidental touch</string>
     <string name="DisableDialogsFloatingButton">Disable Dialogs Floating Button</string>
     <string name="DisableFlagSecure">Disable Flag Secure</string>
-    <string name="CenterActionBarTitle">Center title in action bar</string>
     <string name="ShowQuickReplyInBotCommands">Show Quick Reply In Bot Commands</string>
     <string name="PushServiceType">Push Service Type</string>
     <string name="PushServiceTypeInApp">In App</string>
@@ -145,7 +144,6 @@
     <string name="SendMp4DocumentAsVideo">Send mp4 document as video</string>
     <string name="StickersChooseShortNameForStickerPack">Choose a short name for your pack.</string>
     <string name="StickersCopyStickerSet">Copy Sticker Set</string>
-    <string name="DisableChannelMuteButton">Disable channel mute button</string>
     <string name="DisablePreviewVideoSoundShortcut">Disable preview video sound shortcut</string>
     <string name="DisablePreviewVideoSoundShortcutNotice">Disable volume keys to enable preview video sound</string>
     <string name="DisableAutoWebLogin">Disable auto web login</string>
@@ -413,4 +411,10 @@
     <string name="StickerShape">Sticker Shape</string>
     <string name="StickerShapeRounded">Rounded</string>
     <string name="StickerShapeRoundedMsg">Message</string>
+    <string name="ActionBar">Action Bar</string>
+    <string name="UserRestrictedBy">Restricted by %1$s</string>
+    <string name="ChannelBottomButton">Channel bottom button</string>
+    <string name="HideChannelGiftButton">Hide channel gift button</string>
+    <string name="IgnoreBlockedReplies">Also hide replies to blocked users</string>
+    <string name="RemoveMessageTail">Remove message tail</string>
 </resources>
